@@ -97,6 +97,19 @@ function parseSheet(ws: ExcelJS.Worksheet, sheetName: string): ParsedRow[] {
   return rows;
 }
 
+/** Normalisasi kode aktivitas agar ejaan beda menyatu (mis. POST MINING / POST-MINING). */
+const ACTIVITY_ALIASES: Record<string, string> = {
+  "POST MINING": "POST-MINING",
+  "POST-MINING": "POST-MINING",
+  "PRE-MINING": "PRE-MINING",
+};
+
+function canonicalCode(raw: string | null): string | null {
+  if (!raw) return null;
+  const key = raw.trim().toUpperCase();
+  return ACTIVITY_ALIASES[key] ?? key;
+}
+
 function validate(r: ParsedRow): string[] {
   const errors: string[] = [];
   if (!r.egi) errors.push("egi kosong");
@@ -108,6 +121,51 @@ function validate(r: ParsedRow): string[] {
   if (r.wh === null || r.wh < 0) errors.push("wh kosong atau negatif");
   if (r.costUsd === null || r.costUsd < 0) errors.push("cost($) kosong atau negatif");
   return errors;
+}
+
+async function buildReferenceData(): Promise<void> {
+  const valid = await prisma.dayworkStaging.findMany({
+    where: { status: StagingStatus.VALID },
+  });
+
+  const deptCodes = [
+    ...new Set(valid.map((r) => r.dept).filter((x): x is string => !!x)),
+  ];
+  if (deptCodes.length) {
+    await prisma.department.createMany({
+      data: deptCodes.map((code) => ({ code, name: code })),
+      skipDuplicates: true,
+    });
+  }
+
+  // Equipment (eqnum -> egi)
+  const units = new Map<string, { eqnum: string; egi: string }>();
+  for (const r of valid) {
+    if (r.eqnum && r.egi) units.set(r.eqnum, { eqnum: r.eqnum, egi: r.egi });
+  }
+  if (units.size) {
+    await prisma.equipment.createMany({
+      data: [...units.values()],
+      skipDuplicates: true,
+    });
+  }
+
+  // Activity codes (canonical, sudah dinormalisasi)
+  const codeSet = new Set<string>();
+  for (const r of valid) {
+    const c = canonicalCode(r.kode);
+    if (c) codeSet.add(c);
+  }
+  if (codeSet.size) {
+    await prisma.activityCode.createMany({
+      data: [...codeSet].map((code) => ({ code, description: code })),
+      skipDuplicates: true,
+    });
+  }
+
+  console.log(
+    `🗂️  reference: ${deptCodes.length} dept, ${units.size} unit, ${codeSet.size} activity code`
+  );
 }
 
 async function loadToStaging(filePath: string): Promise<number> {
@@ -156,20 +214,18 @@ async function loadToStaging(filePath: string): Promise<number> {
 }
 
 async function promoteValidStaging(): Promise<number> {
-  const validRows = await prisma.dayworkStaging.findMany({
+  const valid = await prisma.dayworkStaging.findMany({
     where: { status: StagingStatus.VALID },
   });
+  if (valid.length === 0) return 0;
 
-  if (validRows.length === 0) return 0;
-
-  // Bulk insert semua baris valid sekaligus (1 query, bukan per-baris),
-  // lalu bulk update status staging jadi PROMOTED (1 query).
+  // Bulk insert semua baris valid sekaligus (1 query), lalu bulk update status
+  // staging jadi PROMOTED (1 query).
   await prisma.dayworkRecord.createMany({
-    data: validRows.map((r) => ({
-      egi: r.egi!,
+    data: valid.map((r) => ({
       eqnum: r.eqnum!,
       aktivitas: r.aktivitas!,
-      kode: r.kode!,
+      kode: canonicalCode(r.kode)!,
       dept: r.dept!,
       tanggal: r.tanggal!,
       wh: r.wh!,
@@ -179,11 +235,11 @@ async function promoteValidStaging(): Promise<number> {
   });
 
   await prisma.dayworkStaging.updateMany({
-    where: { id: { in: validRows.map((r) => r.id) } },
+    where: { id: { in: valid.map((r) => r.id) } },
     data: { status: StagingStatus.PROMOTED },
   });
 
-  return validRows.length;
+  return valid.length;
 }
 
 async function main() {
@@ -223,6 +279,9 @@ async function main() {
       console.log(`  [${s.sourceSheet} baris ${s.sourceRow}] ${s.errors.join(", ")}`)
     );
   }
+
+  console.log("\n=== STEP 1.5: Build reference tables (departments, equipment, activity_codes) ===");
+  await buildReferenceData();
 
   console.log("\n=== STEP 2: Promote baris valid ke daywork_records ===");
   const promoted = await promoteValidStaging();

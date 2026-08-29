@@ -1,5 +1,9 @@
-// Tambahkan model-model ini ke schema.prisma project-mu
-// (atau jadikan file ini schema.prisma utama kalau project masih kosong)
+// KPP Daywork Dashboard — Prisma schema (Opsi B: flat fact + lookup/reference tables)
+//
+// Struktur "shared dimensions + per-menu fact tables":
+//   - Tabel dimensi BERSAMA (Department, Equipment, User) dipakai lintas menu.
+//   - Tiap menu punya fact table sendiri (DayworkRecord) + staging + lookup khusus.
+//   - DashboardWidget ditandai menuKey supaya layout draggable per-menu.
 
 generator client {
   provider = "prisma-client-js"
@@ -17,66 +21,112 @@ enum StagingStatus {
   PROMOTED
 }
 
-/// Tabel utama yang dibaca dashboard.
-/// 1 baris = 1 aktivitas unit pada 1 tanggal.
+// Shared dimensions (dipakai semua menu)
+
+/// Department / bidang (MIOP, MPMA, HSE, CDR, ...). Vocabulary terkontrol.
+model Department {
+  code            String          @id
+  name            String?
+  dayworkRecords  DayworkRecord[]
+
+  @@map("departments")
+}
+
+/// Unit alat berat. eqnum = nomor unit (EX221), egi = tipe/kategori (PC200).
+model Equipment {
+  eqnum           String          @id
+  egi             String
+  dayworkRecords  DayworkRecord[]
+
+  @@map("equipment")
+}
+
+/// User untuk kepemilikan layout dashboard & RBAC fase berikutnya.
+model User {
+  id              String          @id @default(cuid())
+  email           String          @unique
+  name            String?
+  role            String?
+  widgets         DashboardWidget[]
+
+  @@map("users")
+}
+
+// Daywork module
+
+/// Lookup kategori aktivitas daywork (vocabulary terkontrol).
+/// Menyatukan ejaan beda seperti "POST MINING" / "POST-MINING" jadi 1 kode.
+model ActivityCode {
+  code            String          @id
+  description     String?
+  dayworkRecords  DayworkRecord[]
+
+  @@map("activity_codes")
+}
+
+/// Tabel utama yang dibaca dashboard (1 baris = 1 aktivitas unit per tanggal).
+/// Kolom dept/kode/eqnum adalah FK ke tabel dimensi/lookup di atas.
 model DayworkRecord {
-  id          String   @id @default(cuid())
-  egi         String // tipe/kategori unit, mis. "PC200", "D-85SS", "Tower Lamp"
-  eqnum       String // nomor unit spesifik, mis. "EX221", "LD0420"
-  aktivitas   String // deskripsi pekerjaan, mis. "CONSTRUCT JALAN TOWEA 2"
-  kode        String // kategori aktivitas, mis. "ROAD MAINTENANCE", "BARGING"
-  dept        String // department, mis. "MIOP", "MPMA", "HSE", "CDR"
-  tanggal     DateTime @db.Date
-  wh          Decimal  @db.Decimal(10, 2) // working hours
-  costUsd     Decimal  @db.Decimal(14, 2)
-  sourceMonth String // "2026-01" dst — buat traceability asal data
-  createdAt   DateTime @default(now())
+  id              String          @id @default(cuid())
+  eqnum           String
+  aktivitas       String                 // deskripsi pekerjaan (teks bebas)
+  kode            String
+  dept            String
+  tanggal         DateTime        @db.Date
+  wh              Decimal         @db.Decimal(10, 2) // working hours
+  costUsd         Decimal         @db.Decimal(14, 2)
+  sourceMonth     String                 // "2026-01" dst — traceability
+  createdAt       DateTime        @default(now())
+
+  equipment       Equipment       @relation(fields: [eqnum], references: [eqnum])
+  activity        ActivityCode    @relation(fields: [kode], references: [code])
+  department      Department      @relation(fields: [dept], references: [code])
 
   @@index([tanggal])
   @@index([dept])
   @@index([kode])
-  @@index([egi])
+  @@index([eqnum])
   @@map("daywork_records")
 }
 
-/// Tabel transit sebelum data masuk ke DayworkRecord.
-/// Dipakai baik oleh script import awal ini, maupun nanti oleh
-/// fitur "import raw data kontraktor" di web app (fase berikutnya).
+/// Tabel transit sebelum data masuk ke DayworkRecord (sama untuk import awal & fitur upload nanti).
 model DayworkStaging {
-  id          String        @id @default(cuid())
-  egi         String?
-  eqnum       String?
-  aktivitas   String?
-  kode        String?
-  dept        String?
-  tanggal     DateTime?     @db.Date
-  wh          Decimal?      @db.Decimal(10, 2)
-  costUsd     Decimal?      @db.Decimal(14, 2)
-  sourceFile  String
-  sourceSheet String
-  sourceRow   Int
-  sourceMonth String
-  status      StagingStatus @default(PENDING)
-  errors      String[]      @default([])
-  createdAt   DateTime      @default(now())
+  id              String        @id @default(cuid())
+  egi             String?
+  eqnum           String?
+  aktivitas       String?
+  kode            String?
+  dept            String?
+  tanggal         DateTime?     @db.Date
+  wh              Decimal?      @db.Decimal(10, 2)
+  costUsd         Decimal?      @db.Decimal(14, 2)
+  sourceFile      String
+  sourceSheet     String
+  sourceRow       Int
+  sourceMonth     String
+  status          StagingStatus @default(PENDING)
+  errors          String[]      @default([])
+  createdAt       DateTime      @default(now())
 
   @@map("daywork_staging")
 }
 
-/// Nyimpen kustomisasi layout dashboard (posisi widget + jenis chart)
-/// per user, biar persist tiap kali dibuka lagi.
+/// Kustomisasi layout dashboard (posisi widget + jenis chart) per user & per menu.
 model DashboardWidget {
-  id           String   @id @default(cuid())
-  userId       String? // null = layout default/shared
-  widgetKey    String // "trend_wh" | "trend_cost" | "activity_contribution" | "dept_contribution" | "egi_total" | dst
-  chartType    String // "line" | "bar" | "pie"
-  positionX    Int
-  positionY    Int
-  width        Int
-  height       Int
-  filterConfig Json?
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String? // null = layout default/shared
+  menuKey         String   @default("daywork") // "daywork" | menu lain nanti
+  widgetKey       String   // "trend_wh" | "trend_cost" | "activity_contribution" | ...
+  chartType       String   // "line" | "bar" | "pie"
+  positionX       Int
+  positionY       Int
+  width           Int
+  height          Int
+  filterConfig    Json?
+  updatedAt       DateTime @updatedAt
 
-  @@unique([userId, widgetKey])
+  user            User?    @relation(fields: [userId], references: [id])
+
+  @@unique([userId, menuKey, widgetKey])
   @@map("dashboard_widgets")
 }
