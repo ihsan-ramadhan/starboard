@@ -1,0 +1,82 @@
+// Tambahkan model-model ini ke schema.prisma project-mu
+// (atau jadikan file ini schema.prisma utama kalau project masih kosong)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StagingStatus {
+  PENDING
+  VALID
+  ERROR
+  PROMOTED
+}
+
+/// Tabel utama yang dibaca dashboard.
+/// 1 baris = 1 aktivitas unit pada 1 tanggal.
+model DayworkRecord {
+  id          String   @id @default(cuid())
+  egi         String // tipe/kategori unit, mis. "PC200", "D-85SS", "Tower Lamp"
+  eqnum       String // nomor unit spesifik, mis. "EX221", "LD0420"
+  aktivitas   String // deskripsi pekerjaan, mis. "CONSTRUCT JALAN TOWEA 2"
+  kode        String // kategori aktivitas, mis. "ROAD MAINTENANCE", "BARGING"
+  dept        String // department, mis. "MIOP", "MPMA", "HSE", "CDR"
+  tanggal     DateTime @db.Date
+  wh          Decimal  @db.Decimal(10, 2) // working hours
+  costUsd     Decimal  @db.Decimal(14, 2)
+  sourceMonth String // "2026-01" dst — buat traceability asal data
+  createdAt   DateTime @default(now())
+
+  @@index([tanggal])
+  @@index([dept])
+  @@index([kode])
+  @@index([egi])
+  @@map("daywork_records")
+}
+
+/// Tabel transit sebelum data masuk ke DayworkRecord.
+/// Dipakai baik oleh script import awal ini, maupun nanti oleh
+/// fitur "import raw data kontraktor" di web app (fase berikutnya).
+model DayworkStaging {
+  id          String        @id @default(cuid())
+  egi         String?
+  eqnum       String?
+  aktivitas   String?
+  kode        String?
+  dept        String?
+  tanggal     DateTime?     @db.Date
+  wh          Decimal?      @db.Decimal(10, 2)
+  costUsd     Decimal?      @db.Decimal(14, 2)
+  sourceFile  String
+  sourceSheet String
+  sourceRow   Int
+  sourceMonth String
+  status      StagingStatus @default(PENDING)
+  errors      String[]      @default([])
+  createdAt   DateTime      @default(now())
+
+  @@map("daywork_staging")
+}
+
+/// Nyimpen kustomisasi layout dashboard (posisi widget + jenis chart)
+/// per user, biar persist tiap kali dibuka lagi.
+model DashboardWidget {
+  id           String   @id @default(cuid())
+  userId       String? // null = layout default/shared
+  widgetKey    String // "trend_wh" | "trend_cost" | "activity_contribution" | "dept_contribution" | "egi_total" | dst
+  chartType    String // "line" | "bar" | "pie"
+  positionX    Int
+  positionY    Int
+  width        Int
+  height       Int
+  filterConfig Json?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, widgetKey])
+  @@map("dashboard_widgets")
+}

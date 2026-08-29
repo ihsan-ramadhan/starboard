@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# build output
+.next/
+out/
+dist/
+build/
+
+# data files (binary, besar)
+assets/*.xlsx
+assets/*.xls
+
+# logs
+*.log
+npm-debug.log*
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
