@@ -1,62 +1,73 @@
 # Roadmap
 
-Status & rencana fase. **Fokus saat ini: MIOP / daywork** (dataset lain di MIOP
-menyusul; departemen lain menyusul setelah pola terbukti).
+Status & rencana fase. **Arah sekarang: no-code dynamic, demo-first, bertahap.**
+User cuma login + upload + atur widget, tidak sentuh DB/kode.
 
-## Status Sekarang (per sesi ini)
+> Pivot 2026-08-30: dari arsitektur Opsi B (skema terkontrol per-modul hardcode)
+> ke dynamic inference-based (lihat `architecture.md`). Data daywork lama (2.624
+> baris di project Supabase lama) dibuang; akan di-reimport lewat UI nanti.
 
-Selesai:
-- ✅ Prisma schema: dimensi bersama + `daywork_records` + lookup.
-- ✅ Import script: staging → validasi → promote (bulk), normalisasi `kode`.
-- ✅ Supabase project baru + migrasi `init` + data 2.624 baris ter-impor.
-- ✅ Scaffold Next.js: dep (Next 16, React 19, Recharts 3, react-grid-layout 2),
-  `tsconfig` Next-compatible, `next.config.mjs`, `next-env.d.ts`, `lib/` dasar.
-- ✅ Dokumentasi arsitektur (`docs/*.md`).
+## Status Sekarang
 
-Belum:
-- ⏳ Rename tabel ke prefix `miop_*` (lihat Phase 1).
-- ⏳ Platform shell + widget runtime + MIOP sebagai module pertama.
-- ⏳ Modul HSE / MPMA.
+Selesai (di project lama, akan di-reset):
+- ✅ Bootstrap awal + import daywork 2.624 baris (skema terkontrol).
+- ✅ Scaffold Next.js 16 + React 19 + Recharts 3 + react-grid-layout 2.
+- ✅ Dokumentasi arsitektur (sudah dipivot ke no-code dynamic).
 
-## Phase 1 — Platform + MIOP sebagai Module Pertama
+Sedang dikerjakan:
+- 🔧 Reset ke Supabase project baru (`lejeqlnbdvtmkozjufig`), bootstrap schema
+  auth + dept + dataset registry, implementasi auth (login-derived dept).
 
-1. **Rename skema ke konvensi module**: `daywork_records` → `miop_daywork_records`,
-   `activity_codes` → `miop_activity_codes` (migrasi + re-import; murah karena data
-   reproducible). Ini mematok konvensi sebelum kode dibangun di atas nama lama.
-2. **Extract platform**: `lib/query-runtime.ts` (QuerySpec → SQL aman),
-   `components/widgets/*` (kpi/timeseries/breakdown/table), `dashboard-grid`.
-3. **MIOP module**: `modules/miop/dataSources.ts`, `modules/miop/dashboard.ts`,
-   pindahkan query lama ke data source spec.
-4. **Shell**: `app/[dept]/page.tsx` + Department Switcher + Filter Context.
-5. **Layout persistence** via `dashboard_definitions` + `dashboard_widgets`.
-6. Verifikasi: dashboard MIOP jalan dengan drag/resize + switch chart + filter.
+## Phase 0: Bootstrap + Auth (SEDANG)
 
-> Milestone: satu departemen penuh berjalan di atas platform generik.
+1. **Reset Supabase baru**: buang migrasi lama, bootstrap schema baru.
+   Tabel: `Department`, `User`, `Session`, `DatasetRegistry`, `DatasetColumn`,
+   `DashboardWidget`. Seed dept `MIOP`/`HSE`/`MPMA` + 1 user demo per dept.
+2. **Auth**: login email+password (bcrypt + session cookie). `User.role` = dept.
+3. **Shell + navbar dinamis**: navbar baris-1 (app chrome fixed), baris-2 =
+   tab dataset dari `DatasetRegistry` (kosong saat user baru). CTA "Import Dataset".
 
-## Phase 2 — Tambah HSE (bukti modularitas)
+> Milestone: login MIOP → dashboard kosong dengan tombol import.
 
-- Buat `modules/hse/` (skema `hse_*`, data sources, dashboard definition).
-- **Tidak ada komponen React baru** — pakai widget runtime yang sudah ada.
-- Verifikasi: tanpa ubah platform, dashboard HSE muncul otomatis.
+## Phase 1: Import Engine (inference + dynamic DDL)
 
-## Phase 3 — MPMA + Registry DB-backed + Tauri Desktop Build
+1. Upload Excel via UI → `exceljs` parse (Node runtime, Route Handler/Action).
+2. Inference: sample stratified (awal+tengah+akhir) → tebak tipe kolom.
+3. Deteksi monthly-pack (gabung sheet JAN..AUG → 1 dataset + `source_month`).
+4. Dynamic DDL: `CREATE TABLE <dept>_<slug>_records` + `_staging` + `_<col>_dim`.
+   Identifier divalidasi regex sebelum dieksekusi.
+5. Isi `DatasetRegistry` + `DatasetColumn` (metadata navbar & widget picker).
+6. Promote baris valid ke `_records`; baris error ke `_staging`.
+7. Navbar nambah tab otomatis (display_name default dari nama file).
 
-- Module `mpma_*`.
-- Setup Tauri v2 wrapper (`@tauri-apps/cli`) untuk packaging desktop client (.exe Windows).
-- Pindahkan Department Registry & definisi dashboard ke DB (`data_sources`,
-  `dashboard_definitions`) bila ingin non-dev bisa nambah dept tanpa kode.
-- (Opsional) editor admin sederhana untuk susun dashboard.
+> Milestone: upload `2026_Summary_Daywork-Done.xlsx` → tabel `miop_daywork_records`
+> lahir + tab "Daywork" muncul, tanpa sentuh DB.
 
-## Phase 4 — Auth & RBAC per Departemen
+## Phase 2: Widget Runtime + Dashboard Grid
 
-- `UserDepartment` dipakai untuk gate departemen yg boleh dilihat user.
-- Login (next-auth credentials / custom JWT — lihat `PROJECT.md`).
-- Layout persistence terikat ke `userId` (sudah disiapkan di skema).
+1. `lib/query-runtime.ts`: QuerySpec sederhana (`{table, measure, dimension, timeField}`)
+   → SQL aman (identifier tervalidasi, value ber-parameter).
+2. Widget generik: `kpi`, `timeseries`, `breakdown`, `table` (Recharts).
+3. Widget picker: pilih dataset + kolom dari `DatasetColumn`.
+4. `dashboard-grid`: react-grid-layout + drag/resize → simpan `DashboardWidget`.
+
+> Milestone: user pilih chart, drag/resize, layout tersimpan per user.
+
+## Phase 3: Polish + Multi-Dept Proof
+
+- User HSE login → import dataset sendiri → navbar & dashboard terisi otomatis
+  (tanpa ubah platform). Bukti modularitas.
+- Rename dataset (display_name) dari UI.
+- Filter waktu dasar.
+
+## Phase 4: Desktop + Lanjutan
+
+- Tauri v2 wrapper (.exe ringan).
+- (Opsional) normalisasi alias, derived dim reuse lintas dataset.
 
 ## Keputusan Terbuka
 
-- Definisi dashboard di **kode (TS registry)** dulu, atau langsung **DB-backed**?
-  Rekomendasi: kode dulu (type-safe, gampang) → DB di Phase 3.
-- Isolasi data: **prefix tabel** (`hse_*`) cukup untuk v1; schema terpisah bila
-  butuh isolasi kuat (Phase 3+).
-- Repo rename: kosmetik saja (lihat pesan di chat); bisa dilakukan kapan pun.
+- Auth: **demo-first simple credentials** (sesuai diskusi), bukan next-auth dulu.
+- Deteksi monthly-pack: **via kolom tanggal** (Opsi B), paling robust.
+- Derived dimension: lahir otomatis dari kolom `category` flagged `isDimension`.
+- Repo rename: kosmetik, dilakukan kapan pun.
