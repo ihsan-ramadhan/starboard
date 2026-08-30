@@ -1,4 +1,4 @@
-// KPP Daywork Dashboard — Prisma schema (Opsi B: flat fact + lookup/reference tables)
+// Stargate Pacific Resources Daywork Dashboard — Prisma schema (Opsi B: flat fact + lookup/reference tables)
 //
 // Struktur "shared dimensions + per-menu fact tables":
 //   - Tabel dimensi BERSAMA (Department, Equipment, User) dipakai lintas menu.
