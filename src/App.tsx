@@ -10,11 +10,19 @@ import {
   type ImportWizardState,
   initialImportWizardState,
 } from "./components/ImportWizard";
-import type { SessionUser, DatasetRegistry } from "./types";
+import type { SessionUser, DatasetRegistry, DatasetDetail } from "./types";
 
 type AppContextType = {
   user: SessionUser;
   datasets: DatasetRegistry[];
+  datasetCache: Record<string, DatasetDetail>;
+  setDatasetCache: React.Dispatch<
+    React.SetStateAction<Record<string, DatasetDetail>>
+  >;
+  fetchDatasetDetail: (
+    key: string,
+    forceRefresh?: boolean
+  ) => Promise<DatasetDetail | null>;
   refreshDatasets: () => Promise<void>;
   onLogout: () => void;
   importState: ImportWizardState;
@@ -32,6 +40,9 @@ export function useApp() {
 function ProtectedLayout({
   user,
   datasets,
+  datasetCache,
+  setDatasetCache,
+  fetchDatasetDetail,
   refreshDatasets,
   onLogout,
   importState,
@@ -42,6 +53,9 @@ function ProtectedLayout({
       value={{
         user,
         datasets,
+        datasetCache,
+        setDatasetCache,
+        fetchDatasetDetail,
         refreshDatasets,
         onLogout,
         importState,
@@ -62,6 +76,9 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
   const [datasets, setDatasets] = useState<DatasetRegistry[]>([]);
+  const [datasetCache, setDatasetCache] = useState<
+    Record<string, DatasetDetail>
+  >({});
   const [checking, setChecking] = useState(true);
   const [importState, setImportState] = useState<ImportWizardState>(
     initialImportWizardState
@@ -77,6 +94,30 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to load datasets:", err);
+    }
+  }
+
+  async function fetchDatasetDetail(
+    key: string,
+    forceRefresh = false
+  ): Promise<DatasetDetail | null> {
+    if (!user) return null;
+    if (!forceRefresh && datasetCache[key]) {
+      return datasetCache[key];
+    }
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        const res = await invoke<DatasetDetail>("get_dataset_detail", {
+          dept: user.role,
+          key,
+        });
+        setDatasetCache((prev) => ({ ...prev, [key]: res }));
+        return res;
+      }
+      return null;
+    } catch (err) {
+      console.error("Failed to fetch dataset detail:", err);
+      return null;
     }
   }
 
@@ -112,6 +153,7 @@ export default function App() {
   function handleLogout() {
     setUser(null);
     setDatasets([]);
+    setDatasetCache({});
     setImportState(initialImportWizardState);
     localStorage.removeItem("starboard_user");
   }
@@ -139,7 +181,13 @@ export default function App() {
             <ProtectedLayout
               user={user}
               datasets={datasets}
-              refreshDatasets={() => loadDatasets(user.role)}
+              datasetCache={datasetCache}
+              setDatasetCache={setDatasetCache}
+              fetchDatasetDetail={fetchDatasetDetail}
+              refreshDatasets={async () => {
+                setDatasetCache({});
+                await loadDatasets(user.role);
+              }}
               onLogout={handleLogout}
               importState={importState}
               setImportState={setImportState}

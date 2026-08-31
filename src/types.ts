@@ -23,3 +23,10 @@ export type DatasetRegistry = {
   createdAt: string;
   columns?: DatasetColumn[];
 };
+
+export type DatasetDetail = {
+  dataset: DatasetRegistry;
+  columns: DatasetColumn[];
+  totalRows: number;
+  sampleRows: any[];
+};
