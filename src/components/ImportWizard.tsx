@@ -1,11 +1,25 @@
-"use client";
+import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 
-import { useRef, useState } from "react";
-import {
-  analyzeExcelAction,
-  importExcelAction,
-} from "@/app/actions/import";
-import type { DetectedSheet } from "@/lib/import-engine";
+export type InferredType = "numeric" | "date" | "category";
+
+export type ColumnSchema = {
+  colIndex: number;
+  rawName: string;
+  slug: string;
+  type: InferredType;
+};
+
+export type DetectedSheet = {
+  sheetName: string;
+  headerRowIndex: number;
+  dataStartRowIndex: number;
+  columns: ColumnSchema[];
+  rowCount: number;
+  fingerprint: string;
+  suggestedKey: string;
+};
 
 const TYPE_LABEL: Record<string, string> = {
   numeric: "num",
@@ -24,7 +38,12 @@ function colLetter(idx: number): string {
   return s;
 }
 
-export default function ImportWizard() {
+export default function ImportWizard({
+  onImportSuccess,
+}: {
+  onImportSuccess?: () => void;
+}) {
+  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -49,10 +68,14 @@ export default function ImportWizard() {
     setError(null);
     setAnalyzing(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("datasetKey", displayName);
-      const result = await analyzeExcelAction(fd);
+      const buffer = await file.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+      
+      const result = await invoke<DetectedSheet[]>("analyze_excel", {
+        bytes,
+        datasetKey: displayName || file.name.replace(/\.[^/.]+$/, ""),
+      });
+
       setSheets(result);
       const initSel: Record<string, boolean> = {};
       const initCols: Record<string, string[]> = {};
@@ -63,7 +86,7 @@ export default function ImportWizard() {
       setSelected(initSel);
       setSelectedCols(initCols);
     } catch (e: any) {
-      setError(e?.message || "Gagal menganalisis file.");
+      setError(e?.toString() || "Gagal menganalisis file.");
     } finally {
       setAnalyzing(false);
     }
@@ -106,17 +129,27 @@ export default function ImportWizard() {
     setError(null);
     setImporting(true);
     try {
+      const buffer = await file.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+
       const selCols: Record<string, string[]> = {};
       for (const name of valid) selCols[name] = selectedCols[name];
 
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("displayName", displayName);
-      fd.append("selectedSheets", JSON.stringify(valid));
-      fd.append("selectedColumns", JSON.stringify(selCols));
-      await importExcelAction(fd);
+      const res = await invoke<{ primaryKey: string; importedCount: number }>(
+        "import_excel",
+        {
+          bytes,
+          displayName,
+          datasetKey: displayName || file.name.replace(/\.[^/.]+$/, ""),
+          selectedSheets: valid,
+          selectedColumns: selCols,
+        }
+      );
+
+      if (onImportSuccess) onImportSuccess();
+      navigate(`/d/${res.primaryKey}?imported=${res.importedCount}`);
     } catch (e: any) {
-      setError(e?.message || "Gagal mengimpor file.");
+      setError(e?.toString() || "Gagal mengimpor file.");
       setImporting(false);
     }
   }

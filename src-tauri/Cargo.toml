@@ -1,0 +1,31 @@
+[package]
+name = "starboard"
+version = "0.1.0"
+description = "Starboard Desktop Dashboard"
+authors = ["PT Stargate Pacific Resources"]
+edition = "2021"
+
+[lib]
+name = "starboard_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.1.1", features = [] }
+tauri-plugin-opener = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1"] }
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+calamine = "0.26"
+bcrypt = "0.15"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+regex = "1.10"
+lazy_static = "1.4"
+rust_decimal = { version = "1.36", features = ["db-postgres"] }
