@@ -3,6 +3,9 @@ import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../App";
 import ConfirmModal from "../components/ConfirmModal";
+import KpiCard from "../components/widgets/KpiCard";
+import SchemaInspector from "../components/table/SchemaInspector";
+import RawTablePreview from "../components/table/RawTablePreview";
 import type { DatasetDetail, WidgetQueryResult, QuickKpi } from "../types";
 
 export default function DatasetPage() {
@@ -146,97 +149,33 @@ export default function DatasetPage() {
       )}
 
       <div className="kpi-grid">
-        <div className="kpi-card">
-          <div className="kpi-label">TOTAL WORKING HOURS (WH)</div>
-          <div className="kpi-value">
-            {kpi?.totalWh !== undefined && kpi.totalWh !== null
+        <KpiCard
+          label="TOTAL WORKING HOURS (WH)"
+          value={
+            kpi?.totalWh !== undefined && kpi.totalWh !== null
               ? kpi.totalWh.toLocaleString(undefined, { maximumFractionDigits: 1 })
-              : "..."}
-            <span className="kpi-unit"> Jam</span>
-          </div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">TOTAL ESTIMASI BIAYA (RP)</div>
-          <div className="kpi-value text-accent">
-            {kpi?.totalCostRp !== undefined && kpi.totalCostRp !== null
+              : null
+          }
+          unit="Jam"
+        />
+        <KpiCard
+          label="TOTAL ESTIMASI BIAYA (RP)"
+          value={
+            kpi?.totalCostRp !== undefined && kpi.totalCostRp !== null
               ? `Rp ${Math.round(kpi.totalCostRp).toLocaleString("id-ID")}`
-              : "..."}
-          </div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">TOTAL REKOR DATA</div>
-          <div className="kpi-value">
-            {totalRows.toLocaleString("id-ID")}
-            <span className="kpi-unit"> Baris</span>
-          </div>
-        </div>
+              : null
+          }
+          accent
+        />
+        <KpiCard
+          label="TOTAL REKOR DATA"
+          value={totalRows.toLocaleString("id-ID")}
+          unit="Baris"
+        />
       </div>
 
-      <div className="section-card">
-        <h3>Struktur Skema Terdeteksi (Otomatis)</h3>
-        <div className="columns-grid">
-          {columns.map((c) => (
-            <div key={c.id || c.name} className="column-pill">
-              <span className="col-name">{c.label || c.name}</span>
-              <span className={`col-type col-${c.type}`}>{c.type}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="section-card" style={{ marginTop: "20px" }}>
-        <div className="table-header-row">
-          <h3>Pratinjau Data Impor (15 baris pertama)</h3>
-          <span className="table-sub">Data aktual dari database Supabase</span>
-        </div>
-
-        <div className="table-wrapper">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {columns.map((c) => (
-                  <th key={c.id || c.name}>{c.label || c.name}</th>
-                ))}
-                <th>source_sheet</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sampleRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={columns.length + 1}
-                    style={{ textAlign: "center", padding: "24px" }}
-                  >
-                    Belum ada data dalam tabel ini.
-                  </td>
-                </tr>
-              ) : (
-                sampleRows.map((row, rIdx) => (
-                  <tr key={row.id || rIdx}>
-                    {columns.map((c) => {
-                      const val = row[c.name];
-                      let formatted = val;
-                      if (val instanceof Date) {
-                        formatted = val.toISOString().split("T")[0];
-                      } else if (typeof val === "number") {
-                        formatted = val.toLocaleString();
-                      } else if (val === null || val === undefined) {
-                        formatted = "-";
-                      }
-                      return <td key={c.id || c.name}>{formatted}</td>;
-                    })}
-                    <td>
-                      <span className="sheet-badge">
-                        {row.source_sheet || "-"}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <SchemaInspector columns={columns} />
+      <RawTablePreview columns={columns} sampleRows={sampleRows} />
 
       <ConfirmModal
         isOpen={showDeleteModal}
