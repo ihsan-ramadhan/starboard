@@ -47,9 +47,6 @@ export default async function DatasetPage({
 
   let sampleRows: any[] = [];
   let totalRows = 0;
-  const dimensions: { name: string; count: number }[] = [];
-
-  const deptLower = user.role.toLowerCase().replace(/[^a-z0-9]/g, "");
 
   try {
     const countRes = await prisma.$queryRawUnsafe<{ count: string }[]>(
@@ -60,25 +57,6 @@ export default async function DatasetPage({
     sampleRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "${dataset.tableName}" ORDER BY id ASC LIMIT 15`
     );
-
-    const dimTables = await prisma.$queryRawUnsafe<{ table_name: string }[]>(
-      `SELECT table_name FROM information_schema.tables 
-       WHERE table_schema = 'public' 
-       AND table_name LIKE '${deptLower}_%_dim'
-       ORDER BY table_name ASC`
-    );
-
-    for (const dt of dimTables) {
-      try {
-        const c = await prisma.$queryRawUnsafe<{ count: string }[]>(
-          `SELECT count(*)::text as count FROM "${dt.table_name}"`
-        );
-        dimensions.push({
-          name: dt.table_name,
-          count: parseInt(c[0]?.count ?? "0", 10),
-        });
-      } catch {}
-    }
   } catch (e) {
     console.error("Error reading table data:", e);
   }
@@ -103,25 +81,8 @@ export default async function DatasetPage({
 
         {imported && (
           <div className="success-banner">
-            Berhasil membuat tabel fact <code>{dataset.tableName}</code> dan
-            mengimpor <strong>{Number(imported).toLocaleString()} baris</strong>{" "}
-            data!
-          </div>
-        )}
-
-        {dimensions.length > 0 && (
-          <div className="section-card" style={{ marginBottom: "20px" }}>
-            <h3>Tabel Relasi / Dimensi Master Terdeteksi</h3>
-            <div className="columns-grid">
-              {dimensions.map((d, i) => (
-                <div key={i} className="column-pill">
-                  <span className="col-name">{d.name}</span>
-                  <span className="col-type col-numeric">
-                    {d.count} unit unik
-                  </span>
-                </div>
-              ))}
-            </div>
+            Berhasil membuat tabel <code>{dataset.tableName}</code> dan mengimpor{" "}
+            <strong>{Number(imported).toLocaleString()} baris</strong> data!
           </div>
         )}
 
@@ -150,7 +111,7 @@ export default async function DatasetPage({
                   {dataset.columns.map((c) => (
                     <th key={c.id}>{c.label || c.name}</th>
                   ))}
-                  <th>source_month</th>
+                  <th>source_sheet</th>
                 </tr>
               </thead>
               <tbody>
@@ -180,7 +141,7 @@ export default async function DatasetPage({
                       })}
                       <td>
                         <span className="badge-subtle">
-                          {row.source_month || "-"}
+                          {row.source_sheet || "-"}
                         </span>
                       </td>
                     </tr>
