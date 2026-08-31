@@ -1,8 +1,8 @@
 import type { DatasetColumn } from "../../types";
 
 export type RawTablePreviewProps = {
-  columns: DatasetColumn[];
-  sampleRows: any[];
+  readonly columns: readonly DatasetColumn[];
+  readonly sampleRows: readonly any[];
 };
 
 export default function RawTablePreview({

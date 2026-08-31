@@ -1,15 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export type ConfirmModalProps = {
-  isOpen: boolean;
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  isDestructive?: boolean;
-  isLoading?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
+  readonly isOpen: boolean;
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel?: string;
+  readonly cancelLabel?: string;
+  readonly isDestructive?: boolean;
+  readonly isLoading?: boolean;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
 };
 
 export default function ConfirmModal({
@@ -23,6 +23,21 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (isOpen) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (!isOpen || isLoading) return;
@@ -39,13 +54,15 @@ export default function ConfirmModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-backdrop" onClick={!isLoading ? onCancel : undefined}>
-      <div
-        className="modal-card"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
+    <dialog
+      ref={dialogRef}
+      className="modal-native"
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!isLoading) onCancel();
+      }}
+    >
+      <div className="modal-card">
         <div className="modal-header">
           <h3 className="modal-title">{title}</h3>
         </div>
@@ -71,6 +88,6 @@ export default function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

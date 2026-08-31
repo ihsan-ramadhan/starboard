@@ -7,28 +7,16 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import type { ChartDataPoint } from "./BarChartWidget";
+import type { ChartDataPoint } from "../../types";
+import { formatChartValue } from "./widgetUtils";
 
 export type LineChartWidgetProps = {
-  title: string;
-  data: ChartDataPoint[];
-  unit?: string;
-  color?: string;
-  isCurrency?: boolean;
+  readonly title: string;
+  readonly data: ChartDataPoint[];
+  readonly unit?: string;
+  readonly color?: string;
+  readonly isCurrency?: boolean;
 };
-
-function formatVal(val: number, isCurrency?: boolean, unit?: string): string {
-  if (isCurrency) {
-    if (val >= 1_000_000_000) {
-      return `Rp ${(val / 1_000_000_000).toFixed(1)} M`;
-    }
-    if (val >= 1_000_000) {
-      return `Rp ${(val / 1_000_000).toFixed(1)} Jt`;
-    }
-    return `Rp ${Math.round(val).toLocaleString("id-ID")}`;
-  }
-  return `${val.toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit ? ` ${unit}` : ""}`;
-}
 
 export default function LineChartWidget({
   title,
@@ -58,11 +46,11 @@ export default function LineChartWidget({
               />
               <YAxis
                 tick={{ fontSize: 11, fill: "#64748b" }}
-                tickFormatter={(v) => formatVal(v, isCurrency, unit)}
+                tickFormatter={(v) => formatChartValue(v, isCurrency, unit)}
                 width={70}
               />
               <Tooltip
-                formatter={(v: any) => [formatVal(Number(v), isCurrency, unit), "Total"]}
+                formatter={(v: any) => [formatChartValue(Number(v), isCurrency, unit), "Total"]}
                 labelStyle={{ fontWeight: 600, color: "#0f172a" }}
                 contentStyle={{
                   backgroundColor: "#ffffff",

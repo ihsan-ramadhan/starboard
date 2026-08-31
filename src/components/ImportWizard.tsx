@@ -54,7 +54,7 @@ function colLetter(idx: number): string {
   let n = idx;
   while (n > 0) {
     const r = (n - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
+    s = String.fromCodePoint(65 + r) + s;
     n = Math.floor((n - 1) / 26);
   }
   return s;
@@ -68,15 +68,17 @@ function cleanInitialName(fileName: string): string {
     .trim();
 }
 
+export type ImportWizardProps = {
+  readonly wizardState: ImportWizardState;
+  readonly setWizardState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
+  readonly onImportSuccess?: () => void;
+};
+
 export default function ImportWizard({
   wizardState,
   setWizardState,
   onImportSuccess,
-}: {
-  wizardState: ImportWizardState;
-  setWizardState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
-  onImportSuccess?: () => void;
-}) {
+}: ImportWizardProps) {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -252,7 +254,8 @@ export default function ImportWizard({
   return (
     <div className="wizard">
       {!sheets ? (
-        <div
+        <button
+          type="button"
           className={`dropzone-card${isDragging ? " dragging" : ""}${
             analyzing ? " analyzing" : ""
           }`}
@@ -291,7 +294,7 @@ export default function ImportWizard({
               Format yang didukung: .xlsx, .xls
             </div>
           </div>
-        </div>
+        </button>
       ) : (
         <div className="wizard-split-container">
           <div className="wizard-topbar">
@@ -380,8 +383,9 @@ export default function ImportWizard({
                   const pickedCols = selectedCols[s.sheetName] ?? [];
 
                   return (
-                    <div
+                    <button
                       key={s.sheetName}
+                      type="button"
                       className={`sheet-nav-item${isAct ? " active" : ""}${
                         isSel ? " checked" : ""
                       }`}
@@ -406,7 +410,7 @@ export default function ImportWizard({
                           {pickedCols.length}/{s.columns.length} kol
                         </div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>

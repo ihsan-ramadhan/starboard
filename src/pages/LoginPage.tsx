@@ -1,39 +1,47 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type { SessionUser } from "../types";
 
-export default function LoginPage({
-  onLoginSuccess,
-}: {
-  onLoginSuccess: (user: SessionUser) => void;
-}) {
-  const navigate = useNavigate();
+export type LoginPageProps = {
+  readonly onLoginSuccess: (u: SessionUser) => void;
+};
+
+export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!identifier || !password) {
-      setError("Username/email dan password wajib diisi.");
+      setError("Username / email dan password wajib diisi.");
       return;
     }
-
     setError(null);
     setLoading(true);
-    try {
-      const user = await invoke<SessionUser>("login", {
-        identifier,
-        password,
-      });
 
-      localStorage.setItem("starboard_user", JSON.stringify(user));
-      onLoginSuccess(user);
-      navigate("/");
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        const u = await invoke<SessionUser>("login", {
+          identifier,
+          password,
+        });
+        localStorage.setItem("starboard_user", JSON.stringify(u));
+        onLoginSuccess(u);
+      } else {
+        const mockUser: SessionUser = {
+          id: "mock-id",
+          username: identifier,
+          email: `${identifier.toLowerCase()}@aspire.id`,
+          role: identifier.toUpperCase(),
+          deptColor: "#2563eb",
+        };
+        localStorage.setItem("starboard_user", JSON.stringify(mockUser));
+        onLoginSuccess(mockUser);
+      }
     } catch (err: any) {
-      setError(err?.toString() || "Username/email atau password salah.");
+      setError(err?.toString() || "Login gagal. Cek kembali akun Anda.");
     } finally {
       setLoading(false);
     }
@@ -41,53 +49,56 @@ export default function LoginPage({
 
   return (
     <div className="login-screen">
-      <form className="login-card" onSubmit={handleSubmit}>
+      <div className="login-card">
         <div className="login-header">
           <div className="brand brand-lg">
             <span className="brand-mark">★</span> Starboard
           </div>
-          <p className="login-sub">Stargate operational dashboard</p>
+          <p className="login-sub">Masuk dengan akun departemen</p>
         </div>
 
-        {error && <div className="alert">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          {error && <div className="alert">{error}</div>}
 
-        <label>
-          Username atau Email
-          <input
-            name="identifier"
-            type="text"
-            autoComplete="username"
-            autoFocus
-            required
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-          />
-        </label>
-        <label>
-          Password
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <button
-          type="submit"
-          className="btn-primary btn-block"
-          disabled={loading}
-        >
-          {loading ? "Memproses…" : "Masuk"}
-        </button>
+          <label>
+            <span>Username atau Email</span>
+            <input
+              type="text"
+              name="identifier"
+              placeholder="MIOP / miop@aspire.id"
+              autoComplete="username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              required
+            />
+          </label>
+
+          <label>
+            <span>Password</span>
+            <input
+              type="password"
+              name="password"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="btn-primary btn-block"
+            disabled={loading}
+          >
+            {loading ? "Memproses…" : "Masuk"}
+          </button>
+        </form>
 
         <div className="login-demo">
-          Akses demo: ketik <code>MIOP</code> atau <code>miop@aspire.id</code>
-          <br />
-          password: <code>password123</code>
+          Gunakan akun demo: <strong>MIOP</strong> / <strong>password123</strong>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

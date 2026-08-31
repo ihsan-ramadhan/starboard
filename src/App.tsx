@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, useMemo, createContext, useContext } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import LoginPage from "./pages/LoginPage";
@@ -37,6 +37,23 @@ export function useApp() {
   return ctx;
 }
 
+type ProtectedLayoutProps = {
+  readonly user: SessionUser;
+  readonly datasets: DatasetRegistry[];
+  readonly datasetCache: Record<string, DatasetDetail>;
+  readonly setDatasetCache: React.Dispatch<
+    React.SetStateAction<Record<string, DatasetDetail>>
+  >;
+  readonly fetchDatasetDetail: (
+    key: string,
+    forceRefresh?: boolean
+  ) => Promise<DatasetDetail | null>;
+  readonly refreshDatasets: () => Promise<void>;
+  readonly onLogout: () => void;
+  readonly importState: ImportWizardState;
+  readonly setImportState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
+};
+
 function ProtectedLayout({
   user,
   datasets,
@@ -47,21 +64,34 @@ function ProtectedLayout({
   onLogout,
   importState,
   setImportState,
-}: AppContextType) {
+}: ProtectedLayoutProps) {
+  const contextValue = useMemo(
+    () => ({
+      user,
+      datasets,
+      datasetCache,
+      setDatasetCache,
+      fetchDatasetDetail,
+      refreshDatasets,
+      onLogout,
+      importState,
+      setImportState,
+    }),
+    [
+      user,
+      datasets,
+      datasetCache,
+      setDatasetCache,
+      fetchDatasetDetail,
+      refreshDatasets,
+      onLogout,
+      importState,
+      setImportState,
+    ]
+  );
+
   return (
-    <AppContext.Provider
-      value={{
-        user,
-        datasets,
-        datasetCache,
-        setDatasetCache,
-        fetchDatasetDetail,
-        refreshDatasets,
-        onLogout,
-        importState,
-        setImportState,
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       <div className="app-shell">
         <Navbar user={user} datasets={datasets} onLogout={onLogout} />
         <Outlet />
