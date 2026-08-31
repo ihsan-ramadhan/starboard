@@ -6,13 +6,14 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import type { ChartDataPoint } from "./BarChartWidget";
+import type { ChartDataPoint } from "../../types";
+import { formatChartValue } from "./widgetUtils";
 
 export type PieChartWidgetProps = {
-  title: string;
-  data: ChartDataPoint[];
-  unit?: string;
-  isCurrency?: boolean;
+  readonly title: string;
+  readonly data: ChartDataPoint[];
+  readonly unit?: string;
+  readonly isCurrency?: boolean;
 };
 
 const DEFAULT_COLORS = [
@@ -26,17 +27,8 @@ const DEFAULT_COLORS = [
   "#64748b",
 ];
 
-function formatVal(val: number, isCurrency?: boolean, unit?: string): string {
-  if (isCurrency) {
-    if (val >= 1_000_000_000) {
-      return `Rp ${(val / 1_000_000_000).toFixed(1)} M`;
-    }
-    if (val >= 1_000_000) {
-      return `Rp ${(val / 1_000_000).toFixed(1)} Jt`;
-    }
-    return `Rp ${Math.round(val).toLocaleString("id-ID")}`;
-  }
-  return `${val.toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit ? ` ${unit}` : ""}`;
+function renderLegendItem(value: string) {
+  return <span style={{ color: "#475569" }}>{value}</span>;
 }
 
 export default function PieChartWidget({
@@ -57,7 +49,7 @@ export default function PieChartWidget({
           <ResponsiveContainer width="100%" height={240}>
             <PieChart margin={{ top: 0, bottom: 20, left: 0, right: 0 }}>
               <Tooltip
-                formatter={(v: any) => [formatVal(Number(v), isCurrency, unit), "Total"]}
+                formatter={(v: any) => [formatChartValue(Number(v), isCurrency, unit), "Total"]}
                 contentStyle={{
                   backgroundColor: "#ffffff",
                   borderColor: "#e2e8f0",
@@ -69,9 +61,7 @@ export default function PieChartWidget({
                 verticalAlign="bottom"
                 align="center"
                 wrapperStyle={{ paddingTop: "10px", fontSize: "11.5px" }}
-                formatter={(value) => (
-                  <span style={{ color: "#475569" }}>{value}</span>
-                )}
+                formatter={renderLegendItem}
               />
               <Pie
                 data={data}
@@ -83,9 +73,9 @@ export default function PieChartWidget({
                 outerRadius={85}
                 paddingAngle={2}
               >
-                {data.map((_, index) => (
+                {data.map((entry, index) => (
                   <Cell
-                    key={`cell-${index}`}
+                    key={entry.groupKey || `cell-${index}`}
                     fill={DEFAULT_COLORS[index % DEFAULT_COLORS.length]}
                   />
                 ))}

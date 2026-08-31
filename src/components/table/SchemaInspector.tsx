@@ -1,7 +1,7 @@
 import type { DatasetColumn } from "../../types";
 
 export type SchemaInspectorProps = {
-  columns: DatasetColumn[];
+  readonly columns: readonly DatasetColumn[];
 };
 
 export default function SchemaInspector({ columns }: SchemaInspectorProps) {

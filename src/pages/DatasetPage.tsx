@@ -17,6 +17,66 @@ import type {
   ChartDataPoint,
 } from "../types";
 
+async function fetchKpiMetrics(datasetId: string): Promise<QuickKpi> {
+  const whRes = await invoke<WidgetQueryResult>("query_widget_data", {
+    req: {
+      datasetId,
+      metric: "SUM",
+      metricColumn: "wh",
+    },
+  });
+  const costRes = await invoke<WidgetQueryResult>("query_widget_data", {
+    req: {
+      datasetId,
+      metric: "SUM",
+      metricColumn: "cost_rp",
+    },
+  });
+
+  return {
+    totalWh: whRes.scalarValue ?? 0,
+    totalCostRp: costRes.scalarValue ?? 0,
+  };
+}
+
+async function fetchChartMetrics(datasetId: string): Promise<DatasetCharts> {
+  const barRes = await invoke<WidgetQueryResult>("query_widget_data", {
+    req: {
+      datasetId,
+      metric: "SUM",
+      metricColumn: "cost_rp",
+      groupByColumn: "kode",
+      limit: 6,
+    },
+  });
+
+  const lineRes = await invoke<WidgetQueryResult>("query_widget_data", {
+    req: {
+      datasetId,
+      metric: "SUM",
+      metricColumn: "wh",
+      groupByColumn: "month",
+      limit: 12,
+      orderByKey: true,
+    },
+  });
+
+  const pieRes = await invoke<WidgetQueryResult>("query_widget_data", {
+    req: {
+      datasetId,
+      metric: "COUNT",
+      groupByColumn: "dept",
+      limit: 5,
+    },
+  });
+
+  return {
+    barData: barRes.rows || [],
+    lineData: lineRes.rows || [],
+    pieData: pieRes.rows || [],
+  };
+}
+
 export default function DatasetPage() {
   const { user, refreshDatasets, datasetCache, setDatasetCache, fetchDatasetDetail } = useApp();
   const { key } = useParams<{ key: string }>();
@@ -65,77 +125,12 @@ export default function DatasetPage() {
       if (d?.dataset && (!d.kpi || !d.charts)) {
         try {
           if ((window as any).__TAURI_INTERNALS__) {
-            let computedKpi: QuickKpi = d.kpi ?? { totalWh: null, totalCostRp: null };
+            const computedKpi = d.kpi ? d.kpi : await fetchKpiMetrics(d.dataset.id);
+            const computedCharts = d.charts ? d.charts : await fetchChartMetrics(d.dataset.id);
 
-            if (!d.kpi) {
-              const whRes = await invoke<WidgetQueryResult>("query_widget_data", {
-                req: {
-                  datasetId: d.dataset.id,
-                  metric: "SUM",
-                  metricColumn: "wh",
-                },
-              });
-              const costRes = await invoke<WidgetQueryResult>("query_widget_data", {
-                req: {
-                  datasetId: d.dataset.id,
-                  metric: "SUM",
-                  metricColumn: "cost_rp",
-                },
-              });
-
-              computedKpi = {
-                totalWh: whRes.scalarValue ?? 0,
-                totalCostRp: costRes.scalarValue ?? 0,
-              };
-            }
-
-            let computedCharts: DatasetCharts = d.charts ?? {
-              barData: [],
-              lineData: [],
-              pieData: [],
-            };
-
-            if (!d.charts) {
-              const barRes = await invoke<WidgetQueryResult>("query_widget_data", {
-                req: {
-                  datasetId: d.dataset.id,
-                  metric: "SUM",
-                  metricColumn: "cost_rp",
-                  groupByColumn: "kode",
-                  limit: 6,
-                },
-              });
-
-              const lineRes = await invoke<WidgetQueryResult>("query_widget_data", {
-                req: {
-                  datasetId: d.dataset.id,
-                  metric: "SUM",
-                  metricColumn: "wh",
-                  groupByColumn: "month",
-                  limit: 12,
-                  orderByKey: true,
-                },
-              });
-
-              const pieRes = await invoke<WidgetQueryResult>("query_widget_data", {
-                req: {
-                  datasetId: d.dataset.id,
-                  metric: "COUNT",
-                  groupByColumn: "dept",
-                  limit: 5,
-                },
-              });
-
-              computedCharts = {
-                barData: barRes.rows || [],
-                lineData: lineRes.rows || [],
-                pieData: pieRes.rows || [],
-              };
-
-              setBarData(computedCharts.barData);
-              setLineData(computedCharts.lineData);
-              setPieData(computedCharts.pieData);
-            }
+            setBarData(computedCharts.barData);
+            setLineData(computedCharts.lineData);
+            setPieData(computedCharts.pieData);
 
             const updated: DatasetDetail = {
               ...d,
