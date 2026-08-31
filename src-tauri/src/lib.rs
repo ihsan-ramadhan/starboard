@@ -7,7 +7,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
-            // Load .env if present
             let _ = dotenvy::dotenv();
             Ok(())
         })
