@@ -3,10 +3,10 @@ import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../App";
 import ConfirmModal from "../components/ConfirmModal";
-import type { DatasetDetail } from "../types";
+import type { DatasetDetail, WidgetQueryResult, QuickKpi } from "../types";
 
 export default function DatasetPage() {
-  const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
+  const { user, refreshDatasets, datasetCache, setDatasetCache, fetchDatasetDetail } = useApp();
   const { key } = useParams<{ key: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -22,15 +22,49 @@ export default function DatasetPage() {
   useEffect(() => {
     async function load() {
       if (!key) return;
-      if (datasetCache[key]) {
-        setDetail(datasetCache[key]);
+      let d: DatasetDetail | null = datasetCache[key] ?? null;
+
+      if (!d) {
+        setLoading(true);
+        d = await fetchDatasetDetail(key, !!imported);
+        setDetail(d);
         setLoading(false);
-        return;
+      } else {
+        setDetail(d);
+        setLoading(false);
       }
-      setLoading(true);
-      const res = await fetchDatasetDetail(key, !!imported);
-      setDetail(res);
-      setLoading(false);
+
+      if (d?.dataset && !d.kpi) {
+        try {
+          if ((window as any).__TAURI_INTERNALS__) {
+            const whRes = await invoke<WidgetQueryResult>("query_widget_data", {
+              req: {
+                datasetId: d.dataset.id,
+                metric: "SUM",
+                metricColumn: "wh",
+              },
+            });
+            const costRes = await invoke<WidgetQueryResult>("query_widget_data", {
+              req: {
+                datasetId: d.dataset.id,
+                metric: "SUM",
+                metricColumn: "cost_rp",
+              },
+            });
+
+            const computedKpi: QuickKpi = {
+              totalWh: whRes.scalarValue ?? 0,
+              totalCostRp: costRes.scalarValue ?? 0,
+            };
+
+            const updated: DatasetDetail = { ...d, kpi: computedKpi };
+            setDetail(updated);
+            setDatasetCache((prev) => ({ ...prev, [key]: updated }));
+          }
+        } catch (e) {
+          console.error("Failed to fetch quick KPI:", e);
+        }
+      }
     }
     load();
   }, [key, imported, datasetCache]);
@@ -77,7 +111,7 @@ export default function DatasetPage() {
     );
   }
 
-  const { dataset, columns, totalRows, sampleRows } = detail;
+  const { dataset, columns, totalRows, sampleRows, kpi } = detail;
 
   return (
     <main className="content">
@@ -110,6 +144,33 @@ export default function DatasetPage() {
           <strong>{Number(imported).toLocaleString()} baris</strong> data!
         </div>
       )}
+
+      <div className="kpi-grid">
+        <div className="kpi-card">
+          <div className="kpi-label">TOTAL WORKING HOURS (WH)</div>
+          <div className="kpi-value">
+            {kpi?.totalWh !== undefined && kpi.totalWh !== null
+              ? kpi.totalWh.toLocaleString(undefined, { maximumFractionDigits: 1 })
+              : "..."}
+            <span className="kpi-unit"> Jam</span>
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">TOTAL ESTIMASI BIAYA (RP)</div>
+          <div className="kpi-value text-accent">
+            {kpi?.totalCostRp !== undefined && kpi.totalCostRp !== null
+              ? `Rp ${Math.round(kpi.totalCostRp).toLocaleString("id-ID")}`
+              : "..."}
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">TOTAL REKOR DATA</div>
+          <div className="kpi-value">
+            {totalRows.toLocaleString("id-ID")}
+            <span className="kpi-unit"> Baris</span>
+          </div>
+        </div>
+      </div>
 
       <div className="section-card">
         <h3>Struktur Skema Terdeteksi (Otomatis)</h3>

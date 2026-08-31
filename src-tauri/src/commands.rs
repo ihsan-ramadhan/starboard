@@ -76,6 +76,25 @@ pub struct DetectedSheet {
     pub suggested_key: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WidgetQueryRequest {
+    #[serde(rename = "datasetId")]
+    pub dataset_id: String,
+    pub metric: String,
+    #[serde(rename = "metricColumn")]
+    pub metric_column: Option<String>,
+    #[serde(rename = "groupByColumn")]
+    pub group_by_column: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WidgetQueryResult {
+    #[serde(rename = "scalarValue")]
+    pub scalar_value: Option<f64>,
+    pub rows: Vec<serde_json::Value>,
+}
+
 fn slugify(name: &str) -> String {
     let re = Regex::new(r"[^a-z0-9]+").unwrap();
     let lower = name.to_lowercase();
@@ -88,8 +107,6 @@ fn slugify(name: &str) -> String {
     }
 }
 
-
-
 #[tauri::command]
 pub async fn login(identifier: String, password: String) -> Result<SessionUser, String> {
     let client = get_client().await?;
@@ -98,24 +115,24 @@ pub async fn login(identifier: String, password: String) -> Result<SessionUser, 
             r#"
             SELECT u.id, u.username, u.email, u."passwordHash", u.role, d.color as dept_color
             FROM users u
-            LEFT JOIN departments d ON u.role = d.code
-            WHERE LOWER(u.username) = LOWER($1) OR LOWER(u.email) = LOWER($1)
+            LEFT JOIN departments d ON d.code = u.role
+            WHERE lower(u.email) = lower($1) OR lower(u.username) = lower($1)
             LIMIT 1
             "#,
             &[&identifier],
         )
         .await
-        .map_err(|e| format!("Query error: {}", e))?;
+        .map_err(|e| format!("DB error: {}", e))?;
 
     let row = match row {
         Some(r) => r,
-        None => return Err("Username atau password salah.".into()),
+        None => return Err("Pengguna tidak ditemukan.".to_string()),
     };
 
     let password_hash: String = row.get(3);
-    let valid = bcrypt::verify(&password, &password_hash).unwrap_or(false);
-    if !valid {
-        return Err("Username atau password salah.".into());
+    let is_valid = bcrypt::verify(&password, &password_hash).unwrap_or(false);
+    if !is_valid {
+        return Err("Password salah.".to_string());
     }
 
     Ok(SessionUser {
@@ -128,8 +145,8 @@ pub async fn login(identifier: String, password: String) -> Result<SessionUser, 
 }
 
 #[tauri::command]
-pub async fn logout() -> Result<(), String> {
-    Ok(())
+pub async fn logout() -> Result<bool, String> {
+    Ok(true)
 }
 
 #[tauri::command]
@@ -143,10 +160,10 @@ pub async fn get_datasets(dept: String) -> Result<Vec<DatasetRegistry>, String> 
     let rows = client
         .query(
             r#"
-            SELECT id, dept, key, "tableName", "displayName", "createdAt"::text
+            SELECT id, dept, key, "tableName", "displayName", "createdAt"
             FROM dataset_registry
             WHERE dept = $1
-            ORDER BY "createdAt" ASC
+            ORDER BY "createdAt" DESC
             "#,
             &[&dept],
         )
@@ -155,13 +172,23 @@ pub async fn get_datasets(dept: String) -> Result<Vec<DatasetRegistry>, String> 
 
     let list = rows
         .into_iter()
-        .map(|r| DatasetRegistry {
-            id: r.get(0),
-            dept: r.get(1),
-            key: r.get(2),
-            table_name: r.get(3),
-            display_name: r.get(4),
-            created_at: r.get(5),
+        .map(|r| {
+            let created_at: String = r
+                .try_get::<_, chrono::DateTime<chrono::Utc>>(5)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|_| {
+                    r.try_get::<_, chrono::NaiveDateTime>(5)
+                        .map(|ndt| ndt.to_string())
+                        .unwrap_or_default()
+                });
+            DatasetRegistry {
+                id: r.get(0),
+                dept: r.get(1),
+                key: r.get(2),
+                table_name: r.get(3),
+                display_name: r.get(4),
+                created_at,
+            }
         })
         .collect();
 
@@ -174,7 +201,7 @@ pub async fn get_dataset_detail(dept: String, key: String) -> Result<DatasetDeta
     let row = client
         .query_opt(
             r#"
-            SELECT id, dept, key, "tableName", "displayName", "createdAt"::text
+            SELECT id, dept, key, "tableName", "displayName", "createdAt"
             FROM dataset_registry
             WHERE dept = $1 AND key = $2
             LIMIT 1
@@ -182,20 +209,28 @@ pub async fn get_dataset_detail(dept: String, key: String) -> Result<DatasetDeta
             &[&dept, &key],
         )
         .await
-        .map_err(|e| format!("Query error: {}", e))?;
+        .map_err(|e| format!("Query dataset error: {}", e))?;
 
-    let ds_row = match row {
-        Some(r) => r,
-        None => return Err("Dataset not found".into()),
-    };
-
-    let dataset = DatasetRegistry {
-        id: ds_row.get(0),
-        dept: ds_row.get(1),
-        key: ds_row.get(2),
-        table_name: ds_row.get(3),
-        display_name: ds_row.get(4),
-        created_at: ds_row.get(5),
+    let dataset = match row {
+        Some(r) => {
+            let created_at: String = r
+                .try_get::<_, chrono::DateTime<chrono::Utc>>(5)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|_| {
+                    r.try_get::<_, chrono::NaiveDateTime>(5)
+                        .map(|ndt| ndt.to_string())
+                        .unwrap_or_default()
+                });
+            DatasetRegistry {
+                id: r.get(0),
+                dept: r.get(1),
+                key: r.get(2),
+                table_name: r.get(3),
+                display_name: r.get(4),
+                created_at,
+            }
+        }
+        None => return Err("Dataset tidak ditemukan.".to_string()),
     };
 
     let col_rows = client
@@ -275,7 +310,81 @@ pub async fn get_dataset_detail(dept: String, key: String) -> Result<DatasetDeta
     })
 }
 
+#[tauri::command]
+pub async fn query_widget_data(req: WidgetQueryRequest) -> Result<WidgetQueryResult, String> {
+    let client = get_client().await?;
 
+    let ds_row = client
+        .query_opt(
+            r#"SELECT "tableName" FROM dataset_registry WHERE id = $1"#,
+            &[&req.dataset_id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let table_name: String = match ds_row {
+        Some(r) => r.get(0),
+        None => return Err("Dataset not found".to_string()),
+    };
+
+    let col_name = req.metric_column.unwrap_or_else(|| "id".to_string());
+    let agg_func = match req.metric.to_uppercase().as_str() {
+        "SUM" => format!("COALESCE(SUM(\"{}\"::numeric), 0)", col_name),
+        "AVG" => format!("COALESCE(AVG(\"{}\"::numeric), 0)", col_name),
+        "MIN" => format!("COALESCE(MIN(\"{}\"::numeric), 0)", col_name),
+        "MAX" => format!("COALESCE(MAX(\"{}\"::numeric), 0)", col_name),
+        _ => "COUNT(*)::numeric".to_string(),
+    };
+
+    if let Some(group_col) = req.group_by_column {
+        let limit_val = req.limit.unwrap_or(10);
+        let sql = format!(
+            r#"
+            SELECT "{}" as group_key, {} as value
+            FROM "{}"
+            WHERE "{}" IS NOT NULL
+            GROUP BY "{}"
+            ORDER BY value DESC
+            LIMIT {}
+            "#,
+            group_col, agg_func, table_name, group_col, group_col, limit_val
+        );
+
+        let rows_db = client.query(&sql, &[]).await.map_err(|e| e.to_string())?;
+        let mut rows = Vec::new();
+        for r in rows_db {
+            let key_str: String = r.try_get(0).unwrap_or_else(|_| {
+                let dec: Option<rust_decimal::Decimal> = r.try_get(0).ok();
+                dec.map(|d| d.to_string()).unwrap_or_default()
+            });
+            let val_dec: rust_decimal::Decimal = r.try_get(1).unwrap_or_default();
+            let val_f64 = val_dec.to_string().parse::<f64>().unwrap_or(0.0);
+
+            rows.push(serde_json::json!({
+                "groupKey": key_str,
+                "value": val_f64
+            }));
+        }
+
+        Ok(WidgetQueryResult {
+            scalar_value: None,
+            rows,
+        })
+    } else {
+        let sql = format!(r#"SELECT {} FROM "{}""#, agg_func, table_name);
+        let row_db = client
+            .query_one(&sql, &[])
+            .await
+            .map_err(|e| e.to_string())?;
+        let val_dec: rust_decimal::Decimal = row_db.try_get(0).unwrap_or_default();
+        let val_f64 = val_dec.to_string().parse::<f64>().unwrap_or(0.0);
+
+        Ok(WidgetQueryResult {
+            scalar_value: Some(val_f64),
+            rows: Vec::new(),
+        })
+    }
+}
 
 #[tauri::command]
 pub async fn delete_dataset(dataset_id: String) -> Result<bool, String> {
@@ -369,28 +478,25 @@ fn find_header_row_in_range(range: &Range<Data>) -> Option<(usize, Vec<(usize, S
     let mut best_score = 2;
     let mut best: Option<(usize, Vec<(usize, String)>)> = None;
 
-    let rows_to_check = std::cmp::min(range.height(), 12);
-
-    for r in 0..rows_to_check {
-        let mut distinct = HashSet::new();
+    for r in 0..range.height().min(20) {
         let mut cols = Vec::new();
+        let mut text_count = 0;
 
         for c in 0..range.width() {
-            if let Some(val) = range.get((r, c)) {
-                let s = match val {
-                    Data::String(txt) => txt.trim().to_string(),
-                    Data::Int(i) => i.to_string(),
+            if let Some(cell) = range.get((r, c)) {
+                let text = match cell {
+                    Data::String(s) => s.trim().to_string(),
                     _ => "".to_string(),
                 };
-                if !s.is_empty() {
-                    cols.push((c + 1, s.clone()));
-                    distinct.insert(s);
+                if !text.is_empty() {
+                    text_count += 1;
+                    cols.push((c + 1, text));
                 }
             }
         }
 
-        if distinct.len() > best_score {
-            best_score = distinct.len();
+        if text_count >= best_score {
+            best_score = text_count;
             best = Some((r + 1, cols));
         }
     }
@@ -399,74 +505,86 @@ fn find_header_row_in_range(range: &Range<Data>) -> Option<(usize, Vec<(usize, S
 }
 
 #[tauri::command]
-pub async fn analyze_excel(bytes: Vec<u8>, dataset_key: String) -> Result<Vec<DetectedSheet>, String> {
+pub async fn analyze_excel(
+    bytes: Vec<u8>,
+    dataset_key: String,
+) -> Result<Vec<DetectedSheet>, String> {
     let cursor = Cursor::new(bytes);
     let mut workbook: Xlsx<_> = open_workbook_from_rs(cursor)
-        .map_err(|e| format!("Excel open error: {}", e))?;
+        .map_err(|e| format!("Gagal membaca format Excel: {}", e))?;
 
     let sheet_names = workbook.sheet_names().to_vec();
-    let mut detected = Vec::new();
+    let mut detected: Vec<DetectedSheet> = Vec::new();
 
     for name in sheet_names {
         if let Ok(range) = workbook.worksheet_range(&name) {
-            if let Some((header_row_1based, header_cols)) = find_header_row_in_range(&range) {
-                if header_cols.len() < 2 {
-                    continue;
-                }
+            if range.is_empty() || range.height() == 0 {
+                continue;
+            }
 
-                let data_start_row = header_row_1based + 1;
-                let header_idx_0based = header_row_1based - 1;
+            if let Some((header_idx_1based, cols_raw)) = find_header_row_in_range(&range) {
+                let header_idx_0based = header_idx_1based - 1;
+                let data_start_row = header_idx_1based + 1;
+                let mut used_slugs: HashSet<String> = HashSet::new();
+                let mut columns: Vec<ColumnSchema> = Vec::new();
 
-                let mut seen_slugs = HashMap::new();
-                let mut columns = Vec::new();
+                for (col_idx, raw_name) in cols_raw {
+                    let mut base_slug = slugify(&raw_name);
+                    if base_slug.is_empty() {
+                        base_slug = format!("col_{}", col_idx);
+                    }
+                    let mut slug = base_slug.clone();
+                    let mut counter = 2;
+                    while used_slugs.contains(&slug) {
+                        slug = format!("{}_{}", base_slug, counter);
+                        counter += 1;
+                    }
+                    used_slugs.insert(slug.clone());
 
-                for (col_idx_1based, raw_name) in &header_cols {
-                    let col_0based = col_idx_1based - 1;
-                    let mut samples = Vec::new();
-
-                    for r in (header_idx_0based + 1)..std::cmp::min(range.height(), header_idx_0based + 40) {
-                        if let Some(val) = range.get((r, col_0based)) {
-                            samples.push(val);
+                    let c_idx_0based = col_idx - 1;
+                    let mut sample_cells = Vec::new();
+                    for r in (header_idx_0based + 1)..range.height().min(header_idx_0based + 101) {
+                        if let Some(cell) = range.get((r, c_idx_0based)) {
+                            sample_cells.push(cell);
                         }
                     }
 
-                    let inferred_type = infer_type_from_cells(&samples);
-                    let mut base_slug = slugify(raw_name);
-                    if base_slug.is_empty() {
-                        base_slug = format!("col_{}", col_idx_1based);
-                    }
-
-                    let count = seen_slugs.entry(base_slug.clone()).or_insert(0);
-                    *count += 1;
-                    let unique_slug = if *count == 1 {
-                        base_slug
-                    } else {
-                        format!("{}_{}", base_slug, count)
-                    };
-
+                    let inferred = infer_type_from_cells(&sample_cells);
                     columns.push(ColumnSchema {
-                        col_index: *col_idx_1based,
-                        raw_name: raw_name.clone(),
-                        slug: unique_slug,
-                        r#type: inferred_type,
+                        col_index: col_idx,
+                        raw_name,
+                        slug,
+                        r#type: inferred,
                     });
                 }
 
-                let mut slug_list: Vec<String> = columns.iter().map(|c| c.slug.clone()).collect();
-                slug_list.sort();
-                let fingerprint = slug_list.join("|");
+                let mut row_count = 0;
+                for r in (header_idx_0based + 1)..range.height() {
+                    let mut has_data = false;
+                    for c in 0..range.width() {
+                        if let Some(cell) = range.get((r, c)) {
+                            if !matches!(cell, Data::Empty) {
+                                has_data = true;
+                                break;
+                            }
+                        }
+                    }
+                    if has_data {
+                        row_count += 1;
+                    }
+                }
 
-                let row_count = if range.height() > header_row_1based {
-                    range.height() - header_row_1based
-                } else {
-                    0
-                };
-
-                let suggested_key = format!("{}_{}", slugify(&dataset_key), slugify(&name));
+                let col_slugs_joined = columns
+                    .iter()
+                    .map(|c| c.slug.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let fingerprint = col_slugs_joined;
+                let suggested_key = format!("{}_{}", dataset_key, slugify(&name));
 
                 detected.push(DetectedSheet {
-                    sheet_name: name.clone(),
-                    header_row_index: header_row_1based,
+                    sheet_name: name,
+                    header_row_index: header_idx_1based,
                     data_start_row_index: data_start_row,
                     columns,
                     row_count,
@@ -480,14 +598,6 @@ pub async fn analyze_excel(bytes: Vec<u8>, dataset_key: String) -> Result<Vec<De
     Ok(detected)
 }
 
-#[derive(Serialize)]
-pub struct ImportResult {
-    #[serde(rename = "primaryKey")]
-    pub primary_key: String,
-    #[serde(rename = "importedCount")]
-    pub imported_count: usize,
-}
-
 #[tauri::command]
 pub async fn import_excel(
     bytes: Vec<u8>,
@@ -495,51 +605,49 @@ pub async fn import_excel(
     dataset_key: String,
     selected_sheets: Vec<String>,
     selected_columns: HashMap<String, Vec<String>>,
-) -> Result<ImportResult, String> {
-    let base_key = slugify(&dataset_key);
-    let client = get_client().await?;
-
+) -> Result<serde_json::Value, String> {
     let cursor = Cursor::new(bytes);
     let mut workbook: Xlsx<_> = open_workbook_from_rs(cursor)
-        .map_err(|e| format!("Excel open error: {}", e))?;
+        .map_err(|e| format!("Gagal membaca format Excel: {}", e))?;
 
+    let client = get_client().await?;
     let mut primary_key = "".to_string();
     let mut total_imported = 0;
+    let base_key = slugify(&dataset_key);
 
     for sheet_name in selected_sheets {
         if let Ok(range) = workbook.worksheet_range(&sheet_name) {
-            if let Some((header_row_1based, header_cols)) = find_header_row_in_range(&range) {
-                let header_idx_0based = header_row_1based - 1;
+            if let Some((header_idx_1based, cols_raw)) = find_header_row_in_range(&range) {
+                let header_idx_0based = header_idx_1based - 1;
+                let mut used_slugs: HashSet<String> = HashSet::new();
+                let mut all_columns: Vec<ColumnSchema> = Vec::new();
 
-                let mut seen_slugs = HashMap::new();
-                let mut all_columns = Vec::new();
+                for (col_idx, raw_name) in cols_raw {
+                    let mut base_slug = slugify(&raw_name);
+                    if base_slug.is_empty() {
+                        base_slug = format!("col_{}", col_idx);
+                    }
+                    let mut slug = base_slug.clone();
+                    let mut counter = 2;
+                    while used_slugs.contains(&slug) {
+                        slug = format!("{}_{}", base_slug, counter);
+                        counter += 1;
+                    }
+                    used_slugs.insert(slug.clone());
 
-                for (col_idx_1based, raw_name) in &header_cols {
-                    let col_0based = col_idx_1based - 1;
-                    let mut samples = Vec::new();
-                    for r in (header_idx_0based + 1)..std::cmp::min(range.height(), header_idx_0based + 40) {
-                        if let Some(val) = range.get((r, col_0based)) {
-                            samples.push(val);
+                    let c_idx_0based = col_idx - 1;
+                    let mut sample_cells = Vec::new();
+                    for r in (header_idx_0based + 1)..range.height().min(header_idx_0based + 101) {
+                        if let Some(cell) = range.get((r, c_idx_0based)) {
+                            sample_cells.push(cell);
                         }
                     }
-                    let inferred_type = infer_type_from_cells(&samples);
-                    let mut base_slug = slugify(raw_name);
-                    if base_slug.is_empty() {
-                        base_slug = format!("col_{}", col_idx_1based);
-                    }
-                    let count = seen_slugs.entry(base_slug.clone()).or_insert(0);
-                    *count += 1;
-                    let unique_slug = if *count == 1 {
-                        base_slug
-                    } else {
-                        format!("{}_{}", base_slug, count)
-                    };
-
+                    let inferred = infer_type_from_cells(&sample_cells);
                     all_columns.push(ColumnSchema {
-                        col_index: *col_idx_1based,
-                        raw_name: raw_name.clone(),
-                        slug: unique_slug,
-                        r#type: inferred_type,
+                        col_index: col_idx,
+                        raw_name,
+                        slug,
+                        r#type: inferred,
                     });
                 }
 
@@ -559,7 +667,6 @@ pub async fn import_excel(
                 if primary_key.is_empty() {
                     primary_key = key.clone();
                 }
-
 
                 let mut col_defs = Vec::new();
                 for col in &import_cols {
@@ -589,7 +696,6 @@ pub async fn import_excel(
                     .await
                     .map_err(|e| format!("Create table error: {}", e))?;
 
-
                 let ds_id = Uuid::new_v4().to_string();
                 let disp_title = if !display_name.is_empty() {
                     display_name.clone()
@@ -607,13 +713,11 @@ pub async fn import_excel(
                     &[&ds_id, &key, &table_name, &disp_title],
                 ).await.map_err(|e| format!("Registry upsert error: {}", e))?;
 
-
                 let ds_row = client.query_one(
                     r#"SELECT id FROM dataset_registry WHERE dept = 'MIOP' AND key = $1"#,
                     &[&key],
                 ).await.map_err(|e| format!("Fetch dataset id error: {}", e))?;
                 let true_ds_id: String = ds_row.get(0);
-
 
                 client.execute(
                     r#"DELETE FROM dataset_columns WHERE "datasetId" = $1"#,
@@ -631,7 +735,6 @@ pub async fn import_excel(
                         &[&col_id, &true_ds_id, &col.slug, &col.raw_name, &col.r#type, &is_dim],
                     ).await.ok();
                 }
-
 
                 let mut rows_data = Vec::new();
                 for r in (header_idx_0based + 1)..range.height() {
@@ -673,47 +776,50 @@ pub async fn import_excel(
                         insert_sql.push_str(&col_names.join(", "));
                         insert_sql.push_str(") VALUES ");
 
-                        let mut val_clauses = Vec::new();
-                        for row in chunk {
-                            let mut vals = Vec::new();
+                        let mut values_parts = Vec::new();
+                        let mut params_owned: Vec<String> = Vec::new();
+                        let mut p_idx = 1;
+
+                        for r_map in chunk {
+                            let mut row_placeholders = Vec::new();
                             for col in &import_cols {
-                                if let Some(v) = row.get(&col.slug) {
-                                    if col.r#type == "numeric" {
-                                        if let Ok(n) = v.parse::<f64>() {
-                                            vals.push(n.to_string());
-                                        } else {
-                                            vals.push("NULL".to_string());
-                                        }
-                                    } else {
-                                        let escaped = v.replace('\'', "''");
-                                        vals.push(format!("'{}'", escaped));
-                                    }
+                                let val_str = r_map.get(&col.slug).cloned().unwrap_or_default();
+                                if val_str.is_empty() {
+                                    row_placeholders.push("DEFAULT".to_string());
                                 } else {
-                                    vals.push("NULL".to_string());
+                                    row_placeholders.push(format!("${}", p_idx));
+                                    p_idx += 1;
+                                    params_owned.push(val_str);
                                 }
                             }
+                            row_placeholders.push(format!("${}", p_idx));
+                            p_idx += 1;
+                            params_owned.push(sheet_name.clone());
 
-                            let s_escaped = sheet_name.replace('\'', "''");
-                            vals.push(format!("'{}'", s_escaped));
-                            val_clauses.push(format!("({})", vals.join(", ")));
+                            values_parts.push(format!("({})", row_placeholders.join(", ")));
                         }
 
-                        insert_sql.push_str(&val_clauses.join(",\n"));
+                        insert_sql.push_str(&values_parts.join(", "));
+
+                        let params_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params_owned
+                            .iter()
+                            .map(|s| s as &(dyn tokio_postgres::types::ToSql + Sync))
+                            .collect();
 
                         client
-                            .execute(&insert_sql, &[])
+                            .execute(&insert_sql, &params_refs[..])
                             .await
                             .map_err(|e| format!("Batch insert error: {}", e))?;
-                        
-                        total_imported += chunk.len();
                     }
                 }
+
+                total_imported += rows_data.len();
             }
         }
     }
 
-    Ok(ImportResult {
-        primary_key: if primary_key.is_empty() { base_key } else { primary_key },
-        imported_count: total_imported,
-    })
+    Ok(serde_json::json!({
+        "primaryKey": primary_key,
+        "importedCount": total_imported
+    }))
 }
