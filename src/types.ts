@@ -24,9 +24,28 @@ export type DatasetRegistry = {
   columns?: DatasetColumn[];
 };
 
+export type QuickKpi = {
+  totalWh: number | null;
+  totalCostRp: number | null;
+};
+
 export type DatasetDetail = {
   dataset: DatasetRegistry;
   columns: DatasetColumn[];
   totalRows: number;
   sampleRows: any[];
+  kpi?: QuickKpi;
+};
+
+export type WidgetQueryRequest = {
+  datasetId: string;
+  metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
+  metricColumn?: string;
+  groupByColumn?: string;
+  limit?: number;
+};
+
+export type WidgetQueryResult = {
+  scalarValue?: number;
+  rows: Array<{ groupKey: string; value: number }>;
 };

@@ -19,6 +19,7 @@ pub fn run() {
             commands::analyze_excel,
             commands::import_excel,
             commands::delete_dataset,
+            commands::query_widget_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
