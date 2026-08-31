@@ -6,6 +6,10 @@ import HomePage from "./pages/HomePage";
 import ImportPage from "./pages/ImportPage";
 import DatasetPage from "./pages/DatasetPage";
 import { Navbar } from "./components/Navbar";
+import {
+  type ImportWizardState,
+  initialImportWizardState,
+} from "./components/ImportWizard";
 import type { SessionUser, DatasetRegistry } from "./types";
 
 type AppContextType = {
@@ -13,6 +17,8 @@ type AppContextType = {
   datasets: DatasetRegistry[];
   refreshDatasets: () => Promise<void>;
   onLogout: () => void;
+  importState: ImportWizardState;
+  setImportState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
 };
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -28,9 +34,20 @@ function ProtectedLayout({
   datasets,
   refreshDatasets,
   onLogout,
+  importState,
+  setImportState,
 }: AppContextType) {
   return (
-    <AppContext.Provider value={{ user, datasets, refreshDatasets, onLogout }}>
+    <AppContext.Provider
+      value={{
+        user,
+        datasets,
+        refreshDatasets,
+        onLogout,
+        importState,
+        setImportState,
+      }}
+    >
       <div className="app-shell">
         <Navbar user={user} datasets={datasets} onLogout={onLogout} />
         <Outlet />
@@ -46,6 +63,9 @@ export default function App() {
   });
   const [datasets, setDatasets] = useState<DatasetRegistry[]>([]);
   const [checking, setChecking] = useState(true);
+  const [importState, setImportState] = useState<ImportWizardState>(
+    initialImportWizardState
+  );
 
   async function loadDatasets(role: string) {
     try {
@@ -92,6 +112,7 @@ export default function App() {
   function handleLogout() {
     setUser(null);
     setDatasets([]);
+    setImportState(initialImportWizardState);
     localStorage.removeItem("starboard_user");
   }
 
@@ -120,6 +141,8 @@ export default function App() {
               datasets={datasets}
               refreshDatasets={() => loadDatasets(user.role)}
               onLogout={handleLogout}
+              importState={importState}
+              setImportState={setImportState}
             />
           }
         >

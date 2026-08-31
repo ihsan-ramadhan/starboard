@@ -2,7 +2,7 @@ import { useApp } from "../App";
 import ImportWizard from "../components/ImportWizard";
 
 export default function ImportPage() {
-  const { user, refreshDatasets } = useApp();
+  const { user, refreshDatasets, importState, setImportState } = useApp();
 
   return (
     <main className="content">
@@ -15,7 +15,11 @@ export default function ImportPage() {
             menambahkan menu baru ke dashboard.
           </p>
 
-          <ImportWizard onImportSuccess={refreshDatasets} />
+          <ImportWizard
+            wizardState={importState}
+            setWizardState={setImportState}
+            onImportSuccess={refreshDatasets}
+          />
         </div>
       </div>
     </main>
