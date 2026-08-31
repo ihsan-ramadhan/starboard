@@ -8,11 +8,20 @@ node_modules/
 .env.*
 !.env.example
 
-# build output
+# build output (web & Next legacy)
 .next/
 out/
 dist/
 build/
+*.tsbuildinfo
+
+# Rust / Tauri build artifacts & generated icons
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/Square*.png
 
 # data files (binary, besar)
 assets/*.xlsx
