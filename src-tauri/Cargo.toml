@@ -22,7 +22,7 @@ tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_j
 postgres-native-tls = "0.5"
 native-tls = "0.2"
 calamine = "0.26"
-bcrypt = "0.15"
+bcrypt = "0.19"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
