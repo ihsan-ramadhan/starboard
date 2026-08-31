@@ -3,48 +3,37 @@ import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../App";
 import ConfirmModal from "../components/ConfirmModal";
-import type { DatasetRegistry, DatasetColumn } from "../types";
-
-type DatasetDetail = {
-  dataset: DatasetRegistry;
-  columns: DatasetColumn[];
-  totalRows: number;
-  sampleRows: any[];
-};
+import type { DatasetDetail } from "../types";
 
 export default function DatasetPage() {
-  const { user, refreshDatasets } = useApp();
+  const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
   const { key } = useParams<{ key: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const imported = searchParams.get("imported");
 
-  const [detail, setDetail] = useState<DatasetDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<DatasetDetail | null>(() => {
+    return key ? datasetCache[key] ?? null : null;
+  });
+  const [loading, setLoading] = useState(!detail);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
       if (!key) return;
-      setLoading(true);
-      try {
-        if ((window as any).__TAURI_INTERNALS__) {
-          const res = await invoke<DatasetDetail>("get_dataset_detail", {
-            dept: user.role,
-            key,
-          });
-          setDetail(res);
-        }
-      } catch (err) {
-        console.error(err);
-        setDetail(null);
-      } finally {
+      if (datasetCache[key]) {
+        setDetail(datasetCache[key]);
         setLoading(false);
+        return;
       }
+      setLoading(true);
+      const res = await fetchDatasetDetail(key, !!imported);
+      setDetail(res);
+      setLoading(false);
     }
     load();
-  }, [user.role, key]);
+  }, [key, imported, datasetCache]);
 
   async function handleDeleteDataset() {
     if (!detail?.dataset) return;
@@ -66,7 +55,7 @@ export default function DatasetPage() {
     }
   }
 
-  if (loading) {
+  if (loading && !detail) {
     return (
       <main className="content">
         <div className="hint">Memuat dataset…</div>
