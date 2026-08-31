@@ -79,6 +79,8 @@ pub struct WidgetQueryRequest {
     #[serde(rename = "groupByColumn")]
     pub group_by_column: Option<String>,
     pub limit: Option<i64>,
+    #[serde(rename = "orderByKey")]
+    pub order_by_key: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

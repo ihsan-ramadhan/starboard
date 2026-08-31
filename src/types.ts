@@ -29,12 +29,24 @@ export type QuickKpi = {
   totalCostRp: number | null;
 };
 
+export type ChartDataPoint = {
+  groupKey: string;
+  value: number;
+};
+
+export type DatasetCharts = {
+  barData: ChartDataPoint[];
+  lineData: ChartDataPoint[];
+  pieData: ChartDataPoint[];
+};
+
 export type DatasetDetail = {
   dataset: DatasetRegistry;
   columns: DatasetColumn[];
   totalRows: number;
   sampleRows: any[];
   kpi?: QuickKpi;
+  charts?: DatasetCharts;
 };
 
 export type WidgetQueryRequest = {
@@ -43,6 +55,7 @@ export type WidgetQueryRequest = {
   metricColumn?: string;
   groupByColumn?: string;
   limit?: number;
+  orderByKey?: boolean;
 };
 
 export type WidgetQueryResult = {

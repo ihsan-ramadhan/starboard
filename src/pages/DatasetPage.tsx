@@ -4,9 +4,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../App";
 import ConfirmModal from "../components/ConfirmModal";
 import KpiCard from "../components/widgets/KpiCard";
+import BarChartWidget from "../components/widgets/BarChartWidget";
+import LineChartWidget from "../components/widgets/LineChartWidget";
+import PieChartWidget from "../components/widgets/PieChartWidget";
 import SchemaInspector from "../components/table/SchemaInspector";
 import RawTablePreview from "../components/table/RawTablePreview";
-import type { DatasetDetail, WidgetQueryResult, QuickKpi } from "../types";
+import type {
+  DatasetDetail,
+  WidgetQueryResult,
+  QuickKpi,
+  DatasetCharts,
+  ChartDataPoint,
+} from "../types";
 
 export default function DatasetPage() {
   const { user, refreshDatasets, datasetCache, setDatasetCache, fetchDatasetDetail } = useApp();
@@ -15,9 +24,20 @@ export default function DatasetPage() {
   const navigate = useNavigate();
   const imported = searchParams.get("imported");
 
+  const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
+  const [barData, setBarData] = useState<ChartDataPoint[]>(() => {
+    return key && datasetCache[key]?.charts?.barData ? datasetCache[key].charts.barData : [];
+  });
+  const [lineData, setLineData] = useState<ChartDataPoint[]>(() => {
+    return key && datasetCache[key]?.charts?.lineData ? datasetCache[key].charts.lineData : [];
+  });
+  const [pieData, setPieData] = useState<ChartDataPoint[]>(() => {
+    return key && datasetCache[key]?.charts?.pieData ? datasetCache[key].charts.pieData : [];
+  });
+
   const [loading, setLoading] = useState(!detail);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -34,38 +54,99 @@ export default function DatasetPage() {
         setLoading(false);
       } else {
         setDetail(d);
+        if (d.charts) {
+          setBarData(d.charts.barData);
+          setLineData(d.charts.lineData);
+          setPieData(d.charts.pieData);
+        }
         setLoading(false);
       }
 
-      if (d?.dataset && !d.kpi) {
+      if (d?.dataset && (!d.kpi || !d.charts)) {
         try {
           if ((window as any).__TAURI_INTERNALS__) {
-            const whRes = await invoke<WidgetQueryResult>("query_widget_data", {
-              req: {
-                datasetId: d.dataset.id,
-                metric: "SUM",
-                metricColumn: "wh",
-              },
-            });
-            const costRes = await invoke<WidgetQueryResult>("query_widget_data", {
-              req: {
-                datasetId: d.dataset.id,
-                metric: "SUM",
-                metricColumn: "cost_rp",
-              },
-            });
+            let computedKpi: QuickKpi = d.kpi ?? { totalWh: null, totalCostRp: null };
 
-            const computedKpi: QuickKpi = {
-              totalWh: whRes.scalarValue ?? 0,
-              totalCostRp: costRes.scalarValue ?? 0,
+            if (!d.kpi) {
+              const whRes = await invoke<WidgetQueryResult>("query_widget_data", {
+                req: {
+                  datasetId: d.dataset.id,
+                  metric: "SUM",
+                  metricColumn: "wh",
+                },
+              });
+              const costRes = await invoke<WidgetQueryResult>("query_widget_data", {
+                req: {
+                  datasetId: d.dataset.id,
+                  metric: "SUM",
+                  metricColumn: "cost_rp",
+                },
+              });
+
+              computedKpi = {
+                totalWh: whRes.scalarValue ?? 0,
+                totalCostRp: costRes.scalarValue ?? 0,
+              };
+            }
+
+            let computedCharts: DatasetCharts = d.charts ?? {
+              barData: [],
+              lineData: [],
+              pieData: [],
             };
 
-            const updated: DatasetDetail = { ...d, kpi: computedKpi };
+            if (!d.charts) {
+              const barRes = await invoke<WidgetQueryResult>("query_widget_data", {
+                req: {
+                  datasetId: d.dataset.id,
+                  metric: "SUM",
+                  metricColumn: "cost_rp",
+                  groupByColumn: "kode",
+                  limit: 6,
+                },
+              });
+
+              const lineRes = await invoke<WidgetQueryResult>("query_widget_data", {
+                req: {
+                  datasetId: d.dataset.id,
+                  metric: "SUM",
+                  metricColumn: "wh",
+                  groupByColumn: "month",
+                  limit: 12,
+                  orderByKey: true,
+                },
+              });
+
+              const pieRes = await invoke<WidgetQueryResult>("query_widget_data", {
+                req: {
+                  datasetId: d.dataset.id,
+                  metric: "COUNT",
+                  groupByColumn: "dept",
+                  limit: 5,
+                },
+              });
+
+              computedCharts = {
+                barData: barRes.rows || [],
+                lineData: lineRes.rows || [],
+                pieData: pieRes.rows || [],
+              };
+
+              setBarData(computedCharts.barData);
+              setLineData(computedCharts.lineData);
+              setPieData(computedCharts.pieData);
+            }
+
+            const updated: DatasetDetail = {
+              ...d,
+              kpi: computedKpi,
+              charts: computedCharts,
+            };
             setDetail(updated);
             setDatasetCache((prev) => ({ ...prev, [key]: updated }));
           }
         } catch (e) {
-          console.error("Failed to fetch quick KPI:", e);
+          console.error("Failed to fetch widget data:", e);
         }
       }
     }
@@ -128,12 +209,28 @@ export default function DatasetPage() {
           </p>
         </div>
         <div className="dataset-actions">
+          <div className="view-toggle">
+            <button
+              type="button"
+              className={`toggle-btn${activeTab === "dashboard" ? " active" : ""}`}
+              onClick={() => setActiveTab("dashboard")}
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              className={`toggle-btn${activeTab === "data" ? " active" : ""}`}
+              onClick={() => setActiveTab("data")}
+            >
+              Tabel Data
+            </button>
+          </div>
           <button
             type="button"
             className="btn-danger-outline"
             onClick={() => setShowDeleteModal(true)}
           >
-            Hapus Dataset
+            Hapus
           </button>
           <Link to="/import" className="btn-ghost">
             + Import File Lain
@@ -148,34 +245,59 @@ export default function DatasetPage() {
         </div>
       )}
 
-      <div className="kpi-grid">
-        <KpiCard
-          label="TOTAL WORKING HOURS (WH)"
-          value={
-            kpi?.totalWh !== undefined && kpi.totalWh !== null
-              ? kpi.totalWh.toLocaleString(undefined, { maximumFractionDigits: 1 })
-              : null
-          }
-          unit="Jam"
-        />
-        <KpiCard
-          label="TOTAL ESTIMASI BIAYA (RP)"
-          value={
-            kpi?.totalCostRp !== undefined && kpi.totalCostRp !== null
-              ? `Rp ${Math.round(kpi.totalCostRp).toLocaleString("id-ID")}`
-              : null
-          }
-          accent
-        />
-        <KpiCard
-          label="TOTAL REKOR DATA"
-          value={totalRows.toLocaleString("id-ID")}
-          unit="Baris"
-        />
-      </div>
+      {activeTab === "dashboard" ? (
+        <div className="dashboard-container">
+          <div className="kpi-grid">
+            <KpiCard
+              label="TOTAL WORKING HOURS (WH)"
+              value={
+                kpi?.totalWh !== undefined && kpi.totalWh !== null
+                  ? kpi.totalWh.toLocaleString(undefined, { maximumFractionDigits: 1 })
+                  : null
+              }
+              unit="Jam"
+            />
+            <KpiCard
+              label="TOTAL ESTIMASI BIAYA (RP)"
+              value={
+                kpi?.totalCostRp !== undefined && kpi.totalCostRp !== null
+                  ? `Rp ${Math.round(kpi.totalCostRp).toLocaleString("id-ID")}`
+                  : null
+              }
+              accent
+            />
+            <KpiCard
+              label="TOTAL REKOR DATA"
+              value={totalRows.toLocaleString("id-ID")}
+              unit="Baris"
+            />
+          </div>
 
-      <SchemaInspector columns={columns} />
-      <RawTablePreview columns={columns} sampleRows={sampleRows} />
+          <div className="charts-grid">
+            <BarChartWidget
+              title="Breakdown Biaya Berdasarkan Kode Aktivitas"
+              data={barData}
+              isCurrency
+            />
+            <LineChartWidget
+              title="Tren Jam Kerja (WH) per Bulan"
+              data={lineData}
+              unit="Jam"
+              color="#16a34a"
+            />
+            <PieChartWidget
+              title="Distribusi Rekor Berdasarkan Departemen"
+              data={pieData}
+              unit="Rekor"
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="data-view-container">
+          <SchemaInspector columns={columns} />
+          <RawTablePreview columns={columns} sampleRows={sampleRows} />
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={showDeleteModal}
