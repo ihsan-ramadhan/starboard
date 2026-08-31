@@ -1,6 +1,8 @@
 mod db;
+mod types;
+mod excel;
+mod analytics;
 mod commands;
-
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
