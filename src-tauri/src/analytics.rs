@@ -28,25 +28,28 @@ pub async fn execute_widget_query(req: WidgetQueryRequest) -> Result<WidgetQuery
 
     if let Some(group_col) = req.group_by_column {
         let limit_val = req.limit.unwrap_or(10);
+        let order_clause = if req.order_by_key.unwrap_or(false) {
+            format!("\"{}\" ASC", group_col)
+        } else {
+            "value DESC".to_string()
+        };
+
         let sql = format!(
             r#"
-            SELECT "{}" as group_key, {} as value
-            FROM "{}"
-            WHERE "{}" IS NOT NULL
-            GROUP BY "{}"
-            ORDER BY value DESC
-            LIMIT {}
+            SELECT "{0}"::text as group_key, {1} as value
+            FROM "{2}"
+            WHERE "{0}" IS NOT NULL AND "{0}"::text != ''
+            GROUP BY "{0}"
+            ORDER BY {3}
+            LIMIT {4}
             "#,
-            group_col, agg_func, table_name, group_col, group_col, limit_val
+            group_col, agg_func, table_name, order_clause, limit_val
         );
 
         let rows_db = client.query(&sql, &[]).await.map_err(|e| e.to_string())?;
         let mut rows = Vec::new();
         for r in rows_db {
-            let key_str: String = r.try_get(0).unwrap_or_else(|_| {
-                let dec: Option<rust_decimal::Decimal> = r.try_get(0).ok();
-                dec.map(|d| d.to_string()).unwrap_or_default()
-            });
+            let key_str: String = r.try_get(0).unwrap_or_default();
             let val_dec: rust_decimal::Decimal = r.try_get(1).unwrap_or_default();
             let val_f64 = val_dec.to_string().parse::<f64>().unwrap_or(0.0);
 

@@ -140,10 +140,8 @@ a {
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 36px;
-  max-width: 1400px;
+  padding: 20px 24px;
   width: 100%;
-  margin: 0 auto;
 }
 
 .empty-state {
@@ -802,6 +800,88 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.view-toggle {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: none;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s ease;
+}
+
+.toggle-btn:hover {
+  color: var(--fg);
+}
+
+.toggle-btn.active {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+.widget-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.widget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.widget-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0;
+}
+
+.widget-body {
+  flex: 1;
+  min-height: 240px;
+}
+
+.widget-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--fg-subtle);
+  font-size: 13px;
 }
 
 .dataset-title {
