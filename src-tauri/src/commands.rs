@@ -201,12 +201,15 @@ pub async fn get_dataset_detail(dept: String, key: String) -> Result<DatasetDeta
     let col_rows = client
         .query(
             r#"
-            SELECT id, name, label, type, "isDimension"
-            FROM dataset_columns
-            WHERE "datasetId" = $1
-            ORDER BY id ASC
+            SELECT c.id, c.name, c.label, c.type, c."isDimension"
+            FROM dataset_columns c
+            JOIN information_schema.columns ic
+              ON ic.table_name = $2
+             AND ic.column_name = c.name
+            WHERE c."datasetId" = $1
+            ORDER BY ic.ordinal_position ASC
             "#,
-            &[&dataset.id],
+            &[&dataset.id, &dataset.table_name],
         )
         .await
         .map_err(|e| format!("Query columns error: {}", e))?;
