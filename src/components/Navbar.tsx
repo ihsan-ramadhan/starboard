@@ -1,18 +1,37 @@
-import Link from "next/link";
-import { logoutAction } from "@/app/actions/auth";
-import type { SessionUser } from "@/lib/auth";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
+import type { SessionUser } from "../types";
 
 type DatasetTab = { key: string; displayName: string };
 
 export function Navbar({
   user,
   datasets,
-  activeKey,
+  onLogout,
 }: {
   user: SessionUser;
   datasets: DatasetTab[];
-  activeKey?: string;
+  onLogout?: () => void;
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeKey = location.pathname.startsWith("/d/")
+    ? location.pathname.replace("/d/", "")
+    : undefined;
+
+  async function handleLogout() {
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        await invoke("logout");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    localStorage.removeItem("starboard_user");
+    if (onLogout) onLogout();
+    navigate("/login");
+  }
+
   return (
     <header className="navbar">
       <div className="navbar-bar1">
@@ -27,11 +46,9 @@ export function Navbar({
         </span>
         <div className="navbar-spacer" />
         <span className="user-name">{user.username}</span>
-        <form action={logoutAction}>
-          <button type="submit" className="btn-ghost">
-            Logout
-          </button>
-        </form>
+        <button type="button" className="btn-ghost" onClick={handleLogout}>
+          Logout
+        </button>
       </div>
 
       <nav className="navbar-bar2">
@@ -41,14 +58,17 @@ export function Navbar({
           datasets.map((d) => (
             <Link
               key={d.key}
-              href={`/d/${d.key}`}
+              to={`/d/${d.key}`}
               className={`nav-tab${activeKey === d.key ? " active" : ""}`}
             >
               {d.displayName}
             </Link>
           ))
         )}
-        <Link href="/import" className="nav-tab import">
+        <Link
+          to="/import"
+          className={`nav-tab import${location.pathname === "/import" ? " active" : ""}`}
+        >
           + Import Dataset
         </Link>
       </nav>
