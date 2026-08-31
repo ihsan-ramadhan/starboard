@@ -1,0 +1,105 @@
+import { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
+import ConfirmModal from "./ConfirmModal";
+import type { SessionUser } from "../types";
+
+type DatasetTab = { key: string; displayName: string };
+
+export function Navbar({
+  user,
+  datasets,
+  onLogout,
+}: {
+  user: SessionUser;
+  datasets: DatasetTab[];
+  onLogout?: () => void;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const activeKey = location.pathname.startsWith("/d/")
+    ? location.pathname.replace("/d/", "")
+    : undefined;
+
+  async function handleConfirmLogout() {
+    setIsLoggingOut(true);
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        await invoke("logout");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+      localStorage.removeItem("starboard_user");
+      if (onLogout) onLogout();
+      navigate("/login");
+    }
+  }
+
+  return (
+    <>
+      <header className="navbar">
+        <div className="navbar-bar1">
+          <div className="brand">
+            <span className="brand-mark">★</span> Starboard
+          </div>
+          <span
+            className="dept-badge"
+            style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
+          >
+            {user.role}
+          </span>
+          <div className="navbar-spacer" />
+          <span className="user-name">{user.username}</span>
+          <button
+            type="button"
+            className="btn-danger-outline"
+            style={{ padding: "4px 10px", fontSize: "13px" }}
+            onClick={() => setShowLogoutModal(true)}
+          >
+            Logout
+          </button>
+        </div>
+
+        <nav className="navbar-bar2">
+          {datasets.length === 0 ? (
+            <span className="nav-empty">No datasets yet</span>
+          ) : (
+            datasets.map((d) => (
+              <Link
+                key={d.key}
+                to={`/d/${d.key}`}
+                className={`nav-tab${activeKey === d.key ? " active" : ""}`}
+              >
+                {d.displayName}
+              </Link>
+            ))
+          )}
+          <Link
+            to="/import"
+            className={`nav-tab import${location.pathname === "/import" ? " active" : ""}`}
+          >
+            + Import Dataset
+          </Link>
+        </nav>
+      </header>
+
+      <ConfirmModal
+        isOpen={showLogoutModal}
+        title="Konfirmasi Logout"
+        message="Apakah Anda yakin ingin keluar dari akun Starboard?"
+        confirmLabel="Logout"
+        cancelLabel="Batal"
+        isDestructive={true}
+        isLoading={isLoggingOut}
+        onConfirm={handleConfirmLogout}
+        onCancel={() => setShowLogoutModal(false)}
+      />
+    </>
+  );
+}
