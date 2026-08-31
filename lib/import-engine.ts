@@ -8,22 +8,16 @@ export type ColumnSchema = {
   rawName: string;
   slug: string;
   type: InferredType;
-  sample: any;
 };
 
-export type SheetAnalysis = {
+export type DetectedSheet = {
   sheetName: string;
   headerRowIndex: number;
   dataStartRowIndex: number;
   columns: ColumnSchema[];
   rowCount: number;
-};
-
-export type FileAnalysis = {
-  sheets: SheetAnalysis[];
-  isMonthlyPack: boolean;
-  unifiedColumns: ColumnSchema[];
-  totalRows: number;
+  fingerprint: string;
+  suggestedKey: string;
 };
 
 function slugify(name: string): string {
@@ -43,6 +37,14 @@ function resolveCellValue(val: any): any {
     if ("text" in val) return val.text;
   }
   return val;
+}
+
+function normalizeCategoryValue(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
 }
 
 function inferType(values: any[]): InferredType {
@@ -83,238 +85,236 @@ function findHeaderRow(ws: ExcelJS.Worksheet): {
   headerRowIndex: number;
   columns: { colIndex: number; rawName: string }[];
 } | null {
-  for (let r = 1; r <= Math.min(ws.rowCount, 10); r++) {
+  let best: {
+    headerRowIndex: number;
+    columns: { colIndex: number; rawName: string }[];
+  } | null = null;
+  let bestScore = 2;
+
+  for (let r = 1; r <= Math.min(ws.rowCount, 12); r++) {
     const row = ws.getRow(r);
     const textCols: { colIndex: number; rawName: string }[] = [];
+    const seen = new Set<string>();
+    let distinct = 0;
 
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
       const val = resolveCellValue(cell.value);
       if (typeof val === "string" && val.trim().length > 0) {
-        textCols.push({ colIndex: colNumber, rawName: val.trim() });
+        const t = val.trim();
+        textCols.push({ colIndex: colNumber, rawName: t });
+        if (!seen.has(t)) {
+          seen.add(t);
+          distinct++;
+        }
       }
     });
 
-    if (textCols.length >= 3) {
-      return { headerRowIndex: r, columns: textCols };
+    if (distinct > bestScore) {
+      bestScore = distinct;
+      best = { headerRowIndex: r, columns: textCols };
     }
   }
-  return null;
+
+  return best;
 }
 
-const MONTH_SHEET_NAMES = new Set([
-  "JAN",
-  "FEB",
-  "MAR",
-  "APR",
-  "APRIL",
-  "MAY",
-  "JUN",
-  "JUNE",
-  "JUL",
-  "JULY",
-  "AUG",
-  "AUGUST",
-  "SEP",
-  "SEPT",
-  "SEPTEMBER",
-  "OCT",
-  "OKT",
-  "OCTOBER",
-  "NOV",
-  "NOVEMBER",
-  "DEC",
-  "DES",
-  "DECEMBER",
-]);
-
-const ACTIVITY_ALIASES: Record<string, string> = {
-  "POST MINING": "POST-MINING",
-  "POST-MINING": "POST-MINING",
-  "PRE MINING": "PRE-MINING",
-  "PRE-MINING": "PRE-MINING",
-};
-
-function canonicalCode(raw: string | null): string | null {
-  if (!raw) return null;
-  const key = raw.trim().toUpperCase();
-  return ACTIVITY_ALIASES[key] ?? key;
+function collectSampleRows(
+  ws: ExcelJS.Worksheet,
+  headerColumns: { colIndex: number; rawName: string }[],
+  dataStartRowIndex: number,
+  max = 40
+): any[][] {
+  const rows: any[][] = [];
+  for (
+    let r = dataStartRowIndex;
+    r <= Math.min(ws.rowCount, dataStartRowIndex + max);
+    r++
+  ) {
+    const row = ws.getRow(r);
+    const values = headerColumns.map((c) =>
+      resolveCellValue(row.getCell(c.colIndex).value)
+    );
+    if (values.some((v) => v !== null && v !== undefined && v !== "")) {
+      rows.push(values);
+    }
+  }
+  return rows;
 }
 
-export async function analyzeExcelBuffer(buffer: Buffer): Promise<FileAnalysis> {
+function buildColumns(
+  headerColumns: { colIndex: number; rawName: string }[],
+  sampleRows: any[][]
+): ColumnSchema[] {
+  const seenSlugs = new Map<string, number>();
+  const columns: ColumnSchema[] = [];
+
+  for (let idx = 0; idx < headerColumns.length; idx++) {
+    const c = headerColumns[idx];
+    const colSamples = sampleRows.map((r) => r[idx]);
+    const type = inferType(colSamples);
+
+    const baseSlug = slugify(c.rawName) || `col_${idx + 1}`;
+    const count = seenSlugs.get(baseSlug) || 0;
+    seenSlugs.set(baseSlug, count + 1);
+
+    const uniqueSlug = count === 0 ? baseSlug : `${baseSlug}_${count + 1}`;
+
+    columns.push({
+      colIndex: c.colIndex,
+      rawName: c.rawName,
+      slug: uniqueSlug,
+      type,
+    });
+  }
+
+  return columns;
+}
+
+export async function analyzeExcelBuffer(
+  buffer: Buffer,
+  baseDatasetKey: string
+): Promise<DetectedSheet[]> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as any);
 
-  const sheets: SheetAnalysis[] = [];
-  let monthMatchingSheets = 0;
+  const detected: DetectedSheet[] = [];
 
   for (const ws of wb.worksheets) {
-    const cleanName = ws.name.trim().toUpperCase();
-    if (MONTH_SHEET_NAMES.has(cleanName)) {
-      monthMatchingSheets++;
-    }
-
     const header = findHeaderRow(ws);
-    if (!header || header.columns.length === 0) continue;
+    if (!header || header.columns.length < 2) continue;
 
     const dataStartRowIndex = header.headerRowIndex + 1;
-    const sampleRows: any[][] = [];
+    const sampleRows = collectSampleRows(ws, header.columns, dataStartRowIndex);
+    const columns = buildColumns(header.columns, sampleRows);
 
-    for (
-      let r = dataStartRowIndex;
-      r <= Math.min(ws.rowCount, dataStartRowIndex + 40);
-      r++
-    ) {
-      const row = ws.getRow(r);
-      const rowValues = header.columns.map((c) =>
-        resolveCellValue(row.getCell(c.colIndex).value)
-      );
-      if (rowValues.some((v) => v !== null && v !== undefined && v !== "")) {
-        sampleRows.push(rowValues);
-      }
-    }
+    const fingerprint = columns
+      .map((c) => c.slug)
+      .sort()
+      .join("|");
 
-    const columns: ColumnSchema[] = header.columns.map((c, idx) => {
-      const colSamples = sampleRows.map((r) => r[idx]);
-      const type = inferType(colSamples);
-      const firstValid = colSamples.find(
-        (v) => v !== null && v !== undefined && v !== ""
-      );
-      return {
-        colIndex: c.colIndex,
-        rawName: c.rawName,
-        slug: slugify(c.rawName) || `col_${idx + 1}`,
-        type,
-        sample: firstValid !== undefined ? String(firstValid) : null,
-      };
-    });
+    const rowCount = Math.max(0, ws.rowCount - header.headerRowIndex);
 
-    sheets.push({
+    detected.push({
       sheetName: ws.name,
       headerRowIndex: header.headerRowIndex,
       dataStartRowIndex,
       columns,
-      rowCount: Math.max(0, ws.rowCount - header.headerRowIndex),
+      rowCount,
+      fingerprint,
+      suggestedKey: `${slugify(baseDatasetKey)}_${slugify(ws.name)}`,
     });
   }
 
-  const isMonthlyPack = monthMatchingSheets >= 2;
-  const targetSheets = isMonthlyPack
-    ? sheets.filter((s) =>
-        MONTH_SHEET_NAMES.has(s.sheetName.trim().toUpperCase())
-      )
-    : sheets.slice(0, 1);
-
-  const unifiedColumns = targetSheets[0]?.columns ?? [];
-  const totalRows = targetSheets.reduce((sum, s) => sum + s.rowCount, 0);
-
-  return {
-    sheets,
-    isMonthlyPack,
-    unifiedColumns,
-    totalRows,
-  };
+  return detected;
 }
 
 export async function executeImport(params: {
   buffer: Buffer;
   dept: string;
   datasetKey: string;
-  displayName: string;
   userId: string;
+  selectedSheets: string[];
+  selectedColumns?: Record<string, string[]>;
 }): Promise<{
-  tableName: string;
-  totalImported: number;
-  dimensionsCreated: string[];
-  columns: { name: string; type: string }[];
+  tablesCreated: {
+    key: string;
+    displayName: string;
+    tableName: string;
+    importedRows: number;
+    columnsCount: number;
+  }[];
+  primaryKey: string;
 }> {
-  const { buffer, dept, datasetKey, displayName, userId } = params;
-  const analysis = await analyzeExcelBuffer(buffer);
-
-  if (analysis.unifiedColumns.length === 0) {
-    throw new Error("Tidak ada kolom yang valid terdeteksi di file Excel.");
-  }
-
+  const { buffer, dept, datasetKey, userId, selectedSheets } = params;
+  const baseKey = slugify(datasetKey);
   const deptLower = dept.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const keySlug = slugify(datasetKey);
-  const tableName = `${deptLower}_${keySlug}_records`;
 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as any);
 
-  const targetSheets = analysis.isMonthlyPack
-    ? wb.worksheets.filter((ws) =>
-        MONTH_SHEET_NAMES.has(ws.name.trim().toUpperCase())
-      )
-    : [wb.worksheets[0]];
+  const tablesCreated: {
+    key: string;
+    displayName: string;
+    tableName: string;
+    importedRows: number;
+    columnsCount: number;
+  }[] = [];
 
-  const colDefinitions = analysis.unifiedColumns.map((col) => {
-    let pgType = "text";
-    if (col.type === "numeric") pgType = "numeric";
-    if (col.type === "date") pgType = "date";
-    return `"${col.slug}" ${pgType}`;
-  });
+  for (const sheetName of selectedSheets) {
+    const ws = wb.getWorksheet(sheetName);
+    if (!ws) continue;
 
-  const createTableSql = `
-    CREATE TABLE IF NOT EXISTS "${tableName}" (
-      "id" text PRIMARY KEY DEFAULT gen_random_uuid(),
-      ${colDefinitions.join(",\n      ")},
-      "source_month" text,
-      "created_at" timestamptz DEFAULT now()
-    );
-  `;
+    const header = findHeaderRow(ws);
+    if (!header || header.columns.length < 2) continue;
 
-  await prisma.$executeRawUnsafe(createTableSql);
+    const dataStartRowIndex = header.headerRowIndex + 1;
+    const sampleRows = collectSampleRows(ws, header.columns, dataStartRowIndex);
+    const columns = buildColumns(header.columns, sampleRows);
 
-  const dataset = await prisma.datasetRegistry.upsert({
-    where: { dept_key: { dept, key: keySlug } },
-    update: {
-      displayName,
-      tableName,
-      createdBy: userId,
-    },
-    create: {
-      dept,
-      key: keySlug,
-      tableName,
-      displayName,
-      createdBy: userId,
-    },
-  });
+    const chosenCols = params.selectedColumns?.[sheetName];
+    const importCols =
+      chosenCols && chosenCols.length > 0
+        ? columns.filter((c) => chosenCols.includes(c.slug))
+        : columns;
+    if (importCols.length === 0) continue;
 
-  await prisma.datasetColumn.deleteMany({ where: { datasetId: dataset.id } });
-  await prisma.datasetColumn.createMany({
-    data: analysis.unifiedColumns.map((c) => ({
-      datasetId: dataset.id,
-      name: c.slug,
-      label: c.rawName,
-      type: c.type,
-      isDimension: c.type === "category",
-    })),
-  });
+    const key = `${baseKey}_${slugify(ws.name)}`;
+    const tableName = `${deptLower}_${key}_records`;
 
-  let totalImported = 0;
-  const allRowsToInsert: any[] = [];
-  const equipmentMap = new Map<string, string>();
+    const colDefinitions = importCols.map((col) => {
+      let pgType = "text";
+      if (col.type === "numeric") pgType = "numeric";
+      if (col.type === "date") pgType = "date";
+      return `"${col.slug}" ${pgType}`;
+    });
 
-  for (const ws of targetSheets) {
-    const cleanSheetName = ws.name.trim();
-    const sheetMeta = analysis.sheets.find((s) => s.sheetName === ws.name);
-    if (!sheetMeta) continue;
+    const createTableSql = `
+      CREATE TABLE IF NOT EXISTS "${tableName}" (
+        "id" text PRIMARY KEY DEFAULT gen_random_uuid(),
+        ${colDefinitions.join(",\n        ")},
+        "source_sheet" text,
+        "created_at" timestamptz DEFAULT now()
+      );
+    `;
 
-    for (let r = sheetMeta.dataStartRowIndex; r <= ws.rowCount; r++) {
+    await prisma.$executeRawUnsafe(createTableSql);
+
+    const dataset = await prisma.datasetRegistry.upsert({
+      where: { dept_key: { dept, key } },
+      update: {
+        displayName: ws.name.trim(),
+        tableName,
+        createdBy: userId,
+      },
+      create: {
+        dept,
+        key,
+        tableName,
+        displayName: ws.name.trim(),
+        createdBy: userId,
+      },
+    });
+
+    await prisma.datasetColumn.deleteMany({ where: { datasetId: dataset.id } });
+    await prisma.datasetColumn.createMany({
+      data: importCols.map((c) => ({
+        datasetId: dataset.id,
+        name: c.slug,
+        label: c.rawName,
+        type: c.type,
+        isDimension: c.type === "category",
+      })),
+    });
+
+    const allRowsToInsert: any[] = [];
+    const dateCol = importCols.find((c) => c.type === "date");
+    const categoryCols = importCols.filter((c) => c.type === "category");
+
+    for (let r = dataStartRowIndex; r <= ws.rowCount; r++) {
       const row = ws.getRow(r);
       const rowData: Record<string, any> = {};
 
-      const c1 = resolveCellValue(row.getCell(1).value);
-      const c2 = resolveCellValue(row.getCell(2).value);
-      const c6 = resolveCellValue(row.getCell(6).value);
-      const c7 = resolveCellValue(row.getCell(7).value);
-
-      if (!c1 && !c2 && !c6 && !c7) {
-        continue;
-      }
-
-      analysis.unifiedColumns.forEach((col) => {
+      importCols.forEach((col) => {
         const raw = resolveCellValue(row.getCell(col.colIndex).value);
         if (raw !== null && raw !== undefined && raw !== "") {
           if (col.type === "date") {
@@ -330,104 +330,83 @@ export async function executeImport(params: {
             const n = Number(raw);
             rowData[col.slug] = !isNaN(n) ? n : null;
           } else {
-            let str = String(raw).trim();
-            if (col.slug === "kode" || col.slug === "activity_code") {
-              str = canonicalCode(str) || str;
-            }
-            rowData[col.slug] = str;
+            rowData[col.slug] = normalizeCategoryValue(String(raw).trim());
           }
         } else {
           rowData[col.slug] = null;
         }
       });
 
-      const eqnumVal = rowData["eqnum"] || rowData["unit"];
-      const egiVal = rowData["egi"];
-      if (eqnumVal && egiVal) {
-        equipmentMap.set(String(eqnumVal), String(egiVal));
+      const hasDate = dateCol ? !!rowData[dateCol.slug] : false;
+      const filledCategoryCount = categoryCols.filter(
+        (c) => !!rowData[c.slug]
+      ).length;
+
+      if (!hasDate && filledCategoryCount < 2) {
+        continue;
       }
 
-      rowData["source_month"] = cleanSheetName;
+      rowData["source_sheet"] = ws.name.trim();
       allRowsToInsert.push(rowData);
     }
-  }
 
-  const CHUNK_SIZE = 100;
-  for (let i = 0; i < allRowsToInsert.length; i += CHUNK_SIZE) {
-    const chunk = allRowsToInsert.slice(i, i + CHUNK_SIZE);
-    if (chunk.length === 0) continue;
+    if (allRowsToInsert.length === 0) {
+      continue;
+    }
 
-    const cols = [
-      ...analysis.unifiedColumns.map((c) => ({
-        slug: c.slug,
-        type: c.type,
-      })),
-      { slug: "source_month", type: "category" as InferredType },
-    ];
-    const colListStr = cols.map((c) => `"${c.slug}"`).join(", ");
+    const CHUNK_SIZE = 100;
+    let importedCount = 0;
 
-    const valueRows: string[] = [];
-    const params: any[] = [];
-    let paramIdx = 1;
+    for (let i = 0; i < allRowsToInsert.length; i += CHUNK_SIZE) {
+      const chunk = allRowsToInsert.slice(i, i + CHUNK_SIZE);
+      if (chunk.length === 0) continue;
 
-    for (const row of chunk) {
-      const valueHolders: string[] = [];
-      for (const col of cols) {
-        const cast =
-          col.type === "date"
-            ? "::date"
-            : col.type === "numeric"
-            ? "::numeric"
-            : "";
-        valueHolders.push(`$${paramIdx}${cast}`);
-        params.push(row[col.slug]);
-        paramIdx++;
+      const cols = [
+        ...importCols.map((c) => ({ slug: c.slug, type: c.type })),
+        { slug: "source_sheet", type: "category" as InferredType },
+      ];
+      const colListStr = cols.map((c) => `"${c.slug}"`).join(", ");
+
+      const valueRows: string[] = [];
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      for (const row of chunk) {
+        const valueHolders: string[] = [];
+        for (const col of cols) {
+          const cast =
+            col.type === "date"
+              ? "::date"
+              : col.type === "numeric"
+              ? "::numeric"
+              : "";
+          valueHolders.push(`$${paramIdx}${cast}`);
+          params.push(row[col.slug]);
+          paramIdx++;
+        }
+        valueRows.push(`(${valueHolders.join(", ")})`);
       }
-      valueRows.push(`(${valueHolders.join(", ")})`);
+
+      const insertSql = `
+        INSERT INTO "${tableName}" (${colListStr})
+        VALUES ${valueRows.join(",\n")}
+      `;
+
+      await prisma.$executeRawUnsafe(insertSql, ...params);
+      importedCount += chunk.length;
     }
 
-    const insertSql = `
-      INSERT INTO "${tableName}" (${colListStr})
-      VALUES ${valueRows.join(",\n")}
-    `;
-
-    await prisma.$executeRawUnsafe(insertSql, ...params);
-    totalImported += chunk.length;
-  }
-
-  const dimensionsCreated: string[] = [];
-
-  if (equipmentMap.size > 0) {
-    const eqTable = `${deptLower}_equipment_dim`;
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "${eqTable}" (
-        "eqnum" text PRIMARY KEY,
-        "egi" text NOT NULL,
-        "updated_at" timestamptz DEFAULT now()
-      );
-    `);
-
-    for (const [eqnum, egi] of equipmentMap.entries()) {
-      await prisma.$executeRawUnsafe(
-        `
-        INSERT INTO "${eqTable}" ("eqnum", "egi")
-        VALUES ($1, $2)
-        ON CONFLICT ("eqnum") DO UPDATE SET "egi" = EXCLUDED."egi", "updated_at" = now();
-      `,
-        eqnum,
-        egi
-      );
-    }
-    dimensionsCreated.push(`${eqTable} (${equipmentMap.size} unit)`);
+    tablesCreated.push({
+      key,
+      displayName: ws.name.trim(),
+      tableName,
+      importedRows: importedCount,
+      columnsCount: importCols.length,
+    });
   }
 
   return {
-    tableName,
-    totalImported,
-    dimensionsCreated,
-    columns: analysis.unifiedColumns.map((c) => ({
-      name: c.rawName,
-      type: c.type,
-    })),
+    tablesCreated,
+    primaryKey: tablesCreated[0]?.key ?? baseKey,
   };
 }

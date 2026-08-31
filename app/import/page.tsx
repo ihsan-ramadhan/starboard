@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Navbar } from "@/components/shell/Navbar";
-import { importExcelAction } from "@/app/actions/import";
+import ImportWizard from "@/components/import/ImportWizard";
 
 export default async function ImportPage({
   searchParams,
@@ -38,39 +38,14 @@ export default async function ImportPage({
               <div className="alert" style={{ marginBottom: "16px" }}>
                 {error === "no_file"
                   ? "Pilih file Excel terlebih dahulu."
+                  : error === "no_sheet"
+                  ? "Pilih minimal satu sheet untuk diimpor."
                   : decodeURIComponent(error)}
               </div>
             )}
 
-            <form action={importExcelAction} className="import-form">
-              <label>
-                File Excel (.xlsx)
-                <input
-                  type="file"
-                  name="file"
-                  accept=".xlsx, .xls"
-                  required
-                  className="file-input"
-                />
-              </label>
-
-              <label>
-                Nama Tampilan Menu (opsional)
-                <input
-                  type="text"
-                  name="displayName"
-                  placeholder="Contoh: Daywork 2026"
-                />
-              </label>
-
-              <div className="import-actions">
-                <button type="submit" className="btn-primary">
-                  Proses & Buat Tabel
-                </button>
-                <Link href="/" className="btn-ghost">
-                  Batal
-                </Link>
-              </div>
+            <form className="import-form">
+              <ImportWizard />
             </form>
           </div>
         </div>
