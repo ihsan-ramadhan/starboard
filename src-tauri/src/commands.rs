@@ -274,6 +274,45 @@ pub async fn get_dataset_detail(dept: String, key: String) -> Result<DatasetDeta
 
 
 
+#[tauri::command]
+pub async fn delete_dataset(dataset_id: String) -> Result<bool, String> {
+    let mut client = get_client().await?;
+    let tx = client.transaction().await.map_err(|e| e.to_string())?;
+
+    let row_opt = tx
+        .query_opt(
+            r#"SELECT "tableName" FROM dataset_registry WHERE id = $1"#,
+            &[&dataset_id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(row) = row_opt {
+        let table_name: String = row.get(0);
+        let drop_table_sql = format!(r#"DROP TABLE IF EXISTS "{}""#, table_name);
+        tx.execute(&drop_table_sql, &[])
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.execute(
+        r#"DELETE FROM dataset_columns WHERE "datasetId" = $1"#,
+        &[&dataset_id],
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        r#"DELETE FROM dataset_registry WHERE id = $1"#,
+        &[&dataset_id],
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 fn infer_type_from_cells(values: &[&Data]) -> String {
     if values.is_empty() {
         return "category".to_string();

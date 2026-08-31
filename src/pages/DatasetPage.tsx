@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { useParams, useSearchParams, Link } from "react-router-dom";
+import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../App";
+import ConfirmModal from "../components/ConfirmModal";
 import type { DatasetRegistry, DatasetColumn } from "../types";
 
 type DatasetDetail = {
@@ -12,13 +13,16 @@ type DatasetDetail = {
 };
 
 export default function DatasetPage() {
-  const { user } = useApp();
+  const { user, refreshDatasets } = useApp();
   const { key } = useParams<{ key: string }>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const imported = searchParams.get("imported");
 
   const [detail, setDetail] = useState<DatasetDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -41,6 +45,26 @@ export default function DatasetPage() {
     }
     load();
   }, [user.role, key]);
+
+  async function handleDeleteDataset() {
+    if (!detail?.dataset) return;
+    setIsDeleting(true);
+    try {
+      if ((window as any).__TAURI_INTERNALS__) {
+        await invoke("delete_dataset", {
+          datasetId: detail.dataset.id,
+        });
+      }
+      await refreshDatasets();
+      setShowDeleteModal(false);
+      navigate("/", { replace: true });
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghapus dataset: " + String(err));
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -77,9 +101,18 @@ export default function DatasetPage() {
             <strong>{columns.length} kolom</strong>
           </p>
         </div>
-        <Link to="/import" className="btn-ghost">
-          + Import File Lain
-        </Link>
+        <div className="dataset-actions">
+          <button
+            type="button"
+            className="btn-danger-outline"
+            onClick={() => setShowDeleteModal(true)}
+          >
+            Hapus Dataset
+          </button>
+          <Link to="/import" className="btn-ghost">
+            + Import File Lain
+          </Link>
+        </div>
       </div>
 
       {imported && (
@@ -140,10 +173,10 @@ export default function DatasetPage() {
                       } else if (val === null || val === undefined) {
                         formatted = "-";
                       }
-                      return <td key={c.id || c.name}>{String(formatted)}</td>;
+                      return <td key={c.id || c.name}>{formatted}</td>;
                     })}
                     <td>
-                      <span className="badge-subtle">
+                      <span className="sheet-badge">
                         {row.source_sheet || "-"}
                       </span>
                     </td>
@@ -154,6 +187,18 @@ export default function DatasetPage() {
           </table>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title="Hapus Dataset"
+        message={`Dataset "${dataset.displayName}" dan seluruh baris datanya akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus Dataset"
+        cancelLabel="Batal"
+        isDestructive={true}
+        isLoading={isDeleting}
+        onConfirm={handleDeleteDataset}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </main>
   );
 }
