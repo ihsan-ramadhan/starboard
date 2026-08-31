@@ -57,7 +57,7 @@ pub struct ColumnSchema {
     #[serde(rename = "rawName")]
     pub raw_name: String,
     pub slug: String,
-    pub r#type: String, // "numeric" | "date" | "category"
+    pub r#type: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -88,9 +88,7 @@ fn slugify(name: &str) -> String {
     }
 }
 
-// -------------------------------------------------------------
-// COMMANDS
-// -------------------------------------------------------------
+
 
 #[tauri::command]
 pub async fn login(identifier: String, password: String) -> Result<SessionUser, String> {
@@ -274,9 +272,7 @@ pub async fn get_dataset_detail(dept: String, key: String) -> Result<DatasetDeta
     })
 }
 
-// -------------------------------------------------------------
-// EXCEL INFERENCE & PARSER
-// -------------------------------------------------------------
+
 
 fn infer_type_from_cells(values: &[&Data]) -> String {
     if values.is_empty() {
@@ -345,7 +341,7 @@ fn find_header_row_in_range(range: &Range<Data>) -> Option<(usize, Vec<(usize, S
                     _ => "".to_string(),
                 };
                 if !s.is_empty() {
-                    cols.push((c + 1, s.clone())); // 1-based index
+                    cols.push((c + 1, s.clone()));
                     distinct.insert(s);
                 }
             }
@@ -353,7 +349,7 @@ fn find_header_row_in_range(range: &Range<Data>) -> Option<(usize, Vec<(usize, S
 
         if distinct.len() > best_score {
             best_score = distinct.len();
-            best = Some((r + 1, cols)); // 1-based row
+            best = Some((r + 1, cols));
         }
     }
 
@@ -522,7 +518,7 @@ pub async fn import_excel(
                     primary_key = key.clone();
                 }
 
-                // DDL: CREATE TABLE
+
                 let mut col_defs = Vec::new();
                 for col in &import_cols {
                     let pg_type = match col.r#type.as_str() {
@@ -551,7 +547,7 @@ pub async fn import_excel(
                     .await
                     .map_err(|e| format!("Create table error: {}", e))?;
 
-                // Upsert dataset_registry
+
                 let ds_id = Uuid::new_v4().to_string();
                 let disp_title = if !display_name.is_empty() {
                     display_name.clone()
@@ -569,14 +565,14 @@ pub async fn import_excel(
                     &[&ds_id, &key, &table_name, &disp_title],
                 ).await.map_err(|e| format!("Registry upsert error: {}", e))?;
 
-                // Get true dataset id
+
                 let ds_row = client.query_one(
                     r#"SELECT id FROM dataset_registry WHERE dept = 'MIOP' AND key = $1"#,
                     &[&key],
                 ).await.map_err(|e| format!("Fetch dataset id error: {}", e))?;
                 let true_ds_id: String = ds_row.get(0);
 
-                // Insert dataset_columns
+
                 client.execute(
                     r#"DELETE FROM dataset_columns WHERE "datasetId" = $1"#,
                     &[&true_ds_id],
@@ -594,7 +590,7 @@ pub async fn import_excel(
                     ).await.ok();
                 }
 
-                // Batch Insert Rows
+
                 let mut rows_data = Vec::new();
                 for r in (header_idx_0based + 1)..range.height() {
                     let mut row_map = HashMap::new();
@@ -654,7 +650,7 @@ pub async fn import_excel(
                                     vals.push("NULL".to_string());
                                 }
                             }
-                            // source_sheet
+
                             let s_escaped = sheet_name.replace('\'', "''");
                             vals.push(format!("'{}'", s_escaped));
                             val_clauses.push(format!("({})", vals.join(", ")));
