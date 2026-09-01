@@ -884,6 +884,137 @@ a {
   font-size: 13px;
 }
 
+.widget-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.widget-card.wrap {
+  position: relative;
+}
+
+.widget-card.wrap .widget-header {
+  padding-right: 40px;
+}
+
+.widget-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-subtle);
+}
+
+.empty-widgets-card {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.empty-widgets-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0;
+}
+
+.empty-widgets-desc {
+  font-size: 13px;
+  color: var(--fg-dim);
+  max-width: 480px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.dashboard-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.toolbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fg);
+  margin: 0 0 4px;
+}
+
+.toolbar-sub {
+  font-size: 13px;
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+.builder-modal {
+  max-width: 460px;
+}
+
+.builder-body {
+  padding: 4px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.builder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builder-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.builder-input {
+  padding: 8px 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.builder-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.builder-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.builder-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.builder-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 .dataset-title {
   font-size: 24px;
   font-weight: 700;

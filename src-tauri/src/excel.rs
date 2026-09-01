@@ -19,6 +19,48 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
+pub fn format_sql_cell_value(val: &str, col_type: &str) -> String {
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        return "NULL".to_string();
+    }
+    match col_type {
+        "numeric" => {
+            let cleaned = trimmed.replace(['$', '€', '£', '¥', ',', ' '], "");
+            if cleaned.is_empty() {
+                "NULL".to_string()
+            } else if cleaned.parse::<f64>().is_ok() {
+                cleaned
+            } else {
+                "NULL".to_string()
+            }
+        }
+        _ => {
+            let escaped = trimmed.replace('\'', "''");
+            format!("'{}'", escaped)
+        }
+    }
+}
+
+pub fn normalize_category_value(val: &str) -> String {
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        return "".to_string();
+    }
+    
+    let re_spaces = Regex::new(r"\s+").unwrap();
+    let unified_spaces = re_spaces.replace_all(trimmed, " ");
+    
+    if unified_spaces.eq_ignore_ascii_case("post mining") {
+        return "POST-MINING".to_string();
+    }
+    if unified_spaces.eq_ignore_ascii_case("pre mining") {
+        return "PRE-MINING".to_string();
+    }
+    
+    unified_spaces.to_string()
+}
+
 pub fn infer_type_from_cells(values: &[&Data]) -> String {
     if values.is_empty() {
         return "category".to_string();
@@ -338,7 +380,16 @@ pub async fn execute_import(
                         if let Some(cell_val) = range.get((r, c_idx)) {
                             let str_val = match cell_val {
                                 Data::Empty => "".to_string(),
-                                Data::String(s) => s.trim().to_string(),
+                                Data::String(s) => {
+                                    if col.r#type == "category" {
+                                        normalize_category_value(s)
+                                    } else if col.r#type == "numeric" {
+                                        let cleaned = s.replace(['$', '€', '£', '¥', ',', ' '], "");
+                                        cleaned.trim().to_string()
+                                    } else {
+                                        s.trim().to_string()
+                                    }
+                                }
                                 Data::Float(f) => f.to_string(),
                                 Data::Int(i) => i.to_string(),
                                 Data::DateTime(d) => format!("{:.4}", d.as_f64()),
@@ -360,46 +411,31 @@ pub async fn execute_import(
                 }
 
                 if !rows_data.is_empty() {
-                    let chunk_size = 100;
+                    let chunk_size = 250;
                     for chunk in rows_data.chunks(chunk_size) {
                         let mut insert_sql = format!("INSERT INTO \"{}\" (", table_name);
                         let mut col_names: Vec<String> = import_cols.iter().map(|c| format!("\"{}\"", c.slug)).collect();
                         col_names.push("\"source_sheet\"".to_string());
                         insert_sql.push_str(&col_names.join(", "));
-                        insert_sql.push_str(") VALUES ");
+                        insert_sql.push_str(") VALUES\n");
 
-                        let mut values_parts = Vec::new();
-                        let mut params_owned: Vec<String> = Vec::new();
-                        let mut p_idx = 1;
+                        let mut row_literals = Vec::new();
+                        let escaped_sheet = sheet_name.replace('\'', "''");
 
                         for r_map in chunk {
-                            let mut row_placeholders = Vec::new();
+                            let mut row_vals = Vec::new();
                             for col in &import_cols {
                                 let val_str = r_map.get(&col.slug).cloned().unwrap_or_default();
-                                if val_str.is_empty() {
-                                    row_placeholders.push("DEFAULT".to_string());
-                                } else {
-                                    row_placeholders.push(format!("${}", p_idx));
-                                    p_idx += 1;
-                                    params_owned.push(val_str);
-                                }
+                                row_vals.push(format_sql_cell_value(&val_str, &col.r#type));
                             }
-                            row_placeholders.push(format!("${}", p_idx));
-                            p_idx += 1;
-                            params_owned.push(sheet_name.clone());
-
-                            values_parts.push(format!("({})", row_placeholders.join(", ")));
+                            row_vals.push(format!("'{}'", escaped_sheet));
+                            row_literals.push(format!("({})", row_vals.join(", ")));
                         }
 
-                        insert_sql.push_str(&values_parts.join(", "));
-
-                        let params_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params_owned
-                            .iter()
-                            .map(|s| s as &(dyn tokio_postgres::types::ToSql + Sync))
-                            .collect();
+                        insert_sql.push_str(&row_literals.join(",\n"));
 
                         client
-                            .execute(&insert_sql, &params_refs[..])
+                            .execute(&insert_sql, &[])
                             .await
                             .map_err(|e| format!("Batch insert error: {}", e))?;
                     }
