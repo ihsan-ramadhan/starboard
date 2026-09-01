@@ -24,20 +24,9 @@ export type DatasetRegistry = {
   columns?: DatasetColumn[];
 };
 
-export type QuickKpi = {
-  totalWh: number | null;
-  totalCostRp: number | null;
-};
-
 export type ChartDataPoint = {
   groupKey: string;
   value: number;
-};
-
-export type DatasetCharts = {
-  barData: ChartDataPoint[];
-  lineData: ChartDataPoint[];
-  pieData: ChartDataPoint[];
 };
 
 export type DatasetDetail = {
@@ -45,20 +34,31 @@ export type DatasetDetail = {
   columns: DatasetColumn[];
   totalRows: number;
   sampleRows: any[];
-  kpi?: QuickKpi;
-  charts?: DatasetCharts;
-};
-
-export type WidgetQueryRequest = {
-  datasetId: string;
-  metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
-  metricColumn?: string;
-  groupByColumn?: string;
-  limit?: number;
-  orderByKey?: boolean;
 };
 
 export type WidgetQueryResult = {
   scalarValue?: number;
   rows: Array<{ groupKey: string; value: number }>;
+};
+
+export type WidgetType = "kpi" | "bar" | "line" | "pie";
+
+export type WidgetDefinition = {
+  id: string;
+  type: WidgetType;
+  title: string;
+  datasetId: string;
+  metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
+  metricColumn?: string;
+  groupByColumn?: string;
+  limit?: number;
+  isCurrency?: boolean;
+  unit?: string;
+};
+
+export const WIDGET_TYPE_LABEL: Record<WidgetType, string> = {
+  kpi: "KPI Card",
+  bar: "Bar Chart",
+  line: "Line Chart",
+  pie: "Pie / Donut Chart",
 };

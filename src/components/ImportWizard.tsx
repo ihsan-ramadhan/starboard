@@ -2,9 +2,9 @@ import { useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 
-export type InferredType = "numeric" | "date" | "category";
+type InferredType = "numeric" | "date" | "category";
 
-export type ColumnSchema = {
+type ColumnSchema = {
   colIndex: number;
   rawName: string;
   slug: string;
