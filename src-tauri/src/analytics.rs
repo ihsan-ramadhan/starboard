@@ -17,13 +17,22 @@ pub async fn execute_widget_query(req: WidgetQueryRequest) -> Result<WidgetQuery
         None => return Err("Dataset not found".to_string()),
     };
 
-    let col_name = req.metric_column.unwrap_or_else(|| "id".to_string());
-    let agg_func = match req.metric.to_uppercase().as_str() {
-        "SUM" => format!("COALESCE(SUM(\"{}\"::numeric), 0)", col_name),
-        "AVG" => format!("COALESCE(AVG(\"{}\"::numeric), 0)", col_name),
-        "MIN" => format!("COALESCE(MIN(\"{}\"::numeric), 0)", col_name),
-        "MAX" => format!("COALESCE(MAX(\"{}\"::numeric), 0)", col_name),
-        _ => "COUNT(*)::numeric".to_string(),
+    let default_col = "id".to_string();
+    let is_count = req.metric.eq_ignore_ascii_case("count")
+        || (req.metric_column.is_none()
+            && !req.metric.eq_ignore_ascii_case("count")
+            && req.group_by_column.is_some());
+    let col_name = req.metric_column.as_ref().unwrap_or(&default_col);
+    let agg_func = if is_count {
+        "COUNT(*)::numeric".to_string()
+    } else {
+        match req.metric.to_uppercase().as_str() {
+            "SUM" => format!("COALESCE(SUM(\"{}\"::numeric), 0)", col_name),
+            "AVG" => format!("COALESCE(AVG(\"{}\"::numeric), 0)", col_name),
+            "MIN" => format!("COALESCE(MIN(\"{}\"::numeric), 0)", col_name),
+            "MAX" => format!("COALESCE(MAX(\"{}\"::numeric), 0)", col_name),
+            _ => "COUNT(*)::numeric".to_string(),
+        }
     };
 
     if let Some(group_col) = req.group_by_column {
