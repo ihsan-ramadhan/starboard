@@ -86,6 +86,9 @@ export default function WidgetBuilderModal({
       (nextType === "kpi" || nextType === "bar" || nextType === "line");
     const needNewGroup = nextType === "bar" || nextType === "line" || nextType === "pie";
 
+    if (nextType === "pie") {
+      setMetric("COUNT");
+    }
     if (needNewMetric && metricColumn) {
       const col = columns.find((c) => c.name === metricColumn);
       if (!col || col.type !== "numeric") {
@@ -97,9 +100,6 @@ export default function WidgetBuilderModal({
     }
     if (!needNewGroup) {
       setGroupByColumn("");
-    }
-    if (nextType === "pie" && metric === "COUNT") {
-      setMetric("SUM");
     }
     if (metric === "COUNT" && !needNewMetric) {
       setMetric("SUM");
