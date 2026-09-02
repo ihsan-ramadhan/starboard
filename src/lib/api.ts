@@ -3,6 +3,7 @@ import type {
   DatasetRegistry,
   DatasetDetail,
   WidgetQueryResult,
+  WidgetDefinition,
 } from "../types";
 import type { DetectedSheet } from "../components/ImportWizard";
 
@@ -83,6 +84,17 @@ export const api = {
 
   getDatasetDetail(dept: string, key: string) {
     return request<DatasetDetail>(`/api/datasets/${encodeURIComponent(key)}?dept=${encodeURIComponent(dept)}`);
+  },
+
+  getWidgets(dept: string, key: string) {
+    return request<WidgetDefinition[]>(`/api/datasets/${encodeURIComponent(key)}/widgets?dept=${encodeURIComponent(dept)}`);
+  },
+
+  saveWidgets(dept: string, key: string, widgets: WidgetDefinition[]) {
+    return request<boolean>(`/api/datasets/${encodeURIComponent(key)}/widgets?dept=${encodeURIComponent(dept)}`, {
+      method: "PUT",
+      body: JSON.stringify(widgets),
+    });
   },
 
   deleteDataset(datasetId: string) {

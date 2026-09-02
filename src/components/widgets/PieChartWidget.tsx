@@ -28,7 +28,7 @@ const DEFAULT_COLORS = [
 ];
 
 function renderLegendItem(value: string) {
-  return <span style={{ color: "#475569" }}>{value}</span>;
+  return <span style={{ color: "#475569", fontSize: "11px" }}>{value}</span>;
 }
 
 export default function PieChartWidget({
@@ -38,18 +38,19 @@ export default function PieChartWidget({
   isCurrency = false,
 }: PieChartWidgetProps) {
   return (
-    <div className="widget-card">
-      <div className="widget-header">
-        <h4 className="widget-title">{title}</h4>
-      </div>
-      <div className="widget-body">
+    <div className="chart-wrapper">
+      <h4 className="widget-title">{title}</h4>
+      <div className="chart-body">
         {data.length === 0 ? (
           <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
         ) : (
-          <ResponsiveContainer width="100%" height={240}>
-            <PieChart margin={{ top: 0, bottom: 20, left: 0, right: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart margin={{ top: 0, bottom: 5, left: 0, right: 0 }}>
               <Tooltip
-                formatter={(v: any) => [formatChartValue(Number(v), isCurrency, unit), "Total"]}
+                formatter={(v: any) => [
+                  formatChartValue(Number(v), isCurrency, unit),
+                  "Total",
+                ]}
                 contentStyle={{
                   backgroundColor: "#ffffff",
                   borderColor: "#e2e8f0",
@@ -60,7 +61,7 @@ export default function PieChartWidget({
               <Legend
                 verticalAlign="bottom"
                 align="center"
-                wrapperStyle={{ paddingTop: "10px", fontSize: "11.5px" }}
+                wrapperStyle={{ fontSize: "11px" }}
                 formatter={renderLegendItem}
               />
               <Pie
@@ -69,8 +70,8 @@ export default function PieChartWidget({
                 nameKey="groupKey"
                 cx="50%"
                 cy="45%"
-                innerRadius={55}
-                outerRadius={85}
+                innerRadius="45%"
+                outerRadius="75%"
                 paddingAngle={2}
               >
                 {data.map((entry, index) => (

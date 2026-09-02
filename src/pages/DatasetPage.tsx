@@ -1,6 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import GridLayout, { type Layout, type LayoutItem } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api } from "../lib/api";
 import ConfirmModal from "../components/ConfirmModal";
@@ -11,6 +14,8 @@ import RawTablePreview from "../components/table/RawTablePreview";
 import type {
   DatasetDetail,
   WidgetDefinition,
+  WidgetLayout,
+  WidgetType,
 } from "../types";
 
 export default function DatasetPage() {
@@ -27,10 +32,41 @@ export default function DatasetPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
+  const [widgetsReady, setWidgetsReady] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
 
+  const saveTimerRef = useRef<number | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+  const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+      resizeObserverRef.current = null;
+    }
+
+    if (node) {
+      const update = () => {
+        const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
+        if (width > 0) {
+          setContainerWidth(Math.floor(width));
+        }
+      };
+
+      requestAnimationFrame(update);
+      const ro = new ResizeObserver(() => {
+        update();
+      });
+      ro.observe(node);
+      resizeObserverRef.current = ro;
+    }
+  }, []);
+
   useEffect(() => {
+    setWidgetsReady(false);
+    setWidgets([]);
+
     async function load() {
       if (!key) return;
       let d: DatasetDetail | null = datasetCache[key] ?? null;
@@ -44,8 +80,28 @@ export default function DatasetPage() {
         setDetail(d);
         setLoading(false);
       }
+
+      if (d?.dataset) {
+        try {
+          const w = await api.getWidgets(user.role, key);
+          const sanitized = w.map((item) => ({
+            ...item,
+            datasetId: item.datasetId || d.dataset.id,
+          }));
+          setWidgets(sanitized);
+        } catch (err) {
+          console.error("Failed to load widgets:", err);
+        } finally {
+          setWidgetsReady(true);
+        }
+      }
     }
     load();
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
   }, [key, datasetCache]);
 
   async function handleDeleteDataset() {
@@ -88,19 +144,66 @@ export default function DatasetPage() {
 
   const { dataset, columns, totalRows, sampleRows } = detail;
 
+  function persistWidgets(next: WidgetDefinition[]) {
+    if (!key) return;
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      api.saveWidgets(user.role, key, next).catch((err) => {
+        toast.error("Gagal menyimpan layout widget: " + String(err));
+      });
+    }, 400);
+  }
+
   function handleSaveWidget(widget: WidgetDefinition) {
     setWidgets((prev) => {
       const exists = prev.some((w) => w.id === widget.id);
-      return exists
-        ? prev.map((w) => (w.id === widget.id ? widget : w))
-        : [...prev, widget];
+      const withLayout = widget.layout
+        ? widget
+        : { ...widget, layout: defaultLayoutFor(widget.type) };
+      const next = exists
+        ? prev.map((w) => (w.id === widget.id ? withLayout : w))
+        : [...prev, withLayout];
+      persistWidgets(next);
+      return next;
     });
     setShowBuilder(false);
     setEditingWidget(null);
   }
 
   function handleDeleteWidget(id: string) {
-    setWidgets((prev) => prev.filter((w) => w.id !== id));
+    setWidgets((prev) => {
+      const next = prev.filter((w) => w.id !== id);
+      persistWidgets(next);
+      return next;
+    });
+  }
+
+  function handleLayoutChange(layout: Layout) {
+    setWidgets((prev) => {
+      if (prev.length === 0) return prev;
+      const pos = new Map(layout.map((l) => [l.i, l]));
+      const next = prev.map((w) => {
+        const p = pos.get(w.id);
+        if (!p) return w;
+        const cur = w.layout;
+        if (cur && cur.x === p.x && cur.y === p.y && cur.w === p.w && cur.h === p.h) {
+          return w;
+        }
+        return { ...w, layout: { x: p.x, y: p.y, w: p.w, h: p.h } };
+      });
+      const changed = next.some((w, i) => {
+        const a = w.layout;
+        const b = prev[i].layout;
+        return a !== b && (!a || !b || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h);
+      });
+      if (changed) {
+        persistWidgets(next);
+        return next;
+      }
+      return prev;
+    });
   }
 
   function openCreateWidget() {
@@ -112,6 +215,37 @@ export default function DatasetPage() {
     setEditingWidget(widget);
     setShowBuilder(true);
   }
+
+  function defaultLayoutFor(type: WidgetType): WidgetLayout {
+    const base = {
+      x: 0,
+      y: 0,
+    };
+    switch (type) {
+      case "kpi":
+        return { ...base, w: 3, h: 2 };
+      case "pie":
+        return { ...base, w: 4, h: 5 };
+      case "line":
+        return { ...base, w: 6, h: 5 };
+      case "bar":
+      default:
+        return { ...base, w: 6, h: 5 };
+    }
+  }
+
+  const gridLayout: LayoutItem[] = widgets.map((w) => {
+    const def = defaultLayoutFor(w.type);
+    return {
+      i: w.id,
+      x: w.layout?.x ?? 0,
+      y: w.layout?.y ?? 0,
+      w: w.layout?.w ?? def.w,
+      h: w.layout?.h ?? def.h,
+      minW: 2,
+      minH: 2,
+    };
+  });
 
   return (
     <main className="content">
@@ -178,28 +312,50 @@ export default function DatasetPage() {
               </button>
             </div>
           ) : (
-            <div className="charts-grid">
-              {widgets.map((widget) => (
-                <div className="widget-card wrap" key={widget.id}>
-                  <div className="widget-toolbar">
-                    <button
-                      type="button"
-                      className="btn-ghost-sm"
-                      onClick={() => openEditWidget(widget)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-danger-outline"
-                      onClick={() => handleDeleteWidget(widget.id)}
-                    >
-                      Hapus
-                    </button>
-                  </div>
-                  <WidgetRender widget={widget} />
-                </div>
-              ))}
+            <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
+              {containerWidth > 0 && (
+                <GridLayout
+                  className="charts-grid"
+                  width={containerWidth}
+                  layout={gridLayout}
+                  gridConfig={{
+                    cols: 12,
+                    rowHeight: 60,
+                    margin: [16, 16],
+                    containerPadding: [0, 0],
+                  }}
+                  dragConfig={{
+                    enabled: true,
+                    handle: ".widget-card",
+                    cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
+                  }}
+                  onLayoutChange={handleLayoutChange}
+                >
+                  {widgets.map((widget) => (
+                    <div key={widget.id}>
+                      <div className="widget-card wrap">
+                        <div className="widget-toolbar">
+                          <button
+                            type="button"
+                            className="btn-ghost-sm"
+                            onClick={() => openEditWidget(widget)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-danger-outline"
+                            onClick={() => handleDeleteWidget(widget.id)}
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                        <WidgetRender widget={widget} />
+                      </div>
+                    </div>
+                  ))}
+                </GridLayout>
+              )}
             </div>
           )}
         </div>

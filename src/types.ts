@@ -43,6 +43,13 @@ export type WidgetQueryResult = {
 
 export type WidgetType = "kpi" | "bar" | "line" | "pie";
 
+export type WidgetLayout = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
 export type WidgetDefinition = {
   id: string;
   type: WidgetType;
@@ -54,6 +61,7 @@ export type WidgetDefinition = {
   limit?: number;
   isCurrency?: boolean;
   unit?: string;
+  layout?: WidgetLayout;
 };
 
 export const WIDGET_TYPE_LABEL: Record<WidgetType, string> = {

@@ -50,6 +50,36 @@ struct DeptQuery {
     dept: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct WidgetLayout {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct WidgetPayload {
+    id: String,
+    r#type: String,
+    title: String,
+    #[serde(rename = "datasetId", default)]
+    dataset_id: String,
+    metric: String,
+    #[serde(rename = "metricColumn", default)]
+    metric_column: Option<String>,
+    #[serde(rename = "groupByColumn", default)]
+    group_by_column: Option<String>,
+    #[serde(default)]
+    limit: Option<i32>,
+    #[serde(rename = "isCurrency", default)]
+    is_currency: Option<bool>,
+    #[serde(default)]
+    unit: Option<String>,
+    #[serde(default)]
+    layout: WidgetLayout,
+}
+
 #[derive(Deserialize)]
 struct AnalyzeRequest {
     #[serde(rename = "fileBytes")]
@@ -136,9 +166,12 @@ async fn main() {
     let protected = Router::new()
         .route("/api/auth/logout", post(logout_handler))
         .route("/api/datasets", get(get_datasets_handler))
-        .route(
-            "/api/datasets/{key}",
+        .route("/api/datasets/{key}",
             get(get_dataset_detail_handler).delete(delete_dataset_handler),
+        )
+        .route(
+            "/api/datasets/{key}/widgets",
+            get(get_widgets_handler).put(save_widgets_handler),
         )
         .route("/api/excel/analyze", post(analyze_excel_handler))
         .route("/api/excel/import", post(import_excel_handler))
@@ -481,6 +514,189 @@ async fn delete_dataset_handler(
     )
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Delete registry error: {}", e)))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Commit error: {}", e)))?;
+
+    Ok(Json(true))
+}
+
+async fn get_widgets_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Query(query): Query<DeptQuery>,
+) -> Result<Json<Vec<WidgetPayload>>, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let ds_row = client
+        .query_opt(
+            r#"SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2"#,
+            &[&query.dept, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch dataset error: {}", e)))?;
+
+    let dataset_id = match ds_row {
+        Some(r) => r.get::<_, String>(0),
+        None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
+    };
+
+    let rows = client
+        .query(
+            r#"
+            SELECT "filterConfig", "positionX", "positionY", width, height
+            FROM dashboard_widgets
+            WHERE "datasetId" = $1
+            "#,
+            &[&dataset_id],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch widgets error: {}", e)))?;
+
+    let mut widgets = Vec::new();
+    for r in rows {
+        let cfg: serde_json::Value = r.get(0);
+        let mut w: WidgetPayload = match serde_json::from_value(cfg.clone()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        w.dataset_id = dataset_id.clone();
+        w.layout = WidgetLayout {
+            x: r.get(1),
+            y: r.get(2),
+            w: r.get(3),
+            h: r.get(4),
+        };
+        widgets.push(w);
+    }
+
+    Ok(Json(widgets))
+}
+
+async fn save_widgets_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Query(query): Query<DeptQuery>,
+    Json(payload): Json<Vec<WidgetPayload>>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    if payload.len() > 50 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Jumlah widget melebihi batas maksimal (50).".to_string(),
+        ));
+    }
+
+    let mut client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let ds_row = client
+        .query_opt(
+            r#"SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2"#,
+            &[&query.dept, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch dataset error: {}", e)))?;
+
+    let dataset_id = match ds_row {
+        Some(r) => r.get::<_, String>(0),
+        None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
+    };
+
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Tx error: {}", e)))?;
+
+    tx.execute(
+        r#"DELETE FROM dashboard_widgets WHERE "datasetId" = $1"#,
+        &[&dataset_id],
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Delete widgets error: {}", e)))?;
+
+    if !payload.is_empty() {
+        let mut cfgs: Vec<serde_json::Value> = Vec::with_capacity(payload.len());
+        for w in &payload {
+            let cfg = serde_json::to_value(w).map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Invalid widget payload: {}", e),
+                )
+            })?;
+            cfgs.push(cfg);
+        }
+
+        let mut rows: Vec<Vec<&(dyn tokio_postgres::types::ToSql + Sync)>> = Vec::new();
+        for (w, cfg) in payload.iter().zip(cfgs.iter()) {
+            rows.push(vec![
+                &w.id as &(dyn tokio_postgres::types::ToSql + Sync),
+                &dataset_id,
+                &w.id as &(dyn tokio_postgres::types::ToSql + Sync),
+                &w.r#type,
+                &w.layout.x,
+                &w.layout.y,
+                &w.layout.w,
+                &w.layout.h,
+                cfg,
+            ]);
+        }
+
+        let mut insert = String::from(
+            r#"INSERT INTO dashboard_widgets
+            (id, "datasetId", "widgetKey", "chartType", "positionX", "positionY", width, height, "filterConfig")
+            VALUES "#,
+        );
+        let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = rows
+            .into_iter()
+            .flat_map(|r| r.into_iter())
+            .collect();
+        let placeholders: Vec<String> = (0..payload.len())
+            .map(|i| {
+                let base = i * 9 + 1;
+                format!(
+                    "(${base}, ${b1}, ${b2}, ${b3}, ${b4}, ${b5}, ${b6}, ${b7}, ${b8})",
+                    base = base,
+                    b1 = base + 1,
+                    b2 = base + 2,
+                    b3 = base + 3,
+                    b4 = base + 4,
+                    b5 = base + 5,
+                    b6 = base + 6,
+                    b7 = base + 7,
+                    b8 = base + 8
+                )
+            })
+            .collect();
+        insert.push_str(&placeholders.join(","));
+
+        tx.execute(&insert, &params)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Insert widgets error: {}", e)))?;
+    }
 
     tx.commit()
         .await
