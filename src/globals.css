@@ -308,6 +308,12 @@ a {
   text-align: center;
 }
 
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .login-card label {
   display: flex;
   flex-direction: column;
@@ -323,11 +329,64 @@ a {
   padding: 10px 12px;
   color: var(--fg);
   font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .login-card input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.login-card input.input-error {
+  border-color: var(--danger);
+  background-color: var(--bg);
+}
+
+.login-card input.input-error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.login-password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.login-password-wrapper input {
+  width: 100%;
+  padding-right: 38px;
+}
+
+.login-password-toggle {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.12s ease;
+}
+
+.login-password-toggle:hover {
+  color: var(--fg);
+}
+
+.field-error-text {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 0;
 }
 
 .login-demo {
@@ -345,16 +404,6 @@ a {
   padding: 9px 12px;
   border-radius: var(--radius);
   font-size: 13px;
-}
-
-.success-banner {
-  background: var(--success-bg);
-  border: 1px solid var(--success-border);
-  color: var(--success);
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  margin-bottom: 20px;
 }
 
 .import-container {

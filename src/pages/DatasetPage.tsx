@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useApp } from "../App";
 import { api } from "../lib/api";
 import ConfirmModal from "../components/ConfirmModal";
@@ -15,9 +16,7 @@ import type {
 export default function DatasetPage() {
   const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
   const { key } = useParams<{ key: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const imported = searchParams.get("imported");
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
@@ -38,7 +37,7 @@ export default function DatasetPage() {
 
       if (!d) {
         setLoading(true);
-        d = await fetchDatasetDetail(key, !!imported);
+        d = await fetchDatasetDetail(key, false);
         setDetail(d);
         setLoading(false);
       } else {
@@ -47,7 +46,7 @@ export default function DatasetPage() {
       }
     }
     load();
-  }, [key, imported, datasetCache]);
+  }, [key, datasetCache]);
 
   async function handleDeleteDataset() {
     if (!detail?.dataset) return;
@@ -56,10 +55,10 @@ export default function DatasetPage() {
       await api.deleteDataset(detail.dataset.id);
       await refreshDatasets();
       setShowDeleteModal(false);
+      toast.success("Dataset berhasil dihapus.");
       navigate("/", { replace: true });
     } catch (err) {
-      console.error(err);
-      alert("Gagal menghapus dataset: " + String(err));
+      toast.error("Gagal menghapus dataset: " + String(err));
     } finally {
       setIsDeleting(false);
     }
@@ -161,13 +160,6 @@ export default function DatasetPage() {
           </Link>
         </div>
       </div>
-
-      {imported && (
-        <div className="success-banner">
-          Berhasil membuat tabel <code>{dataset.tableName}</code> dan mengimpor{" "}
-          <strong>{Number(imported).toLocaleString()} baris</strong> data!
-        </div>
-      )}
 
       {activeTab === "dashboard" ? (
         <div className="dashboard-container">
