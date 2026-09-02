@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use uuid::Uuid;
 
-use crate::db::get_client;
 use crate::types::{ColumnSchema, DetectedSheet};
 
 pub fn slugify(name: &str) -> String {
@@ -234,6 +233,7 @@ pub fn parse_and_analyze_sheets(
 }
 
 pub async fn execute_import(
+    client: &tokio_postgres::Client,
     dept: &str,
     bytes: &[u8],
     display_name: &str,
@@ -245,7 +245,6 @@ pub async fn execute_import(
     let mut workbook: Xlsx<_> = open_workbook_from_rs(cursor)
         .map_err(|e| format!("Gagal membaca format Excel: {}", e))?;
 
-    let client = get_client().await?;
     let mut primary_key = "".to_string();
     let mut total_imported = 0;
     let base_key = slugify(dataset_key);

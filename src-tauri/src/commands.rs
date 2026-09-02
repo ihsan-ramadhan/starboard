@@ -264,13 +264,16 @@ pub async fn analyze_excel(
 
 #[tauri::command]
 pub async fn import_excel(
+    dept: Option<String>,
     bytes: Vec<u8>,
     display_name: String,
     dataset_key: String,
     selected_sheets: Vec<String>,
     selected_columns: HashMap<String, Vec<String>>,
 ) -> Result<serde_json::Value, String> {
+    let department = dept.unwrap_or_else(|| "MIOP".to_string());
     let (primary_key, total_imported) = execute_import(
+        &department,
         &bytes,
         &display_name,
         &dataset_key,
