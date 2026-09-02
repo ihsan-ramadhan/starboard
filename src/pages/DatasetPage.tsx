@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
 import { useApp } from "../App";
+import { api } from "../lib/api";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
@@ -53,11 +53,7 @@ export default function DatasetPage() {
     if (!detail?.dataset) return;
     setIsDeleting(true);
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        await invoke("delete_dataset", {
-          datasetId: detail.dataset.id,
-        });
-      }
+      await api.deleteDataset(detail.dataset.id);
       await refreshDatasets();
       setShowDeleteModal(false);
       navigate("/", { replace: true });
