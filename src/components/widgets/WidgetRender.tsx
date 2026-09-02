@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { api } from "../../lib/api";
 import type {
   ChartDataPoint,
   WidgetDefinition,
-  WidgetQueryResult,
 } from "../../types";
 import KpiCard from "./KpiCard";
 import BarChartWidget from "./BarChartWidget";
@@ -25,21 +24,17 @@ export default function WidgetRender({ widget }: WidgetRenderProps) {
     async function load() {
       setLoading(true);
       try {
-        if ((window as any).__TAURI_INTERNALS__) {
-          const res = await invoke<WidgetQueryResult>("query_widget_data", {
-            req: {
-              datasetId: widget.datasetId,
-              metric: widget.metric,
-              metricColumn: widget.metricColumn,
-              groupByColumn: widget.groupByColumn,
-              limit: widget.limit ?? 10,
-              orderByKey: widget.type === "line",
-            },
-          });
-          if (!active) return;
-          setScalar(res.scalarValue ?? null);
-          setData(res.rows || []);
-        }
+        const res = await api.queryWidgetData({
+          datasetId: widget.datasetId,
+          metric: widget.metric,
+          metricColumn: widget.metricColumn,
+          groupByColumn: widget.groupByColumn,
+          limit: widget.limit ?? 10,
+          orderByKey: widget.type === "line",
+        });
+        if (!active) return;
+        setScalar(res.scalarValue ?? null);
+        setData(res.rows || []);
       } catch (e) {
         console.error("Failed to load widget:", e);
         if (active) {

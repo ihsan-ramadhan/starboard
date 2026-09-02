@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { useApp } from "../App";
+import { api } from "../lib/api";
 
 type InferredType = "numeric" | "date" | "category";
 
@@ -79,6 +80,7 @@ export default function ImportWizard({
   setWizardState,
   onImportSuccess,
 }: ImportWizardProps) {
+  const { user } = useApp();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -126,10 +128,7 @@ export default function ImportWizard({
       const buffer = await selectedFile.arrayBuffer();
       const bytes = Array.from(new Uint8Array(buffer));
 
-      const result = await invoke<DetectedSheet[]>("analyze_excel", {
-        bytes,
-        datasetKey: cleaned,
-      });
+      const result = await api.analyzeExcel(bytes, cleaned);
 
       const initSel: Record<string, boolean> = {};
       const initCols: Record<string, string[]> = {};
@@ -226,20 +225,18 @@ export default function ImportWizard({
       const selCols: Record<string, string[]> = {};
       for (const name of valid) selCols[name] = selectedCols[name];
 
-      const res = await invoke<{ primaryKey: string; importedCount: number }>(
-        "import_excel",
-        {
-          bytes: fileBytes,
-          displayName: displayName.trim() || cleanInitialName(file.name),
-          datasetKey: displayName.trim() || cleanInitialName(file.name),
-          selectedSheets: valid,
-          selectedColumns: selCols,
-        }
-      );
+      const res = await api.importExcel({
+        dept: user.role,
+        fileBytes,
+        displayName: displayName.trim() || cleanInitialName(file.name),
+        baseKey: displayName.trim() || cleanInitialName(file.name),
+        selectedSheets: valid,
+        selectedColumns: selCols,
+      });
 
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
-      navigate(`/d/${res.primaryKey}?imported=${res.importedCount}`);
+      navigate(`/d/${res.primaryKey}?imported=${res.totalImported}`);
     } catch (e: any) {
       setError(e?.toString() || "Gagal mengimpor file.");
       setImporting(false);

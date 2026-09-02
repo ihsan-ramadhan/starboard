@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, createContext, useContext } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import ImportPage from "./pages/ImportPage";
@@ -10,6 +9,7 @@ import {
   type ImportWizardState,
   initialImportWizardState,
 } from "./components/ImportWizard";
+import { api, restoreAuthToken, setAuthToken } from "./lib/api";
 import type { SessionUser, DatasetRegistry, DatasetDetail } from "./types";
 
 type AppContextType = {
@@ -116,13 +116,13 @@ export default function App() {
 
   async function loadDatasets(role: string) {
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        const data = await invoke<DatasetRegistry[]>("get_datasets", {
-          dept: role,
-        });
-        setDatasets(data);
+      const data = await api.getDatasets(role);
+      setDatasets(data);
+    } catch (err: any) {
+      if (err?.message?.includes("Unauthorized") || err?.message?.includes("401")) {
+        handleLogout();
+        return;
       }
-    } catch (err) {
       console.error("Failed to load datasets:", err);
     }
   }
@@ -136,15 +136,9 @@ export default function App() {
       return datasetCache[key];
     }
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        const res = await invoke<DatasetDetail>("get_dataset_detail", {
-          dept: user.role,
-          key,
-        });
-        setDatasetCache((prev) => ({ ...prev, [key]: res }));
-        return res;
-      }
-      return null;
+      const res = await api.getDatasetDetail(user.role, key);
+      setDatasetCache((prev) => ({ ...prev, [key]: res }));
+      return res;
     } catch (err) {
       console.error("Failed to fetch dataset detail:", err);
       return null;
@@ -154,16 +148,8 @@ export default function App() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        if ((window as any).__TAURI_INTERNALS__) {
-          const u = await invoke<SessionUser | null>("get_current_user");
-          if (u) {
-            setUser(u);
-            localStorage.setItem("starboard_user", JSON.stringify(u));
-            await loadDatasets(u.role);
-          } else if (user) {
-            await loadDatasets(user.role);
-          }
-        } else if (user) {
+        restoreAuthToken();
+        if (user) {
           await loadDatasets(user.role);
         }
       } catch (err) {
@@ -180,7 +166,13 @@ export default function App() {
     loadDatasets(u.role);
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      await api.logout();
+    } catch {
+      void 0;
+    }
+    setAuthToken(null);
     setUser(null);
     setDatasets([]);
     setDatasetCache({});

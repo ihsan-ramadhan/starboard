@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { api, setAuthToken } from "../lib/api";
 import type { SessionUser } from "../types";
 
 export type LoginPageProps = {
@@ -22,24 +22,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
 
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        const u = await invoke<SessionUser>("login", {
-          identifier,
-          password,
-        });
-        localStorage.setItem("starboard_user", JSON.stringify(u));
-        onLoginSuccess(u);
-      } else {
-        const mockUser: SessionUser = {
-          id: "mock-id",
-          username: identifier,
-          email: `${identifier.toLowerCase()}@aspire.id`,
-          role: identifier.toUpperCase(),
-          deptColor: "#2563eb",
-        };
-        localStorage.setItem("starboard_user", JSON.stringify(mockUser));
-        onLoginSuccess(mockUser);
-      }
+      const res = await api.login(identifier, password);
+      setAuthToken(res.token);
+      localStorage.setItem("starboard_user", JSON.stringify(res.user));
+      onLoginSuccess(res.user);
     } catch (err: any) {
       setError(err?.toString() || "Login gagal. Cek kembali akun Anda.");
     } finally {
