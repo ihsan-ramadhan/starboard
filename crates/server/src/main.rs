@@ -205,13 +205,21 @@ async fn login_handler(
 
     let row = match row {
         Some(r) => r,
-        None => return Err((StatusCode::UNAUTHORIZED, "Pengguna tidak ditemukan.".to_string())),
+        None => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Akun atau kata sandi tidak valid.".to_string(),
+            ))
+        }
     };
 
     let password_hash: String = row.get(3);
     let is_valid = bcrypt::verify(&payload.password, &password_hash).unwrap_or(false);
     if !is_valid {
-        return Err((StatusCode::UNAUTHORIZED, "Password salah.".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Akun atau kata sandi tidak valid.".to_string(),
+        ));
     }
 
     let user = SessionUser {

@@ -111,8 +111,11 @@ export default function WidgetBuilderModal({
     resetSelectionsForType(nextType);
   }
 
-  function handleSave() {
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     if (!title.trim()) return;
+    if (needsMetricColumn && !noMetricOption && !metricColumn) return;
+    if (needsGroup && !groupByColumn) return;
 
     const widget: WidgetDefinition = {
       id: editing?.id ?? createId(),
@@ -130,18 +133,14 @@ export default function WidgetBuilderModal({
     onSave(widget);
   }
 
-  const canSave =
-    title.trim().length > 0 &&
-    (!needsMetricColumn || noMetricOption || metricColumn.length > 0) &&
-    (!needsGroup || groupByColumn.length > 0);
-
   return (
     <div className="modal-backdrop" onClick={onCancel}>
-      <div
+      <form
         className="modal-card builder-modal"
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
       >
         <div className="modal-header">
           <h3 className="modal-title">
@@ -173,6 +172,7 @@ export default function WidgetBuilderModal({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Contoh: Total Biaya per Aktivitas"
               className="builder-input"
+              required
               autoFocus
             />
           </label>
@@ -201,6 +201,7 @@ export default function WidgetBuilderModal({
                 value={metricColumn}
                 onChange={(e) => setMetricColumn(e.target.value)}
                 className="builder-input"
+                required
               >
                 <option value="">— Pilih kolom —</option>
                 {metricCols.map((c) => (
@@ -219,6 +220,7 @@ export default function WidgetBuilderModal({
                 value={groupByColumn}
                 onChange={(e) => setGroupByColumn(e.target.value)}
                 className="builder-input"
+                required
               >
                 <option value="">— Pilih kolom —</option>
                 {groupCols.map((c) => (
@@ -278,15 +280,13 @@ export default function WidgetBuilderModal({
             Batal
           </button>
           <button
-            type="button"
+            type="submit"
             className="btn-primary"
-            onClick={handleSave}
-            disabled={!canSave}
           >
             {editing ? "Simpan Perubahan" : "Tambah Widget"}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

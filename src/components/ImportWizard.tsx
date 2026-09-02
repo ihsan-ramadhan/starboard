@@ -1,7 +1,9 @@
 import { useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useApp } from "../App";
 import { api } from "../lib/api";
+import FilePlusIcon from "../assets/icons/file-plus.svg?react";
 
 type InferredType = "numeric" | "date" | "category";
 
@@ -148,7 +150,7 @@ export default function ImportWizard({
         selectedCols: initCols,
       });
     } catch (e: any) {
-      setError(e?.toString() || "Gagal menganalisis file Excel.");
+      toast.error(e?.toString() || "Gagal menganalisis file Excel.");
       setWizardState(initialImportWizardState);
     } finally {
       setAnalyzing(false);
@@ -236,9 +238,12 @@ export default function ImportWizard({
 
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
-      navigate(`/d/${res.primaryKey}?imported=${res.totalImported}`);
+      toast.success(
+        `${valid.length} sheet berhasil diimpor (${res.totalImported.toLocaleString()} baris).`
+      );
+      navigate(`/d/${res.primaryKey}`);
     } catch (e: any) {
-      setError(e?.toString() || "Gagal mengimpor file.");
+      toast.error(e?.toString() || "Gagal mengimpor file.");
       setImporting(false);
     }
   }
@@ -277,12 +282,7 @@ export default function ImportWizard({
 
           <div className="dropzone-inner">
             <div className="dropzone-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="12" y1="18" x2="12" y2="12" />
-                <line x1="9" y1="15" x2="15" y2="15" />
-              </svg>
+              <FilePlusIcon width={32} height={32} />
             </div>
             <div className="dropzone-title">
               {analyzing ? "Membaca file Excel..." : "Klik atau seret file Excel ke sini"}
