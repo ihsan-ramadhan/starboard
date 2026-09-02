@@ -177,7 +177,7 @@ export default function WidgetBuilderModal({
             />
           </label>
 
-          {needsMetricColumn && !noMetricOption && (
+          {needsMetricColumn && (
             <label className="builder-field">
               <span className="builder-label">Agregasi</span>
               <select
@@ -194,14 +194,13 @@ export default function WidgetBuilderModal({
             </label>
           )}
 
-          {needsMetricColumn && (
+          {needsMetricColumn && metric !== "COUNT" && (
             <label className="builder-field">
               <span className="builder-label">Kolom Metrik (Numeric)</span>
               <select
                 value={metricColumn}
                 onChange={(e) => setMetricColumn(e.target.value)}
                 className="builder-input"
-                disabled={noMetricOption}
               >
                 <option value="">— Pilih kolom —</option>
                 {metricCols.map((c) => (
