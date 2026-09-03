@@ -1,8 +1,8 @@
-mod db;
-mod types;
-mod excel;
-mod analytics;
-mod commands;
+pub mod db;
+pub mod types;
+pub mod excel;
+pub mod analytics;
+pub mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,6 +10,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
             let _ = dotenvy::dotenv();
+            let _ = dotenvy::from_path("../.env");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

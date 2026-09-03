@@ -1,10 +1,13 @@
 import { useState, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import { useApp } from "../App";
+import { api } from "../lib/api";
+import FilePlusIcon from "../assets/icons/file-plus.svg?react";
 
-export type InferredType = "numeric" | "date" | "category";
+type InferredType = "numeric" | "date" | "category";
 
-export type ColumnSchema = {
+type ColumnSchema = {
   colIndex: number;
   rawName: string;
   slug: string;
@@ -79,6 +82,7 @@ export default function ImportWizard({
   setWizardState,
   onImportSuccess,
 }: ImportWizardProps) {
+  const { user } = useApp();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -126,10 +130,7 @@ export default function ImportWizard({
       const buffer = await selectedFile.arrayBuffer();
       const bytes = Array.from(new Uint8Array(buffer));
 
-      const result = await invoke<DetectedSheet[]>("analyze_excel", {
-        bytes,
-        datasetKey: cleaned,
-      });
+      const result = await api.analyzeExcel(bytes, cleaned);
 
       const initSel: Record<string, boolean> = {};
       const initCols: Record<string, string[]> = {};
@@ -149,7 +150,7 @@ export default function ImportWizard({
         selectedCols: initCols,
       });
     } catch (e: any) {
-      setError(e?.toString() || "Gagal menganalisis file Excel.");
+      toast.error(e?.toString() || "Gagal menganalisis file Excel.");
       setWizardState(initialImportWizardState);
     } finally {
       setAnalyzing(false);
@@ -226,22 +227,23 @@ export default function ImportWizard({
       const selCols: Record<string, string[]> = {};
       for (const name of valid) selCols[name] = selectedCols[name];
 
-      const res = await invoke<{ primaryKey: string; importedCount: number }>(
-        "import_excel",
-        {
-          bytes: fileBytes,
-          displayName: displayName.trim() || cleanInitialName(file.name),
-          datasetKey: displayName.trim() || cleanInitialName(file.name),
-          selectedSheets: valid,
-          selectedColumns: selCols,
-        }
-      );
+      const res = await api.importExcel({
+        dept: user.role,
+        fileBytes,
+        displayName: displayName.trim() || cleanInitialName(file.name),
+        baseKey: displayName.trim() || cleanInitialName(file.name),
+        selectedSheets: valid,
+        selectedColumns: selCols,
+      });
 
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
-      navigate(`/d/${res.primaryKey}?imported=${res.importedCount}`);
+      toast.success(
+        `${valid.length} sheet berhasil diimpor (${res.totalImported.toLocaleString()} baris).`
+      );
+      navigate(`/d/${res.primaryKey}`);
     } catch (e: any) {
-      setError(e?.toString() || "Gagal mengimpor file.");
+      toast.error(e?.toString() || "Gagal mengimpor file.");
       setImporting(false);
     }
   }
@@ -280,12 +282,7 @@ export default function ImportWizard({
 
           <div className="dropzone-inner">
             <div className="dropzone-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="12" y1="18" x2="12" y2="12" />
-                <line x1="9" y1="15" x2="15" y2="15" />
-              </svg>
+              <FilePlusIcon width={32} height={32} />
             </div>
             <div className="dropzone-title">
               {analyzing ? "Membaca file Excel..." : "Klik atau seret file Excel ke sini"}

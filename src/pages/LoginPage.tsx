@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { api, setAuthToken } from "../lib/api";
+import EyeIcon from "../assets/icons/eye.svg?react";
+import EyeOffIcon from "../assets/icons/eye-off.svg?react";
+import AlertCircleIcon from "../assets/icons/alert-circle.svg?react";
 import type { SessionUser } from "../types";
 
 export type LoginPageProps = {
@@ -9,42 +12,41 @@ export type LoginPageProps = {
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!identifier || !password) {
-      setError("Username / email dan password wajib diisi.");
+    if (!identifier.trim() || !password) {
+      setError("Username dan password wajib diisi.");
       return;
     }
     setError(null);
     setLoading(true);
 
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        const u = await invoke<SessionUser>("login", {
-          identifier,
-          password,
-        });
-        localStorage.setItem("starboard_user", JSON.stringify(u));
-        onLoginSuccess(u);
-      } else {
-        const mockUser: SessionUser = {
-          id: "mock-id",
-          username: identifier,
-          email: `${identifier.toLowerCase()}@aspire.id`,
-          role: identifier.toUpperCase(),
-          deptColor: "#2563eb",
-        };
-        localStorage.setItem("starboard_user", JSON.stringify(mockUser));
-        onLoginSuccess(mockUser);
-      }
+      const res = await api.login(identifier.trim(), password);
+      setAuthToken(res.token);
+      localStorage.setItem("starboard_user", JSON.stringify(res.user));
+      onLoginSuccess(res.user);
     } catch (err: any) {
-      setError(err?.toString() || "Login gagal. Cek kembali akun Anda.");
+      const raw = err?.message || err?.toString() || "";
+      const cleaned = raw.replace(/^Error:\s*/i, "");
+      setError(cleaned || "Akun atau kata sandi tidak valid.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleIdentifierChange(val: string) {
+    setIdentifier(val);
+    if (error) setError(null);
+  }
+
+  function handlePasswordChange(val: string) {
+    setPassword(val);
+    if (error) setError(null);
   }
 
   return (
@@ -58,32 +60,49 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         </div>
 
         <form onSubmit={handleSubmit}>
-          {error && <div className="alert">{error}</div>}
-
           <label>
             <span>Username atau Email</span>
             <input
               type="text"
               name="identifier"
+              className={error ? "input-error" : ""}
               placeholder="MIOP / miop@aspire.id"
               autoComplete="username"
               value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              onChange={(e) => handleIdentifierChange(e.target.value)}
               required
             />
           </label>
 
           <label>
             <span>Password</span>
-            <input
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="login-password-wrapper">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                className={error ? "input-error" : ""}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="login-password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOffIcon width={16} height={16} /> : <EyeIcon width={16} height={16} />}
+              </button>
+            </div>
+            {error && (
+              <div className="field-error-text" role="alert">
+                <AlertCircleIcon width={14} height={14} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
+              </div>
+            )}
           </label>
 
           <button

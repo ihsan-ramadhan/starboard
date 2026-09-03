@@ -1,168 +1,136 @@
-import { useState, useEffect } from "react";
-import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import GridLayout, { type Layout, type LayoutItem } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 import { useApp } from "../App";
+import { api } from "../lib/api";
 import ConfirmModal from "../components/ConfirmModal";
-import KpiCard from "../components/widgets/KpiCard";
-import BarChartWidget from "../components/widgets/BarChartWidget";
-import LineChartWidget from "../components/widgets/LineChartWidget";
-import PieChartWidget from "../components/widgets/PieChartWidget";
+import WidgetRender from "../components/widgets/WidgetRender";
+import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
 import SchemaInspector from "../components/table/SchemaInspector";
 import RawTablePreview from "../components/table/RawTablePreview";
 import type {
   DatasetDetail,
-  WidgetQueryResult,
-  QuickKpi,
-  DatasetCharts,
-  ChartDataPoint,
+  WidgetDefinition,
+  WidgetLayout,
+  WidgetType,
 } from "../types";
 
-async function fetchKpiMetrics(datasetId: string): Promise<QuickKpi> {
-  const whRes = await invoke<WidgetQueryResult>("query_widget_data", {
-    req: {
-      datasetId,
-      metric: "SUM",
-      metricColumn: "wh",
-    },
-  });
-  const costRes = await invoke<WidgetQueryResult>("query_widget_data", {
-    req: {
-      datasetId,
-      metric: "SUM",
-      metricColumn: "cost_rp",
-    },
-  });
-
-  return {
-    totalWh: whRes.scalarValue ?? 0,
-    totalCostRp: costRes.scalarValue ?? 0,
-  };
-}
-
-async function fetchChartMetrics(datasetId: string): Promise<DatasetCharts> {
-  const barRes = await invoke<WidgetQueryResult>("query_widget_data", {
-    req: {
-      datasetId,
-      metric: "SUM",
-      metricColumn: "cost_rp",
-      groupByColumn: "kode",
-      limit: 6,
-    },
-  });
-
-  const lineRes = await invoke<WidgetQueryResult>("query_widget_data", {
-    req: {
-      datasetId,
-      metric: "SUM",
-      metricColumn: "wh",
-      groupByColumn: "month",
-      limit: 12,
-      orderByKey: true,
-    },
-  });
-
-  const pieRes = await invoke<WidgetQueryResult>("query_widget_data", {
-    req: {
-      datasetId,
-      metric: "COUNT",
-      groupByColumn: "dept",
-      limit: 5,
-    },
-  });
-
-  return {
-    barData: barRes.rows || [],
-    lineData: lineRes.rows || [],
-    pieData: pieRes.rows || [],
-  };
+function defaultLayoutFor(type: WidgetType): WidgetLayout {
+  const base = { x: 0, y: 0 };
+  switch (type) {
+    case "kpi":
+      return { ...base, w: 3, h: 2 };
+    case "pie":
+      return { ...base, w: 4, h: 5 };
+    case "line":
+      return { ...base, w: 6, h: 5 };
+    case "bar":
+    default:
+      return { ...base, w: 6, h: 5 };
+  }
 }
 
 export default function DatasetPage() {
-  const { user, refreshDatasets, datasetCache, setDatasetCache, fetchDatasetDetail } = useApp();
+  const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
   const { key } = useParams<{ key: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const imported = searchParams.get("imported");
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
-  const [barData, setBarData] = useState<ChartDataPoint[]>(() => {
-    return key && datasetCache[key]?.charts?.barData ? datasetCache[key].charts.barData : [];
-  });
-  const [lineData, setLineData] = useState<ChartDataPoint[]>(() => {
-    return key && datasetCache[key]?.charts?.lineData ? datasetCache[key].charts.lineData : [];
-  });
-  const [pieData, setPieData] = useState<ChartDataPoint[]>(() => {
-    return key && datasetCache[key]?.charts?.pieData ? datasetCache[key].charts.pieData : [];
-  });
 
   const [loading, setLoading] = useState(!detail);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
+  const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
+  const widgetsLoadedRef = useRef(false);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
+
+  const saveTimerRef = useRef<number | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+  const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+      resizeObserverRef.current = null;
+    }
+
+    if (node) {
+      const update = () => {
+        const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
+        if (width > 0) {
+          setContainerWidth(Math.floor(width));
+        }
+      };
+
+      requestAnimationFrame(update);
+      const ro = new ResizeObserver(() => {
+        update();
+      });
+      ro.observe(node);
+      resizeObserverRef.current = ro;
+    }
+  }, []);
 
   useEffect(() => {
+    widgetsLoadedRef.current = false;
+    setWidgets([]);
+
     async function load() {
       if (!key) return;
       let d: DatasetDetail | null = datasetCache[key] ?? null;
 
       if (!d) {
         setLoading(true);
-        d = await fetchDatasetDetail(key, !!imported);
+        d = await fetchDatasetDetail(key, false);
         setDetail(d);
         setLoading(false);
       } else {
         setDetail(d);
-        if (d.charts) {
-          setBarData(d.charts.barData);
-          setLineData(d.charts.lineData);
-          setPieData(d.charts.pieData);
-        }
         setLoading(false);
       }
 
-      if (d?.dataset && (!d.kpi || !d.charts)) {
+      if (!widgetsLoadedRef.current && d?.dataset) {
         try {
-          if ((window as any).__TAURI_INTERNALS__) {
-            const computedKpi = d.kpi ? d.kpi : await fetchKpiMetrics(d.dataset.id);
-            const computedCharts = d.charts ? d.charts : await fetchChartMetrics(d.dataset.id);
-
-            setBarData(computedCharts.barData);
-            setLineData(computedCharts.lineData);
-            setPieData(computedCharts.pieData);
-
-            const updated: DatasetDetail = {
-              ...d,
-              kpi: computedKpi,
-              charts: computedCharts,
-            };
-            setDetail(updated);
-            setDatasetCache((prev) => ({ ...prev, [key]: updated }));
-          }
-        } catch (e) {
-          console.error("Failed to fetch widget data:", e);
+          const w = await api.getWidgets(user.role, key);
+          const sanitized = w.map((item) => ({
+            ...item,
+            datasetId: item.datasetId || d.dataset.id,
+          }));
+          setWidgets(sanitized);
+        } catch (err) {
+          console.error("Failed to load widgets:", err);
+        } finally {
+          widgetsLoadedRef.current = true;
         }
       }
     }
     load();
-  }, [key, imported, datasetCache]);
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [key, datasetCache]);
 
   async function handleDeleteDataset() {
     if (!detail?.dataset) return;
     setIsDeleting(true);
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        await invoke("delete_dataset", {
-          datasetId: detail.dataset.id,
-        });
-      }
+      await api.deleteDataset(detail.dataset.id);
       await refreshDatasets();
       setShowDeleteModal(false);
+      toast.success("Dataset berhasil dihapus.");
       navigate("/", { replace: true });
     } catch (err) {
-      console.error(err);
-      alert("Gagal menghapus dataset: " + String(err));
+      toast.error("Gagal menghapus dataset: " + String(err));
     } finally {
       setIsDeleting(false);
     }
@@ -190,7 +158,97 @@ export default function DatasetPage() {
     );
   }
 
-  const { dataset, columns, totalRows, sampleRows, kpi } = detail;
+  const { dataset, columns, totalRows, sampleRows } = detail;
+
+  function persistWidgets(next: WidgetDefinition[]) {
+    if (!key) return;
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      api.saveWidgets(user.role, key, next).catch((err) => {
+        toast.error("Gagal menyimpan layout widget: " + String(err));
+      });
+    }, 400);
+  }
+
+  function handleSaveWidget(widget: WidgetDefinition) {
+    setWidgets((prev) => {
+      const exists = prev.some((w) => w.id === widget.id);
+      const withLayout = widget.layout
+        ? widget
+        : { ...widget, layout: defaultLayoutFor(widget.type) };
+      const next = exists
+        ? prev.map((w) => (w.id === widget.id ? withLayout : w))
+        : [...prev, withLayout];
+      persistWidgets(next);
+      return next;
+    });
+    setShowBuilder(false);
+    setEditingWidget(null);
+  }
+
+  function handleDeleteWidget(id: string) {
+    setWidgets((prev) => {
+      const next = prev.filter((w) => w.id !== id);
+      persistWidgets(next);
+      return next;
+    });
+    setWidgetToDelete(null);
+  }
+
+  function openWidgetDeleteConfirm(widget: WidgetDefinition) {
+    setWidgetToDelete(widget);
+  }
+
+  function handleLayoutChange(layout: Layout) {
+    setWidgets((prev) => {
+      if (prev.length === 0) return prev;
+      const pos = new Map(layout.map((l) => [l.i, l]));
+      const next = prev.map((w) => {
+        const p = pos.get(w.id);
+        if (!p) return w;
+        const cur = w.layout;
+        if (cur && cur.x === p.x && cur.y === p.y && cur.w === p.w && cur.h === p.h) {
+          return w;
+        }
+        return { ...w, layout: { x: p.x, y: p.y, w: p.w, h: p.h } };
+      });
+      const changed = next.some((w, i) => {
+        const a = w.layout;
+        const b = prev[i].layout;
+        return a !== b && (!a || !b || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h);
+      });
+      if (changed) {
+        persistWidgets(next);
+        return next;
+      }
+      return prev;
+    });
+  }
+
+  function openCreateWidget() {
+    setEditingWidget(null);
+    setShowBuilder(true);
+  }
+
+  function openEditWidget(widget: WidgetDefinition) {
+    setEditingWidget(widget);
+    setShowBuilder(true);
+  }
+
+  const gridLayout: LayoutItem[] = widgets.map((w) => {
+    const def = defaultLayoutFor(w.type);
+    return {
+      i: w.id,
+      x: w.layout?.x ?? 0,
+      y: w.layout?.y ?? 0,
+      w: w.layout?.w ?? def.w,
+      h: w.layout?.h ?? def.h,
+      minW: 2,
+      minH: 2,
+    };
+  });
 
   return (
     <main className="content">
@@ -222,6 +280,13 @@ export default function DatasetPage() {
           </div>
           <button
             type="button"
+            className="btn-primary"
+            onClick={openCreateWidget}
+          >
+            + Tambah Widget
+          </button>
+          <button
+            type="button"
             className="btn-danger-outline"
             onClick={() => setShowDeleteModal(true)}
           >
@@ -233,59 +298,69 @@ export default function DatasetPage() {
         </div>
       </div>
 
-      {imported && (
-        <div className="success-banner">
-          Berhasil membuat tabel <code>{dataset.tableName}</code> dan mengimpor{" "}
-          <strong>{Number(imported).toLocaleString()} baris</strong> data!
-        </div>
-      )}
-
       {activeTab === "dashboard" ? (
         <div className="dashboard-container">
-          <div className="kpi-grid">
-            <KpiCard
-              label="TOTAL WORKING HOURS (WH)"
-              value={
-                kpi?.totalWh !== undefined && kpi.totalWh !== null
-                  ? kpi.totalWh.toLocaleString(undefined, { maximumFractionDigits: 1 })
-                  : null
-              }
-              unit="Jam"
-            />
-            <KpiCard
-              label="TOTAL ESTIMASI BIAYA (RP)"
-              value={
-                kpi?.totalCostRp !== undefined && kpi.totalCostRp !== null
-                  ? `Rp ${Math.round(kpi.totalCostRp).toLocaleString("id-ID")}`
-                  : null
-              }
-              accent
-            />
-            <KpiCard
-              label="TOTAL REKOR DATA"
-              value={totalRows.toLocaleString("id-ID")}
-              unit="Baris"
-            />
-          </div>
-
-          <div className="charts-grid">
-            <BarChartWidget
-              title="Breakdown Biaya Berdasarkan Kode Aktivitas"
-              data={barData}
-              isCurrency
-            />
-            <LineChartWidget
-              title="Tren Jam Kerja (WH) per Bulan"
-              data={lineData}
-              unit="Jam"
-              color="#16a34a"
-            />
-            <PieChartWidget
-              title="Distribusi Rekor Berdasarkan Departemen"
-              data={pieData}
-              unit="Rekor"
-            />
-          </div>
+          {widgets.length === 0 ? (
+            <div className="empty-widgets-card">
+              <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
+              <p className="empty-widgets-desc">
+                Klik tombol <strong>+ Tambah Widget</strong> di atas untuk membuat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
+              </p>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={openCreateWidget}
+              >
+                + Tambah Widget Pertama
+              </button>
+            </div>
+          ) : (
+            <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
+              {containerWidth > 0 && (
+                <GridLayout
+                  className="charts-grid"
+                  width={containerWidth}
+                  layout={gridLayout}
+                  gridConfig={{
+                    cols: 12,
+                    rowHeight: 60,
+                    margin: [16, 16],
+                    containerPadding: [0, 0],
+                  }}
+                  dragConfig={{
+                    enabled: true,
+                    handle: ".widget-card",
+                    cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
+                  }}
+                  onLayoutChange={handleLayoutChange}
+                >
+                  {widgets.map((widget) => (
+                    <div key={widget.id}>
+                      <div className="widget-card wrap">
+                        <div className="widget-toolbar">
+                          <button
+                            type="button"
+                            className="btn-ghost-sm"
+                            onClick={() => openEditWidget(widget)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-danger-outline"
+                            onClick={() => openWidgetDeleteConfirm(widget)}
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                        <WidgetRender widget={widget} />
+                      </div>
+                    </div>
+                  ))}
+                </GridLayout>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="data-view-container">
@@ -293,6 +368,18 @@ export default function DatasetPage() {
           <RawTablePreview columns={columns} sampleRows={sampleRows} />
         </div>
       )}
+
+      <WidgetBuilderModal
+        isOpen={showBuilder}
+        columns={columns}
+        datasetId={dataset.id}
+        editing={editingWidget}
+        onSave={handleSaveWidget}
+        onCancel={() => {
+          setShowBuilder(false);
+          setEditingWidget(null);
+        }}
+      />
 
       <ConfirmModal
         isOpen={showDeleteModal}
@@ -304,6 +391,21 @@ export default function DatasetPage() {
         isLoading={isDeleting}
         onConfirm={handleDeleteDataset}
         onCancel={() => setShowDeleteModal(false)}
+      />
+
+      <ConfirmModal
+        isOpen={widgetToDelete !== null}
+        title="Hapus Widget"
+        message={`Widget "${widgetToDelete?.title ?? ""}" akan dihapus dari dashboard. Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus Widget"
+        cancelLabel="Batal"
+        isDestructive={true}
+        onConfirm={() => {
+          if (widgetToDelete) {
+            handleDeleteWidget(widgetToDelete.id);
+          }
+        }}
+        onCancel={() => setWidgetToDelete(null)}
       />
     </main>
   );

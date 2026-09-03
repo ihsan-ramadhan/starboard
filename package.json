@@ -17,7 +17,8 @@
     "react-dom": "^19.0.0",
     "react-grid-layout": "^2.2.4",
     "react-router-dom": "^7.3.0",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "sonner": "^2.0.8"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vite-plugin-svgr": "^5.2.0"
   }
 }

@@ -1,9 +1,10 @@
-use crate::db::get_client;
+use tokio_postgres::Client;
 use crate::types::{WidgetQueryRequest, WidgetQueryResult};
 
-pub async fn execute_widget_query(req: WidgetQueryRequest) -> Result<WidgetQueryResult, String> {
-    let client = get_client().await?;
-
+pub async fn execute_widget_query(
+    client: &Client,
+    req: WidgetQueryRequest,
+) -> Result<WidgetQueryResult, String> {
     let ds_row = client
         .query_opt(
             r#"SELECT "tableName" FROM dataset_registry WHERE id = $1"#,

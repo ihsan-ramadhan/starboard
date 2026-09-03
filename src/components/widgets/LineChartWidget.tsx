@@ -26,32 +26,40 @@ export default function LineChartWidget({
   isCurrency = false,
 }: LineChartWidgetProps) {
   return (
-    <div className="widget-card">
-      <div className="widget-header">
-        <h4 className="widget-title">{title}</h4>
-      </div>
-      <div className="widget-body">
+    <div className="chart-wrapper">
+      <h4 className="widget-title">{title}</h4>
+      <div className="chart-body">
         {data.length === 0 ? (
           <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
         ) : (
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={data}
+              margin={{ top: 10, right: 15, left: 0, bottom: 40 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#f1f5f9"
+              />
               <XAxis
                 dataKey="groupKey"
                 tick={{ fontSize: 11, fill: "#64748b" }}
-                interval={0}
-                textAnchor="middle"
-                height={30}
+                interval="preserveStartEnd"
+                angle={-20}
+                textAnchor="end"
+                height={35}
               />
               <YAxis
                 tick={{ fontSize: 11, fill: "#64748b" }}
                 tickFormatter={(v) => formatChartValue(v, isCurrency, unit)}
-                width={70}
+                width={65}
               />
               <Tooltip
-                formatter={(v: any) => [formatChartValue(Number(v), isCurrency, unit), "Total"]}
-                labelStyle={{ fontWeight: 600, color: "#0f172a" }}
+                formatter={(v: any) => [
+                  formatChartValue(Number(v), isCurrency, unit),
+                  "Nilai",
+                ]}
                 contentStyle={{
                   backgroundColor: "#ffffff",
                   borderColor: "#e2e8f0",
@@ -63,9 +71,9 @@ export default function LineChartWidget({
                 type="monotone"
                 dataKey="value"
                 stroke={color}
-                strokeWidth={2.5}
-                dot={{ r: 4, fill: color }}
-                activeDot={{ r: 6 }}
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
               />
             </LineChart>
           </ResponsiveContainer>

@@ -12,7 +12,7 @@ export default function KpiCard({
   accent = false,
 }: KpiCardProps) {
   return (
-    <div className="kpi-card">
+    <div className="kpi-wrapper">
       <div className="kpi-label">{label}</div>
       <div className={`kpi-value${accent ? " text-accent" : ""}`}>
         {value ?? "..."}

@@ -308,6 +308,12 @@ a {
   text-align: center;
 }
 
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .login-card label {
   display: flex;
   flex-direction: column;
@@ -323,11 +329,64 @@ a {
   padding: 10px 12px;
   color: var(--fg);
   font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .login-card input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.login-card input.input-error {
+  border-color: var(--danger);
+  background-color: var(--bg);
+}
+
+.login-card input.input-error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.login-password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.login-password-wrapper input {
+  width: 100%;
+  padding-right: 38px;
+}
+
+.login-password-toggle {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.12s ease;
+}
+
+.login-password-toggle:hover {
+  color: var(--fg);
+}
+
+.field-error-text {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 0;
 }
 
 .login-demo {
@@ -345,16 +404,6 @@ a {
   padding: 9px 12px;
   border-radius: var(--radius);
   font-size: 13px;
-}
-
-.success-banner {
-  background: var(--success-bg);
-  border: 1px solid var(--success-border);
-  color: var(--success);
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  margin-bottom: 20px;
 }
 
 .import-container {
@@ -839,22 +888,84 @@ a {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
 }
 
 .charts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 16px;
+  width: 100%;
+  position: relative;
 }
 
 .widget-card {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 18px 20px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+}
+
+.widget-card:active {
+  cursor: grabbing;
+}
+
+.widget-card button,
+.widget-card a,
+.widget-card input,
+.widget-card select,
+.widget-card .recharts-surface,
+.widget-card .recharts-legend-wrapper {
+  cursor: auto;
+}
+
+.chart-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.chart-body {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.kpi-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  padding-top: 4px;
+}
+
+.kpi-wrapper .kpi-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+}
+
+.kpi-wrapper .kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.1;
+}
+
+.charts-grid .react-resizable-handle {
+  opacity: 0.6;
+}
+
+.charts-grid .react-resizable-handle:hover {
+  opacity: 1;
 }
 
 .widget-header {
@@ -882,6 +993,138 @@ a {
   height: 100%;
   color: var(--fg-subtle);
   font-size: 13px;
+}
+
+.widget-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.widget-card.wrap {
+  position: relative;
+}
+
+.widget-card.wrap .widget-header {
+  padding-right: 40px;
+}
+
+.widget-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-subtle);
+}
+
+.empty-widgets-card {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.empty-widgets-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0;
+}
+
+.empty-widgets-desc {
+  font-size: 13px;
+  color: var(--fg-dim);
+  max-width: 480px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.dashboard-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.toolbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fg);
+  margin: 0 0 4px;
+}
+
+.toolbar-sub {
+  font-size: 13px;
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+.builder-modal {
+  width: min(460px, 92vw);
+  max-width: 92vw;
+}
+
+.builder-body {
+  padding: 4px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.builder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builder-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.builder-input {
+  padding: 8px 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.builder-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.builder-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.builder-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.builder-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
 }
 
 .dataset-title {
@@ -1065,16 +1308,17 @@ a {
   color: #475569;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
+dialog.modal-native {
+  border: none;
+  background: transparent;
+  padding: 0;
+  overflow: visible;
+  outline: none;
+}
+
+dialog.modal-native::backdrop {
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.15s ease-out;
 }
 
 .modal-card {
