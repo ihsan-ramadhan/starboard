@@ -98,7 +98,7 @@ export default function WidgetBuilderModal({
     }
     if (needNewMetric && metricColumn) {
       const col = columns.find((c) => c.name === metricColumn);
-      if (!col || col.type !== "numeric") {
+      if (col?.type !== "numeric") {
         setMetricColumn("");
       }
     }
@@ -144,7 +144,6 @@ export default function WidgetBuilderModal({
     <dialog
       ref={dialogRef}
       className="modal-native builder-modal"
-      onClick={onCancel}
       onCancel={(e) => {
         e.preventDefault();
         onCancel();
@@ -152,7 +151,6 @@ export default function WidgetBuilderModal({
     >
       <form
         className="modal-card"
-        onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
         <div className="modal-header">
