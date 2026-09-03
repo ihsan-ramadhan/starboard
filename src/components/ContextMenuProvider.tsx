@@ -92,13 +92,14 @@ export default function ContextMenuProvider() {
       try {
         text = await navigator.clipboard.readText();
       } catch {
-        text = "";
+        toast.error("Tidak bisa membaca papan klip. Ctrl+C dulu atau pakai Ctrl+V.");
+        return;
       }
     }
     if (text) {
       insertAtCaret(target, text);
     } else {
-      toast.error("Tidak bisa membaca papan klip. Ctrl+C dulu atau pakai Ctrl+V.");
+      toast.error("Clipboard kosong. Salin sesuatu dulu.");
     }
   }
 

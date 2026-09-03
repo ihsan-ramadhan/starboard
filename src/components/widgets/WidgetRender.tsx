@@ -73,7 +73,6 @@ export default function WidgetRender({ widget }: WidgetRenderProps) {
         label={widget.title}
         value={formattedVal}
         unit={widget.isCurrency ? undefined : widget.unit}
-        accent={widget.isCurrency}
       />
     );
   }

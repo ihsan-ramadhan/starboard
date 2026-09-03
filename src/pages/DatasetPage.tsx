@@ -6,6 +6,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api } from "../lib/api";
+import PencilIcon from "../assets/icons/pencil.svg?react";
+import TrashIcon from "../assets/icons/trash.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
@@ -273,7 +275,7 @@ export default function DatasetPage() {
   return (
     <main className="content">
       <div className="dataset-header">
-        <div>
+        <div className="dataset-heading">
           <h1 className="dataset-title">{dataset.displayName}</h1>
           <p className="dataset-meta">
             Tabel database: <code>{dataset.tableName}</code> · Total baris:{" "}
@@ -309,13 +311,6 @@ export default function DatasetPage() {
                 onClick={openCreateWidget}
               >
                 + Tambah Widget
-              </button>
-              <button
-                type="button"
-                className="btn-danger-outline"
-                onClick={() => setShowDeleteModal(true)}
-              >
-                Hapus Dataset
               </button>
               <button
                 type="button"
@@ -391,17 +386,21 @@ export default function DatasetPage() {
                           <div className="widget-toolbar">
                             <button
                               type="button"
-                              className="btn-ghost-sm"
+                              className="icon-btn"
+                              aria-label={`Edit widget ${widget.title}`}
+                              title="Edit widget"
                               onClick={() => openEditWidget(widget)}
                             >
-                              Edit
+                              <PencilIcon width={15} height={15} />
                             </button>
                             <button
                               type="button"
-                              className="btn-danger-outline"
+                              className="icon-btn danger"
+                              aria-label={`Hapus widget ${widget.title}`}
+                              title="Hapus widget"
                               onClick={() => openWidgetDeleteConfirm(widget)}
                             >
-                              Hapus
+                              <TrashIcon width={15} height={15} />
                             </button>
                           </div>
                         )}
@@ -418,6 +417,22 @@ export default function DatasetPage() {
         <div className="data-view-container">
           <SchemaInspector columns={columns} />
           <RawTablePreview columns={columns} sampleRows={sampleRows} />
+          <div className="danger-zone">
+            <div>
+              <p className="danger-zone-title">Zona Berbahaya</p>
+              <p className="danger-zone-desc">
+                Menghapus dataset ikut membuang {totalRows.toLocaleString()} baris
+                data beserta seluruh widget yang memakainya.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-danger-outline"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              Hapus Dataset
+            </button>
+          </div>
         </div>
       )}
 

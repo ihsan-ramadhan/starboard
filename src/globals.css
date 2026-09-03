@@ -16,7 +16,9 @@
   --success-bg: #f0fdf4;
   --success-border: #bbf7d0;
   --mpma: #16a34a;
+  --radius-sm: 6px;
   --radius: 8px;
+  --radius-lg: 10px;
 }
 
 * {
@@ -314,7 +316,7 @@ a {
 .empty-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 36px 40px;
   max-width: 460px;
   text-align: center;
@@ -336,16 +338,29 @@ a {
   font-size: 14px;
 }
 
+.btn-primary,
+.btn-ghost,
+.btn-danger,
+.btn-danger-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 .btn-primary {
-  display: inline-block;
   background: var(--accent);
   color: #fff;
   font-weight: 600;
-  padding: 9px 16px;
+  padding: 7px 16px;
   border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-size: 14px;
   transition: background 0.12s ease;
 }
 
@@ -359,14 +374,10 @@ a {
 }
 
 .btn-ghost {
-  display: inline-block;
   background: transparent;
   color: var(--fg-dim);
   border: 1px solid var(--border);
-  padding: 8px 14px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-size: 13px;
+  padding: 6px 14px;
   font-weight: 500;
   transition: border-color 0.12s ease, color 0.12s ease;
 }
@@ -376,35 +387,14 @@ a {
   border-color: var(--fg-dim);
 }
 
-.btn-ghost-sm {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--fg);
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12.5px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.btn-ghost-sm:hover {
-  background: var(--surface);
-  border-color: var(--fg-subtle);
-}
 
 .btn-danger-outline {
   background: transparent;
   border: 1px solid var(--danger-border);
-  color: var(--danger);
-  padding: 8px 14px;
-  border-radius: var(--radius);
-  font-size: 13.5px;
+  color: #b91c1c;
+  padding: 6px 14px;
   font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .btn-danger-outline:hover {
@@ -417,11 +407,7 @@ a {
   color: #ffffff;
   border: 1px solid var(--danger);
   padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 13px;
   font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
   transition: opacity 0.12s ease;
 }
 
@@ -432,6 +418,40 @@ a {
 .btn-danger:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-subtle);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.widget-card:hover .icon-btn,
+.icon-btn:focus-visible {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.widget-card .icon-btn:hover {
+  background: var(--surface);
+  border-color: var(--fg-subtle);
+  color: var(--fg);
+}
+
+.widget-card .icon-btn.danger:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: #b91c1c;
 }
 
 .login-screen {
@@ -575,7 +595,7 @@ a {
 .import-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 28px 32px;
 }
 
@@ -596,7 +616,7 @@ a {
 
 .dropzone-card {
   border: 2px dashed var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 48px 24px;
   text-align: center;
@@ -635,7 +655,7 @@ a {
   background: #eff6ff;
   width: 56px;
   height: 56px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 
 .dropzone-title {
@@ -1006,10 +1026,15 @@ a {
   margin-bottom: 20px;
 }
 
+.dataset-heading {
+  min-width: 0;
+}
+
 .dataset-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .view-toggle {
@@ -1024,14 +1049,16 @@ a {
 .toggle-btn {
   background: transparent;
   border: none;
-  padding: 5px 12px;
+  padding: 3px 12px;
   font-size: 13px;
+  line-height: 20px;
   font-weight: 500;
   color: var(--fg-dim);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.12s ease;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .toggle-btn:hover {
@@ -1060,7 +1087,7 @@ a {
 .widget-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -1146,6 +1173,10 @@ a {
   font-weight: 600;
   color: var(--fg);
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .widget-body {
@@ -1167,7 +1198,7 @@ a {
   top: 8px;
   right: 8px;
   display: flex;
-  gap: 6px;
+  gap: 4px;
   z-index: 2;
 }
 
@@ -1175,8 +1206,8 @@ a {
   position: relative;
 }
 
-.edit-mode .widget-card.wrap .widget-header {
-  padding-right: 40px;
+.edit-mode .widget-title {
+  padding-right: 68px;
 }
 
 .widget-loading {
@@ -1316,7 +1347,7 @@ a {
 .kpi-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
@@ -1338,10 +1369,6 @@ a {
   line-height: 1.2;
 }
 
-.kpi-value.text-accent {
-  color: var(--accent);
-}
-
 .kpi-unit {
   font-size: 14px;
   font-weight: 500;
@@ -1351,7 +1378,7 @@ a {
 .section-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 20px;
 }
 
@@ -1531,7 +1558,7 @@ dialog.modal-native::backdrop {
 .modal-card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 440px;
@@ -1602,4 +1629,30 @@ dialog.modal-native::backdrop {
     flex-direction: column;
     gap: 12px;
   }
+}
+
+.danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 24px;
+  padding: 16px 18px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-lg);
+}
+
+.danger-zone-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #b91c1c;
+}
+
+.danger-zone-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-dim);
 }

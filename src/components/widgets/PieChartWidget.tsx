@@ -39,7 +39,7 @@ export default function PieChartWidget({
 }: PieChartWidgetProps) {
   return (
     <div className="chart-wrapper">
-      <h4 className="widget-title">{title}</h4>
+      <h4 className="widget-title" title={title}>{title}</h4>
       <div className="chart-body">
         {data.length === 0 ? (
           <div className="widget-empty">Tidak ada data untuk ditampilkan</div>

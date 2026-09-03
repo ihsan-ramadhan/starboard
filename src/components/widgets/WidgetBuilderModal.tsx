@@ -287,7 +287,7 @@ export default function WidgetBuilderModal({
         </div>
 
         <div className="modal-actions">
-          <button type="button" className="btn-ghost-sm" onClick={onCancel}>
+          <button type="button" className="btn-ghost" onClick={onCancel}>
             Batal
           </button>
           <button

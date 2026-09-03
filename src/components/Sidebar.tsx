@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
+import ChevronIcon from "../assets/icons/chevron-left.svg?react";
+import LogoutIcon from "../assets/icons/log-out.svg?react";
 import type { SessionUser } from "../types";
 
 type DatasetTab = { key: string; displayName: string };
@@ -18,24 +20,6 @@ function initials(name: string) {
     .map((w) => w[0])
     .join("")
     .toUpperCase();
-}
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-function LogoutIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  );
 }
 
 export function Sidebar({
@@ -68,13 +52,12 @@ export function Sidebar({
   async function handleConfirmLogout() {
     setIsLoggingOut(true);
     try {
-      if ((window as any).__TAURI_INTERNALS__) {
-        await invoke("logout");
-      }
-    } catch (e) {
-      console.error(e);
+      await api.logout();
+    } catch {
+      void 0;
     } finally {
       setIsLoggingOut(false);
+      setAuthToken(null);
       setShowLogoutModal(false);
       localStorage.removeItem("starboard_user");
       if (onLogout) onLogout();
@@ -98,7 +81,7 @@ export function Sidebar({
             aria-label={collapsed ? "Buka sidebar" : "Tutup sidebar"}
             title={collapsed ? "Buka sidebar" : "Tutup sidebar"}
           >
-            <ChevronIcon />
+            <ChevronIcon width={16} height={16} />
           </button>
         </div>
 
@@ -151,7 +134,7 @@ export function Sidebar({
             aria-label="Logout"
             title={collapsed ? "Logout" : undefined}
           >
-            <LogoutIcon />
+            <LogoutIcon width={15} height={15} />
             <span className="sidebar-hideable">Logout</span>
           </button>
         </div>
