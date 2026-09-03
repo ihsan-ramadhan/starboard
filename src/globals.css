@@ -1069,7 +1069,8 @@ a {
 }
 
 .builder-modal {
-  max-width: 460px;
+  width: min(460px, 92vw);
+  max-width: 92vw;
 }
 
 .builder-body {
@@ -1318,18 +1319,6 @@ dialog.modal-native {
 dialog.modal-native::backdrop {
   background: rgba(15, 23, 42, 0.4);
   backdrop-filter: blur(2px);
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.15s ease-out;
 }
 
 .modal-card {
