@@ -1067,20 +1067,27 @@ a {
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
-  cursor: grab;
   user-select: none;
 }
 
-.widget-card:active {
+.charts-grid.edit-mode .widget-card {
+  cursor: grab;
+  border-style: dashed;
+}
+
+.charts-grid.edit-mode .widget-card:active {
   cursor: grabbing;
 }
 
 .widget-card button,
 .widget-card a,
-.widget-card input,
-.widget-card textarea,
 .widget-card select {
-  cursor: auto;
+  cursor: pointer;
+}
+
+.widget-card input,
+.widget-card textarea {
+  cursor: text;
 }
 
 .chart-wrapper {
@@ -1168,7 +1175,7 @@ a {
   position: relative;
 }
 
-.widget-card.wrap .widget-header {
+.edit-mode .widget-card.wrap .widget-header {
   padding-right: 40px;
 }
 

@@ -39,6 +39,8 @@ export default function DatasetPage() {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
+  // Not persisted: opening a dashboard should always land in the read-only state.
+  const [editMode, setEditMode] = useState(false);
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
@@ -273,28 +275,54 @@ export default function DatasetPage() {
             <button
               type="button"
               className={`toggle-btn${activeTab === "data" ? " active" : ""}`}
-              onClick={() => setActiveTab("data")}
+              onClick={() => {
+                setActiveTab("data");
+                setEditMode(false);
+              }}
             >
               Tabel Data
             </button>
           </div>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={openCreateWidget}
-          >
-            + Tambah Widget
-          </button>
-          <button
-            type="button"
-            className="btn-danger-outline"
-            onClick={() => setShowDeleteModal(true)}
-          >
-            Hapus
-          </button>
-          <Link to="/import" className="btn-ghost">
-            + Import File Lain
-          </Link>
+          {activeTab === "dashboard" && editMode ? (
+            <>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={openCreateWidget}
+              >
+                + Tambah Widget
+              </button>
+              <button
+                type="button"
+                className="btn-danger-outline"
+                onClick={() => setShowDeleteModal(true)}
+              >
+                Hapus Dataset
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setEditMode(false)}
+              >
+                Selesai
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to="/import" className="btn-ghost">
+                + Import File Lain
+              </Link>
+              {activeTab === "dashboard" && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setEditMode(true)}
+                >
+                  Atur Dashboard
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -304,12 +332,15 @@ export default function DatasetPage() {
             <div className="empty-widgets-card">
               <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
               <p className="empty-widgets-desc">
-                Klik tombol <strong>+ Tambah Widget</strong> di atas untuk membuat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
+                Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
               </p>
               <button
                 type="button"
                 className="btn-primary"
-                onClick={openCreateWidget}
+                onClick={() => {
+                  setEditMode(true);
+                  openCreateWidget();
+                }}
               >
                 + Tambah Widget Pertama
               </button>
@@ -318,7 +349,7 @@ export default function DatasetPage() {
             <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
               {containerWidth > 0 && (
                 <GridLayout
-                  className="charts-grid"
+                  className={`charts-grid${editMode ? " edit-mode" : ""}`}
                   width={containerWidth}
                   layout={gridLayout}
                   gridConfig={{
@@ -328,31 +359,34 @@ export default function DatasetPage() {
                     containerPadding: [0, 0],
                   }}
                   dragConfig={{
-                    enabled: true,
+                    enabled: editMode,
                     handle: ".widget-card",
                     cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
                   }}
+                  resizeConfig={{ enabled: editMode }}
                   onLayoutChange={handleLayoutChange}
                 >
                   {widgets.map((widget) => (
                     <div key={widget.id}>
                       <div className="widget-card wrap">
-                        <div className="widget-toolbar">
-                          <button
-                            type="button"
-                            className="btn-ghost-sm"
-                            onClick={() => openEditWidget(widget)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-danger-outline"
-                            onClick={() => openWidgetDeleteConfirm(widget)}
-                          >
-                            Hapus
-                          </button>
-                        </div>
+                        {editMode && (
+                          <div className="widget-toolbar">
+                            <button
+                              type="button"
+                              className="btn-ghost-sm"
+                              onClick={() => openEditWidget(widget)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-danger-outline"
+                              onClick={() => openWidgetDeleteConfirm(widget)}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        )}
                         <WidgetRender widget={widget} />
                       </div>
                     </div>
