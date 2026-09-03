@@ -4,7 +4,7 @@ import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import ImportPage from "./pages/ImportPage";
 import DatasetPage from "./pages/DatasetPage";
-import { Navbar } from "./components/Navbar";
+import { Sidebar } from "./components/Sidebar";
 import {
   type ImportWizardState,
   initialImportWizardState,
@@ -93,7 +93,7 @@ function ProtectedLayout({
   return (
     <AppContext.Provider value={contextValue}>
       <div className="app-shell">
-        <Navbar user={user} datasets={datasets} onLogout={onLogout} />
+        <Sidebar user={user} datasets={datasets} onLogout={onLogout} />
         <Outlet />
       </div>
     </AppContext.Provider>
