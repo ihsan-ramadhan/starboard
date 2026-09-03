@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import GridLayout, { type Layout, type LayoutItem } from "react-grid-layout";
+import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
@@ -17,6 +17,32 @@ import type {
   WidgetLayout,
   WidgetType,
 } from "../types";
+
+const GRID_COLS = 12;
+
+function toLayoutItem(w: WidgetDefinition): LayoutItem {
+  const def = defaultLayoutFor(w.type);
+  return {
+    i: w.id,
+    x: w.layout?.x ?? 0,
+    y: w.layout?.y ?? 0,
+    w: w.layout?.w ?? def.w,
+    h: w.layout?.h ?? def.h,
+    minW: 2,
+    minH: 2,
+  };
+}
+
+function findFreeSlot(layout: LayoutItem[], w: number, h: number) {
+  const maxY = bottom(layout);
+  for (let y = 0; y <= maxY; y++) {
+    for (let x = 0; x + w <= GRID_COLS; x++) {
+      const slot: LayoutItem = { i: "__probe__", x, y, w, h };
+      if (!layout.some((item) => collides(item, slot))) return { x, y };
+    }
+  }
+  return { x: 0, y: maxY };
+}
 
 function defaultLayoutFor(type: WidgetType): WidgetLayout {
   const base = { x: 0, y: 0 };
@@ -176,11 +202,14 @@ export default function DatasetPage() {
 
   function handleSaveWidget(widget: WidgetDefinition) {
     setWidgets((prev) => {
-      const exists = prev.some((w) => w.id === widget.id);
-      const withLayout = widget.layout
-        ? widget
-        : { ...widget, layout: defaultLayoutFor(widget.type) };
-      const next = exists
+      const existing = prev.find((w) => w.id === widget.id);
+      const size = defaultLayoutFor(widget.type);
+      const layout =
+        widget.layout ??
+        existing?.layout ??
+        { ...size, ...findFreeSlot(prev.map(toLayoutItem), size.w, size.h) };
+      const withLayout = { ...widget, layout };
+      const next = existing
         ? prev.map((w) => (w.id === widget.id ? withLayout : w))
         : [...prev, withLayout];
       persistWidgets(next);
@@ -239,18 +268,7 @@ export default function DatasetPage() {
     setShowBuilder(true);
   }
 
-  const gridLayout: LayoutItem[] = widgets.map((w) => {
-    const def = defaultLayoutFor(w.type);
-    return {
-      i: w.id,
-      x: w.layout?.x ?? 0,
-      y: w.layout?.y ?? 0,
-      w: w.layout?.w ?? def.w,
-      h: w.layout?.h ?? def.h,
-      minW: 2,
-      minH: 2,
-    };
-  });
+  const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
 
   return (
     <main className="content">
@@ -353,7 +371,7 @@ export default function DatasetPage() {
                   width={containerWidth}
                   layout={gridLayout}
                   gridConfig={{
-                    cols: 12,
+                    cols: GRID_COLS,
                     rowHeight: 60,
                     margin: [16, 16],
                     containerPadding: [0, 0],
