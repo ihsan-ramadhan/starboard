@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { DatasetColumn, WidgetDefinition, WidgetType } from "../../types";
 import { WIDGET_TYPE_LABEL } from "../../types";
-
 export type WidgetBuilderModalProps = {
   readonly isOpen: boolean;
   readonly columns: readonly DatasetColumn[];
@@ -28,7 +27,7 @@ function groupColumnFilter(widgetType: WidgetType): (col: DatasetColumn) => bool
 }
 
 function createId(): string {
-  return `w_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  return `w_${crypto.randomUUID()}`;
 }
 
 export default function WidgetBuilderModal({
@@ -47,6 +46,14 @@ export default function WidgetBuilderModal({
   const [isCurrency, setIsCurrency] = useState(false);
   const [unit, setUnit] = useState("");
   const [limit, setLimit] = useState<number>(10);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && isOpen && !dialog.open) {
+      dialog.showModal();
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -127,18 +134,24 @@ export default function WidgetBuilderModal({
       groupByColumn: needsGroup ? groupByColumn || undefined : undefined,
       limit: widgetType === "kpi" ? undefined : limit,
       isCurrency: isCurrencyRelevant ? isCurrency : false,
-      unit: widgetType === "kpi" && !isCurrency ? unit || undefined : unit || undefined,
+      unit: unit || undefined,
     };
 
     onSave(widget);
   }
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <dialog
+      ref={dialogRef}
+      className="modal-native builder-modal"
+      onClick={onCancel}
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
+    >
       <form
-        className="modal-card builder-modal"
-        role="dialog"
-        aria-modal="true"
+        className="modal-card"
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
       >
@@ -287,6 +300,6 @@ export default function WidgetBuilderModal({
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   );
 }

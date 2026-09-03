@@ -18,6 +18,21 @@ import type {
   WidgetType,
 } from "../types";
 
+function defaultLayoutFor(type: WidgetType): WidgetLayout {
+  const base = { x: 0, y: 0 };
+  switch (type) {
+    case "kpi":
+      return { ...base, w: 3, h: 2 };
+    case "pie":
+      return { ...base, w: 4, h: 5 };
+    case "line":
+      return { ...base, w: 6, h: 5 };
+    case "bar":
+    default:
+      return { ...base, w: 6, h: 5 };
+  }
+}
+
 export default function DatasetPage() {
   const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
   const { key } = useParams<{ key: string }>();
@@ -31,8 +46,9 @@ export default function DatasetPage() {
   const [loading, setLoading] = useState(!detail);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
-  const [widgetsReady, setWidgetsReady] = useState(false);
+  const widgetsLoadedRef = useRef(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
 
@@ -64,7 +80,7 @@ export default function DatasetPage() {
   }, []);
 
   useEffect(() => {
-    setWidgetsReady(false);
+    widgetsLoadedRef.current = false;
     setWidgets([]);
 
     async function load() {
@@ -81,7 +97,7 @@ export default function DatasetPage() {
         setLoading(false);
       }
 
-      if (d?.dataset) {
+      if (!widgetsLoadedRef.current && d?.dataset) {
         try {
           const w = await api.getWidgets(user.role, key);
           const sanitized = w.map((item) => ({
@@ -92,7 +108,7 @@ export default function DatasetPage() {
         } catch (err) {
           console.error("Failed to load widgets:", err);
         } finally {
-          setWidgetsReady(true);
+          widgetsLoadedRef.current = true;
         }
       }
     }
@@ -178,6 +194,11 @@ export default function DatasetPage() {
       persistWidgets(next);
       return next;
     });
+    setWidgetToDelete(null);
+  }
+
+  function openWidgetDeleteConfirm(widget: WidgetDefinition) {
+    setWidgetToDelete(widget);
   }
 
   function handleLayoutChange(layout: Layout) {
@@ -214,24 +235,6 @@ export default function DatasetPage() {
   function openEditWidget(widget: WidgetDefinition) {
     setEditingWidget(widget);
     setShowBuilder(true);
-  }
-
-  function defaultLayoutFor(type: WidgetType): WidgetLayout {
-    const base = {
-      x: 0,
-      y: 0,
-    };
-    switch (type) {
-      case "kpi":
-        return { ...base, w: 3, h: 2 };
-      case "pie":
-        return { ...base, w: 4, h: 5 };
-      case "line":
-        return { ...base, w: 6, h: 5 };
-      case "bar":
-      default:
-        return { ...base, w: 6, h: 5 };
-    }
   }
 
   const gridLayout: LayoutItem[] = widgets.map((w) => {
@@ -345,7 +348,7 @@ export default function DatasetPage() {
                           <button
                             type="button"
                             className="btn-danger-outline"
-                            onClick={() => handleDeleteWidget(widget.id)}
+                            onClick={() => openWidgetDeleteConfirm(widget)}
                           >
                             Hapus
                           </button>
@@ -388,6 +391,21 @@ export default function DatasetPage() {
         isLoading={isDeleting}
         onConfirm={handleDeleteDataset}
         onCancel={() => setShowDeleteModal(false)}
+      />
+
+      <ConfirmModal
+        isOpen={widgetToDelete !== null}
+        title="Hapus Widget"
+        message={`Widget "${widgetToDelete?.title ?? ""}" akan dihapus dari dashboard. Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus Widget"
+        cancelLabel="Batal"
+        isDestructive={true}
+        onConfirm={() => {
+          if (widgetToDelete) {
+            handleDeleteWidget(widgetToDelete.id);
+          }
+        }}
+        onCancel={() => setWidgetToDelete(null)}
       />
     </main>
   );

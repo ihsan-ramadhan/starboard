@@ -5,6 +5,10 @@ import { Toaster } from "sonner";
 import App from "./App";
 import "./globals.css";
 
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+});
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>

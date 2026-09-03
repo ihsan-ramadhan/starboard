@@ -35,7 +35,7 @@ export default function LineChartWidget({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={data}
-              margin={{ top: 10, right: 15, left: 0, bottom: 20 }}
+              margin={{ top: 10, right: 15, left: 0, bottom: 40 }}
             >
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -45,9 +45,10 @@ export default function LineChartWidget({
               <XAxis
                 dataKey="groupKey"
                 tick={{ fontSize: 11, fill: "#64748b" }}
-                interval={0}
-                textAnchor="middle"
-                height={25}
+                interval="preserveStartEnd"
+                angle={-20}
+                textAnchor="end"
+                height={35}
               />
               <YAxis
                 tick={{ fontSize: 11, fill: "#64748b" }}

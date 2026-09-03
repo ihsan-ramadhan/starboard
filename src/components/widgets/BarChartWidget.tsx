@@ -45,7 +45,7 @@ export default function BarChartWidget({
               <XAxis
                 dataKey="groupKey"
                 tick={{ fontSize: 11, fill: "#64748b" }}
-                interval={0}
+                interval="preserveStartEnd"
                 angle={-20}
                 textAnchor="end"
                 height={35}
