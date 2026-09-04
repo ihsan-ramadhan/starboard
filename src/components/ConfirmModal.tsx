@@ -72,7 +72,7 @@ export default function ConfirmModal({
         <div className="modal-actions">
           <button
             type="button"
-            className="btn-ghost-sm"
+            className="btn-ghost"
             onClick={onCancel}
             disabled={isLoading}
           >

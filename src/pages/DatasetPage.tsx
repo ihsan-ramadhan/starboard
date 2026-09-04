@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import GridLayout, { type Layout, type LayoutItem } from "react-grid-layout";
+import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
-import { api } from "../lib/api";
+import { api, clearWidgetDataCache } from "../lib/api";
+import PencilIcon from "../assets/icons/pencil.svg?react";
+import RefreshIcon from "../assets/icons/refresh.svg?react";
+import TrashIcon from "../assets/icons/trash.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
@@ -17,6 +20,32 @@ import type {
   WidgetLayout,
   WidgetType,
 } from "../types";
+
+const GRID_COLS = 12;
+
+function toLayoutItem(w: WidgetDefinition): LayoutItem {
+  const def = defaultLayoutFor(w.type);
+  return {
+    i: w.id,
+    x: w.layout?.x ?? 0,
+    y: w.layout?.y ?? 0,
+    w: w.layout?.w ?? def.w,
+    h: w.layout?.h ?? def.h,
+    minW: 2,
+    minH: 2,
+  };
+}
+
+function findFreeSlot(layout: LayoutItem[], w: number, h: number) {
+  const maxY = bottom(layout);
+  for (let y = 0; y <= maxY; y++) {
+    for (let x = 0; x + w <= GRID_COLS; x++) {
+      const slot: LayoutItem = { i: "__probe__", x, y, w, h };
+      if (!layout.some((item) => collides(item, slot))) return { x, y };
+    }
+  }
+  return { x: 0, y: maxY };
+}
 
 function defaultLayoutFor(type: WidgetType): WidgetLayout {
   const base = { x: 0, y: 0 };
@@ -39,6 +68,8 @@ export default function DatasetPage() {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
+  // Not persisted: opening a dashboard should always land in the read-only state.
+  const [editMode, setEditMode] = useState(false);
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
@@ -48,11 +79,13 @@ export default function DatasetPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
-  const widgetsLoadedRef = useRef(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const saveTimerRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef<(() => void) | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
@@ -79,17 +112,26 @@ export default function DatasetPage() {
     }
   }, []);
 
+  // datasetCache is read for the value it holds when the dataset opens, so it
+  // is deliberately not a dependency. Listing it re-ran this effect every time
+  // any dataset got cached, which blanked the widget list and fetched it twice.
   useEffect(() => {
-    widgetsLoadedRef.current = false;
+    if (!key) return;
+    // A const so the narrowing survives into the async closure below.
+    const datasetKey = key;
+
+    // Stops a slow response for a dataset the user has already left from
+    // overwriting the one now on screen.
+    let active = true;
     setWidgets([]);
 
     async function load() {
-      if (!key) return;
-      let d: DatasetDetail | null = datasetCache[key] ?? null;
+      let d: DatasetDetail | null = datasetCache[datasetKey] ?? null;
 
       if (!d) {
         setLoading(true);
-        d = await fetchDatasetDetail(key, false);
+        d = await fetchDatasetDetail(datasetKey, false);
+        if (!active) return;
         setDetail(d);
         setLoading(false);
       } else {
@@ -97,28 +139,63 @@ export default function DatasetPage() {
         setLoading(false);
       }
 
-      if (!widgetsLoadedRef.current && d?.dataset) {
-        try {
-          const w = await api.getWidgets(user.role, key);
-          const sanitized = w.map((item) => ({
+      const ds = d?.dataset;
+      if (!ds) return;
+
+      try {
+        const w = await api.getWidgets(user.role, datasetKey);
+        if (!active) return;
+        setWidgets(
+          w.map((item) => ({
             ...item,
-            datasetId: item.datasetId || d.dataset.id,
-          }));
-          setWidgets(sanitized);
-        } catch (err) {
-          console.error("Failed to load widgets:", err);
-        } finally {
-          widgetsLoadedRef.current = true;
-        }
+            datasetId: item.datasetId || ds.id,
+          }))
+        );
+      } catch (err) {
+        console.error("Failed to load widgets:", err);
       }
     }
+
     load();
+    return () => {
+      active = false;
+    };
+  }, [key, user.role]);
+
+  // The debounced save is flushed on unmount instead of dropped. Navigating
+  // away inside the 400ms window used to discard the layout just arranged.
+  useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current);
+        pendingSaveRef.current?.();
       }
     };
-  }, [key, datasetCache]);
+  }, []);
+
+  // Bypasses every cache: the dataset detail in App, the widget query results in
+  // api.ts, and the memoised query inside each mounted WidgetRender.
+  async function handleRefresh() {
+    if (!key || refreshing) return;
+    setRefreshing(true);
+    clearWidgetDataCache();
+    try {
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+      const w = await api.getWidgets(user.role, key);
+      setWidgets(
+        w.map((item) => ({
+          ...item,
+          datasetId: item.datasetId || d?.dataset?.id || item.datasetId,
+        }))
+      );
+      setReloadNonce((n) => n + 1);
+    } catch (err) {
+      toast.error("Gagal memuat ulang data: " + String(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function handleDeleteDataset() {
     if (!detail?.dataset) return;
@@ -165,20 +242,27 @@ export default function DatasetPage() {
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
     }
-    saveTimerRef.current = window.setTimeout(() => {
+    const flush = () => {
+      saveTimerRef.current = null;
+      pendingSaveRef.current = null;
       api.saveWidgets(user.role, key, next).catch((err) => {
         toast.error("Gagal menyimpan layout widget: " + String(err));
       });
-    }, 400);
+    };
+    pendingSaveRef.current = flush;
+    saveTimerRef.current = window.setTimeout(flush, 400);
   }
 
   function handleSaveWidget(widget: WidgetDefinition) {
     setWidgets((prev) => {
-      const exists = prev.some((w) => w.id === widget.id);
-      const withLayout = widget.layout
-        ? widget
-        : { ...widget, layout: defaultLayoutFor(widget.type) };
-      const next = exists
+      const existing = prev.find((w) => w.id === widget.id);
+      const size = defaultLayoutFor(widget.type);
+      const layout =
+        widget.layout ??
+        existing?.layout ??
+        { ...size, ...findFreeSlot(prev.map(toLayoutItem), size.w, size.h) };
+      const withLayout = { ...widget, layout };
+      const next = existing
         ? prev.map((w) => (w.id === widget.id ? withLayout : w))
         : [...prev, withLayout];
       persistWidgets(next);
@@ -237,23 +321,12 @@ export default function DatasetPage() {
     setShowBuilder(true);
   }
 
-  const gridLayout: LayoutItem[] = widgets.map((w) => {
-    const def = defaultLayoutFor(w.type);
-    return {
-      i: w.id,
-      x: w.layout?.x ?? 0,
-      y: w.layout?.y ?? 0,
-      w: w.layout?.w ?? def.w,
-      h: w.layout?.h ?? def.h,
-      minW: 2,
-      minH: 2,
-    };
-  });
+  const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
 
   return (
     <main className="content">
       <div className="dataset-header">
-        <div>
+        <div className="dataset-heading">
           <h1 className="dataset-title">{dataset.displayName}</h1>
           <p className="dataset-meta">
             Tabel database: <code>{dataset.tableName}</code> · Total baris:{" "}
@@ -262,6 +335,16 @@ export default function DatasetPage() {
           </p>
         </div>
         <div className="dataset-actions">
+          <button
+            type="button"
+            className={`btn-ghost btn-icon${refreshing ? " is-spinning" : ""}`}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Muat ulang data"
+            title="Muat ulang data"
+          >
+            <RefreshIcon width={15} height={15} />
+          </button>
           <div className="view-toggle">
             <button
               type="button"
@@ -273,28 +356,47 @@ export default function DatasetPage() {
             <button
               type="button"
               className={`toggle-btn${activeTab === "data" ? " active" : ""}`}
-              onClick={() => setActiveTab("data")}
+              onClick={() => {
+                setActiveTab("data");
+                setEditMode(false);
+              }}
             >
               Tabel Data
             </button>
           </div>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={openCreateWidget}
-          >
-            + Tambah Widget
-          </button>
-          <button
-            type="button"
-            className="btn-danger-outline"
-            onClick={() => setShowDeleteModal(true)}
-          >
-            Hapus
-          </button>
-          <Link to="/import" className="btn-ghost">
-            + Import File Lain
-          </Link>
+          {activeTab === "dashboard" && editMode ? (
+            <>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={openCreateWidget}
+              >
+                + Tambah Widget
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setEditMode(false)}
+              >
+                Selesai
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to="/import" className="btn-ghost">
+                + Import File Lain
+              </Link>
+              {activeTab === "dashboard" && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setEditMode(true)}
+                >
+                  Atur Dashboard
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -304,12 +406,15 @@ export default function DatasetPage() {
             <div className="empty-widgets-card">
               <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
               <p className="empty-widgets-desc">
-                Klik tombol <strong>+ Tambah Widget</strong> di atas untuk membuat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
+                Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
               </p>
               <button
                 type="button"
                 className="btn-primary"
-                onClick={openCreateWidget}
+                onClick={() => {
+                  setEditMode(true);
+                  openCreateWidget();
+                }}
               >
                 + Tambah Widget Pertama
               </button>
@@ -318,42 +423,49 @@ export default function DatasetPage() {
             <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
               {containerWidth > 0 && (
                 <GridLayout
-                  className="charts-grid"
+                  className={`charts-grid${editMode ? " edit-mode" : ""}`}
                   width={containerWidth}
                   layout={gridLayout}
                   gridConfig={{
-                    cols: 12,
+                    cols: GRID_COLS,
                     rowHeight: 60,
                     margin: [16, 16],
                     containerPadding: [0, 0],
                   }}
                   dragConfig={{
-                    enabled: true,
+                    enabled: editMode,
                     handle: ".widget-card",
                     cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
                   }}
+                  resizeConfig={{ enabled: editMode }}
                   onLayoutChange={handleLayoutChange}
                 >
                   {widgets.map((widget) => (
                     <div key={widget.id}>
                       <div className="widget-card wrap">
-                        <div className="widget-toolbar">
-                          <button
-                            type="button"
-                            className="btn-ghost-sm"
-                            onClick={() => openEditWidget(widget)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-danger-outline"
-                            onClick={() => openWidgetDeleteConfirm(widget)}
-                          >
-                            Hapus
-                          </button>
-                        </div>
-                        <WidgetRender widget={widget} />
+                        {editMode && (
+                          <div className="widget-toolbar">
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              aria-label={`Edit widget ${widget.title}`}
+                              title="Edit widget"
+                              onClick={() => openEditWidget(widget)}
+                            >
+                              <PencilIcon width={15} height={15} />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-btn danger"
+                              aria-label={`Hapus widget ${widget.title}`}
+                              title="Hapus widget"
+                              onClick={() => openWidgetDeleteConfirm(widget)}
+                            >
+                              <TrashIcon width={15} height={15} />
+                            </button>
+                          </div>
+                        )}
+                        <WidgetRender widget={widget} reloadNonce={reloadNonce} />
                       </div>
                     </div>
                   ))}
@@ -366,6 +478,22 @@ export default function DatasetPage() {
         <div className="data-view-container">
           <SchemaInspector columns={columns} />
           <RawTablePreview columns={columns} sampleRows={sampleRows} />
+          <div className="danger-zone">
+            <div>
+              <p className="danger-zone-title">Zona Berbahaya</p>
+              <p className="danger-zone-desc">
+                Menghapus dataset ikut membuang {totalRows.toLocaleString()} baris
+                data beserta seluruh widget yang memakainya.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-danger-outline"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              Hapus Dataset
+            </button>
+          </div>
         </div>
       )}
 

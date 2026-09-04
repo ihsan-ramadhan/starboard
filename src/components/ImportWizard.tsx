@@ -315,7 +315,7 @@ export default function ImportWizard({
             <div className="wizard-topbar-actions">
               <button
                 type="button"
-                className="btn-ghost-sm"
+                className="btn-ghost"
                 onClick={reset}
               >
                 Ganti File
@@ -430,14 +430,14 @@ export default function ImportWizard({
                     <div className="sheet-detail-actions">
                       <button
                         type="button"
-                        className="btn-ghost-sm"
+                        className="btn-ghost"
                         onClick={() => toggleAllColsInSheet(activeSheet, true)}
                       >
                         Pilih Semua Kolom
                       </button>
                       <button
                         type="button"
-                        className="btn-ghost-sm"
+                        className="btn-ghost"
                         onClick={() => toggleAllColsInSheet(activeSheet, false)}
                       >
                         Batal Kolom
