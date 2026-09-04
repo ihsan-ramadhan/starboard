@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { api, peekWidgetData, type WidgetQuery } from "../../lib/api";
 import type {
-  ChartDataPoint,
   WidgetDefinition,
+  WidgetQueryResult,
 } from "../../types";
 import KpiCard from "./KpiCard";
 import BarChartWidget from "./BarChartWidget";
@@ -14,45 +14,60 @@ export type WidgetRenderProps = {
 };
 
 export default function WidgetRender({ widget }: WidgetRenderProps) {
-  const [data, setData] = useState<ChartDataPoint[]>([]);
-  const [scalar, setScalar] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Only these fields reach the server. Depending on the whole widget object
+  // meant every drag and resize handed this effect a fresh identity and
+  // refetched data that had not changed.
+  const query = useMemo<WidgetQuery>(
+    () => ({
+      datasetId: widget.datasetId,
+      metric: widget.metric,
+      metricColumn: widget.metricColumn,
+      groupByColumn: widget.groupByColumn,
+      limit: widget.limit ?? 10,
+      orderByKey: widget.type === "line",
+    }),
+    [
+      widget.datasetId,
+      widget.metric,
+      widget.metricColumn,
+      widget.groupByColumn,
+      widget.limit,
+      widget.type,
+    ]
+  );
+
+  const [result, setResult] = useState<WidgetQueryResult | null>(
+    () => peekWidgetData(query) ?? null
+  );
 
   useEffect(() => {
-    let active = true;
-
-    async function load() {
-      setLoading(true);
-      try {
-        const res = await api.queryWidgetData({
-          datasetId: widget.datasetId,
-          metric: widget.metric,
-          metricColumn: widget.metricColumn,
-          groupByColumn: widget.groupByColumn,
-          limit: widget.limit ?? 10,
-          orderByKey: widget.type === "line",
-        });
-        if (!active) return;
-        setScalar(res.scalarValue ?? null);
-        setData(res.rows || []);
-      } catch (e) {
-        console.error("Failed to load widget:", e);
-        if (active) {
-          setData([]);
-          setScalar(null);
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
+    const cached = peekWidgetData(query);
+    if (cached) {
+      setResult(cached);
+      return;
     }
 
-    load();
+    let active = true;
+    setResult(null);
+    api
+      .queryWidgetData(query)
+      .then((res) => {
+        if (active) setResult(res);
+      })
+      .catch((e) => {
+        console.error("Failed to load widget:", e);
+        if (active) setResult({ rows: [] });
+      });
+
     return () => {
       active = false;
     };
-  }, [widget]);
+  }, [query]);
 
-  if (loading) {
+  const data = result?.rows ?? [];
+  const scalar = result?.scalarValue ?? null;
+
+  if (!result) {
     return (
       <div className="widget-card">
         <div className="widget-header">

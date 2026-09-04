@@ -78,11 +78,11 @@ export default function DatasetPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
-  const widgetsLoadedRef = useRef(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
 
   const saveTimerRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef<(() => void) | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
@@ -109,17 +109,26 @@ export default function DatasetPage() {
     }
   }, []);
 
+  // datasetCache is read for the value it holds when the dataset opens, so it
+  // is deliberately not a dependency. Listing it re-ran this effect every time
+  // any dataset got cached, which blanked the widget list and fetched it twice.
   useEffect(() => {
-    widgetsLoadedRef.current = false;
+    if (!key) return;
+    // A const so the narrowing survives into the async closure below.
+    const datasetKey = key;
+
+    // Stops a slow response for a dataset the user has already left from
+    // overwriting the one now on screen.
+    let active = true;
     setWidgets([]);
 
     async function load() {
-      if (!key) return;
-      let d: DatasetDetail | null = datasetCache[key] ?? null;
+      let d: DatasetDetail | null = datasetCache[datasetKey] ?? null;
 
       if (!d) {
         setLoading(true);
-        d = await fetchDatasetDetail(key, false);
+        d = await fetchDatasetDetail(datasetKey, false);
+        if (!active) return;
         setDetail(d);
         setLoading(false);
       } else {
@@ -127,28 +136,39 @@ export default function DatasetPage() {
         setLoading(false);
       }
 
-      if (!widgetsLoadedRef.current && d?.dataset) {
-        try {
-          const w = await api.getWidgets(user.role, key);
-          const sanitized = w.map((item) => ({
+      const ds = d?.dataset;
+      if (!ds) return;
+
+      try {
+        const w = await api.getWidgets(user.role, datasetKey);
+        if (!active) return;
+        setWidgets(
+          w.map((item) => ({
             ...item,
-            datasetId: item.datasetId || d.dataset.id,
-          }));
-          setWidgets(sanitized);
-        } catch (err) {
-          console.error("Failed to load widgets:", err);
-        } finally {
-          widgetsLoadedRef.current = true;
-        }
+            datasetId: item.datasetId || ds.id,
+          }))
+        );
+      } catch (err) {
+        console.error("Failed to load widgets:", err);
       }
     }
+
     load();
+    return () => {
+      active = false;
+    };
+  }, [key, user.role]);
+
+  // The debounced save is flushed on unmount instead of dropped. Navigating
+  // away inside the 400ms window used to discard the layout just arranged.
+  useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current);
+        pendingSaveRef.current?.();
       }
     };
-  }, [key, datasetCache]);
+  }, []);
 
   async function handleDeleteDataset() {
     if (!detail?.dataset) return;
@@ -195,11 +215,15 @@ export default function DatasetPage() {
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
     }
-    saveTimerRef.current = window.setTimeout(() => {
+    const flush = () => {
+      saveTimerRef.current = null;
+      pendingSaveRef.current = null;
       api.saveWidgets(user.role, key, next).catch((err) => {
         toast.error("Gagal menyimpan layout widget: " + String(err));
       });
-    }, 400);
+    };
+    pendingSaveRef.current = flush;
+    saveTimerRef.current = window.setTimeout(flush, 400);
   }
 
   function handleSaveWidget(widget: WidgetDefinition) {

@@ -64,6 +64,51 @@ async function readErrorMessage(res: Response): Promise<string> {
   }
 }
 
+export type WidgetQuery = {
+  datasetId: string;
+  metric: string;
+  metricColumn?: string;
+  groupByColumn?: string;
+  limit?: number;
+  orderByKey?: boolean;
+};
+
+// A widget's rows only change when its dataset is re-imported, but data may
+// change elsewhere too. A short TTL balances fast remounts (paint cached
+// numbers instead of flashing a loader) with eventually-fresh data: any query
+// older than WIDGET_CACHE_TTL is re-fetched. Import always clears it so the
+// dashboard reflects the new rows immediately.
+const WIDGET_CACHE_TTL_MS = 30_000;
+const widgetDataCache = new Map<string, { at: number; value: WidgetQueryResult }>();
+
+function widgetDataKey(q: WidgetQuery) {
+  return [
+    q.datasetId,
+    q.metric,
+    q.metricColumn,
+    q.groupByColumn,
+    q.limit,
+    q.orderByKey,
+  ].join("|");
+}
+
+// Synchronous read, so a remounting widget can paint its old numbers on the
+// first frame instead of flashing a loading state. Never returns a stale
+// entry once its TTL has passed.
+export function peekWidgetData(q: WidgetQuery) {
+  const entry = widgetDataCache.get(widgetDataKey(q));
+  if (!entry) return undefined;
+  if (Date.now() - entry.at > WIDGET_CACHE_TTL_MS) {
+    widgetDataCache.delete(widgetDataKey(q));
+    return undefined;
+  }
+  return entry.value;
+}
+
+function clearWidgetDataCache() {
+  widgetDataCache.clear();
+}
+
 export const api = {
   login(identifier: string, password: string) {
     return request<{ user: SessionUser; token: string }>("/api/auth/login", {
@@ -110,7 +155,7 @@ export const api = {
     });
   },
 
-  importExcel(payload: {
+  async importExcel(payload: {
     dept: string;
     fileBytes: number[];
     displayName: string;
@@ -118,23 +163,28 @@ export const api = {
     selectedSheets: string[];
     selectedColumns: Record<string, string[]>;
   }) {
-    return request<{ primaryKey: string; totalImported: number }>("/api/excel/import", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    const res = await request<{ primaryKey: string; totalImported: number }>(
+      "/api/excel/import",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+    // Invalidating here rather than at the call site means no caller can
+    // forget and leave widgets showing pre-import numbers.
+    clearWidgetDataCache();
+    return res;
   },
 
-  queryWidgetData(req: {
-    datasetId: string;
-    metric: string;
-    metricColumn?: string;
-    groupByColumn?: string;
-    limit?: number;
-    orderByKey?: boolean;
-  }) {
-    return request<WidgetQueryResult>("/api/analytics/query", {
+  async queryWidgetData(q: WidgetQuery) {
+    const key = widgetDataKey(q);
+    const fresh = peekWidgetData(q);
+    if (fresh) return fresh;
+    const res = await request<WidgetQueryResult>("/api/analytics/query", {
       method: "POST",
-      body: JSON.stringify(req),
+      body: JSON.stringify(q),
     });
+    widgetDataCache.set(key, { at: Date.now(), value: res });
+    return res;
   },
 };
