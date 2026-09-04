@@ -41,3 +41,7 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+
+# internal notes: business context and schema docs, kept out of the public repo
+docs/
+PROJECT.md

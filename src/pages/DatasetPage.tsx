@@ -5,8 +5,9 @@ import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "reac
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
-import { api } from "../lib/api";
+import { api, clearWidgetDataCache } from "../lib/api";
 import PencilIcon from "../assets/icons/pencil.svg?react";
+import RefreshIcon from "../assets/icons/refresh.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
@@ -80,6 +81,8 @@ export default function DatasetPage() {
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<(() => void) | null>(null);
@@ -169,6 +172,30 @@ export default function DatasetPage() {
       }
     };
   }, []);
+
+  // Bypasses every cache: the dataset detail in App, the widget query results in
+  // api.ts, and the memoised query inside each mounted WidgetRender.
+  async function handleRefresh() {
+    if (!key || refreshing) return;
+    setRefreshing(true);
+    clearWidgetDataCache();
+    try {
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+      const w = await api.getWidgets(user.role, key);
+      setWidgets(
+        w.map((item) => ({
+          ...item,
+          datasetId: item.datasetId || d?.dataset?.id || item.datasetId,
+        }))
+      );
+      setReloadNonce((n) => n + 1);
+    } catch (err) {
+      toast.error("Gagal memuat ulang data: " + String(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function handleDeleteDataset() {
     if (!detail?.dataset) return;
@@ -308,6 +335,16 @@ export default function DatasetPage() {
           </p>
         </div>
         <div className="dataset-actions">
+          <button
+            type="button"
+            className={`btn-ghost btn-icon${refreshing ? " is-spinning" : ""}`}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Muat ulang data"
+            title="Muat ulang data"
+          >
+            <RefreshIcon width={15} height={15} />
+          </button>
           <div className="view-toggle">
             <button
               type="button"
@@ -428,7 +465,7 @@ export default function DatasetPage() {
                             </button>
                           </div>
                         )}
-                        <WidgetRender widget={widget} />
+                        <WidgetRender widget={widget} reloadNonce={reloadNonce} />
                       </div>
                     </div>
                   ))}

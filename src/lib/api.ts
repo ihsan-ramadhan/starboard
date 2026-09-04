@@ -105,7 +105,9 @@ export function peekWidgetData(q: WidgetQuery) {
   return entry.value;
 }
 
-function clearWidgetDataCache() {
+// Exported so the refresh button can drop every cached result at once. Import
+// calls it too, which is why it does not take a dataset argument.
+export function clearWidgetDataCache() {
   widgetDataCache.clear();
 }
 
