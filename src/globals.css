@@ -216,8 +216,96 @@ a {
 .nav-empty {
   padding: 9px 8px;
   font-size: 13px;
+  line-height: 1.45;
   color: var(--fg-dim);
-  font-style: italic;
+}
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+}
+
+.nav-row-link {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-grip {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: var(--border-light);
+  color: var(--fg-subtle);
+  cursor: grab;
+  touch-action: none;
+  transition: color 0.12s ease;
+}
+
+.nav-grip:hover {
+  color: var(--fg);
+}
+
+.nav-grip:active {
+  cursor: grabbing;
+}
+
+.nav-rename {
+  min-width: 0;
+  flex: 1;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.nav-rename:hover {
+  border-color: var(--border);
+}
+
+.nav-rename:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.nav-rename:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nav-rename-btn {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.nav-rename-btn:hover {
+  background: var(--border-light);
+  color: var(--fg);
+}
+
+.sidebar.collapsed .nav-grip,
+.sidebar.collapsed .nav-rename-btn {
+  display: none;
 }
 
 .sidebar-foot {
@@ -289,6 +377,41 @@ a {
 }
 
 /* red-700, not --danger: #dc2626 on --danger-bg is 4.41:1, under AA */
+.sidebar-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.sidebar-edit:hover {
+  background: var(--border-light);
+  color: var(--fg);
+}
+
+.sidebar-edit.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.sidebar-edit.on:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #fff;
+}
+
 .sidebar-logout:hover {
   background: var(--danger-bg);
   border-color: var(--danger-border);

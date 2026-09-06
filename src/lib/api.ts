@@ -134,6 +134,20 @@ export const api = {
     });
   },
 
+  renameDataset(dept: string, key: string, displayName: string) {
+    return request<boolean>(`/api/datasets/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ dept, displayName }),
+    });
+  },
+
+  reorderDatasets(dept: string, keys: string[]) {
+    return request<boolean>("/api/datasets", {
+      method: "PUT",
+      body: JSON.stringify({ dept, keys }),
+    });
+  },
+
   deleteDataset(datasetId: string) {
     return request<boolean>(`/api/datasets/${encodeURIComponent(datasetId)}`, {
       method: "DELETE",

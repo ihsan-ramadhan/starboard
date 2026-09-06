@@ -120,6 +120,19 @@ struct SyncRequest {
 }
 
 #[derive(Deserialize)]
+struct RenameRequest {
+    dept: String,
+    #[serde(rename = "displayName")]
+    display_name: String,
+}
+
+#[derive(Deserialize)]
+struct ReorderRequest {
+    dept: String,
+    keys: Vec<String>,
+}
+
+#[derive(Deserialize)]
 struct SyncSettingsRequest {
     dept: String,
     enabled: bool,
@@ -198,9 +211,14 @@ async fn main() {
 
     let protected = Router::new()
         .route("/api/auth/logout", post(logout_handler))
-        .route("/api/datasets", get(get_datasets_handler))
+        .route(
+            "/api/datasets",
+            get(get_datasets_handler).put(reorder_datasets_handler),
+        )
         .route("/api/datasets/{key}",
-            get(get_dataset_detail_handler).delete(delete_dataset_handler),
+            get(get_dataset_detail_handler)
+                .put(rename_dataset_handler)
+                .delete(delete_dataset_handler),
         )
         .route(
             "/api/datasets/{key}/widgets",
@@ -263,6 +281,7 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE users ALTER COLUMN "accessLevel" SET NOT NULL;
 
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "createdBy" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sortOrder" integer;
             ALTER TABLE dashboard_widgets ADD COLUMN IF NOT EXISTS "userId" text;
 
             ALTER TABLE dashboard_widgets
@@ -284,7 +303,7 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
 const REGISTRY_COLUMNS: &str = r#"id, dept, key, "tableName", "displayName", "createdAt"::text,
     "sourcePath", "syncEnabled",
     to_char("lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    "lastSyncedMtime", "watchedBy""#;
+    "lastSyncedMtime", "watchedBy", "sortOrder""#;
 
 fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
     DatasetRegistry {
@@ -299,6 +318,7 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         last_synced_at: r.get(8),
         last_synced_mtime: r.get(9),
         watched_by: r.get(10),
+        sort_order: r.get(11),
     }
 }
 
@@ -428,7 +448,7 @@ async fn get_datasets_handler(
                 SELECT {}
                 FROM dataset_registry
                 WHERE dept = $1
-                ORDER BY "createdAt" DESC
+                ORDER BY "sortOrder" ASC NULLS LAST, "createdAt" DESC
                 "#,
                 REGISTRY_COLUMNS
             ),
@@ -555,6 +575,93 @@ async fn get_dataset_detail_handler(
         total_rows,
         sample_rows,
     }))
+}
+
+async fn rename_dataset_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Json(payload): Json<RenameRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let name = payload.display_name.trim();
+    if name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Nama menu tidak boleh kosong.".to_string()));
+    }
+    if name.chars().count() > 60 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Nama menu maksimal 60 karakter.".to_string(),
+        ));
+    }
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let affected = client
+        .execute(
+            r#"UPDATE dataset_registry SET "displayName" = $3 WHERE dept = $1 AND key = $2"#,
+            &[&payload.dept, &key, &name],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Rename error: {}", e)))?;
+
+    if affected == 0 {
+        return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
+    }
+
+    Ok(Json(true))
+}
+
+async fn reorder_datasets_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(payload): Json<ReorderRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let mut client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Tx error: {}", e)))?;
+
+    for (index, key) in payload.keys.iter().enumerate() {
+        let position = index as i32;
+        tx.execute(
+            r#"UPDATE dataset_registry SET "sortOrder" = $3 WHERE dept = $1 AND key = $2"#,
+            &[&payload.dept, key, &position],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Reorder error: {}", e)))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Commit error: {}", e)))?;
+
+    Ok(Json(true))
 }
 
 async fn delete_dataset_handler(
@@ -908,16 +1015,20 @@ async fn sync_dataset_handler(
 
     let row = client
         .query_opt(
-            r#"SELECT "syncConfig", "syncEnabled", "lastSyncedMtime"
+            r#"SELECT "syncConfig", "syncEnabled", "lastSyncedMtime", "displayName"
                FROM dataset_registry WHERE dept = $1 AND key = $2"#,
             &[&payload.dept, &key],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch sync config error: {}", e)))?;
 
-    let (config, enabled, last_mtime): (Option<serde_json::Value>, bool, Option<String>) = match row
-    {
-        Some(r) => (r.get(0), r.get(1), r.get(2)),
+    let (config, enabled, last_mtime, current_name): (
+        Option<serde_json::Value>,
+        bool,
+        Option<String>,
+        String,
+    ) = match row {
+        Some(r) => (r.get(0), r.get(1), r.get(2), r.get(3)),
         None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
     };
 
@@ -942,11 +1053,6 @@ async fn sync_dataset_handler(
             .to_string(),
     ))?;
 
-    let display_name: String = config
-        .get("displayName")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
     let base_key: String = config
         .get("baseKey")
         .and_then(|v| v.as_str())
@@ -964,7 +1070,7 @@ async fn sync_dataset_handler(
         &payload.file_bytes,
         &ImportSpec {
             dept: &payload.dept,
-            display_name: &display_name,
+            display_name: &current_name,
             dataset_key: &base_key,
             selected_sheets: &selected_sheets,
             selected_columns: &selected_columns,

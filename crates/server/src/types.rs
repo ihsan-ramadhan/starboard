@@ -35,6 +35,8 @@ pub struct DatasetRegistry {
 
     #[serde(rename = "watchedBy")]
     pub watched_by: Option<String>,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

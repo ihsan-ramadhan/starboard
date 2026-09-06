@@ -88,6 +88,8 @@ export default function DatasetPage() {
     datasetCache,
     fetchDatasetDetail,
     syncStatuses,
+    editMode,
+    setEditMode,
   } = useApp();
   const admin = isAdmin(user);
   const machine = useMachineName();
@@ -96,7 +98,6 @@ export default function DatasetPage() {
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
 
-  const [editMode, setEditMode] = useState(false);
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
@@ -440,17 +441,14 @@ export default function DatasetPage() {
             <button
               type="button"
               className={`toggle-btn${activeTab === "data" ? " active" : ""}`}
-              onClick={() => {
-                setActiveTab("data");
-                setEditMode(false);
-              }}
+              onClick={() => setActiveTab("data")}
             >
               Tabel Data
             </button>
           </div>
-          {admin &&
-            (activeTab === "dashboard" && editMode ? (
-              <>
+          {admin && (
+            <>
+              {activeTab === "dashboard" && editMode && (
                 <button
                   type="button"
                   className="btn-primary"
@@ -458,30 +456,12 @@ export default function DatasetPage() {
                 >
                   + Tambah Widget
                 </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setEditMode(false)}
-                >
-                  Selesai
-                </button>
-              </>
-            ) : (
-              <>
-                <Link to="/import" className="btn-ghost">
-                  + Import File Lain
-                </Link>
-                {activeTab === "dashboard" && (
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={() => setEditMode(true)}
-                  >
-                    Atur Dashboard
-                  </button>
-                )}
-              </>
-            ))}
+              )}
+              <Link to="/import" className="btn-ghost">
+                + Import File Lain
+              </Link>
+            </>
+          )}
         </div>
       </div>
 

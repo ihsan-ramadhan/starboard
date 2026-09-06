@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { useApp } from "../App";
 import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
+import GripIcon from "../assets/icons/grip.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
+import PencilIcon from "../assets/icons/pencil.svg?react";
 import { isAdmin, type SessionUser } from "../types";
 
 type DatasetTab = { key: string; displayName: string };
@@ -31,11 +35,28 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { refreshDatasets, editMode, setEditMode } = useApp();
+  const admin = isAdmin(user);
+  const arranging = admin && editMode;
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1"
   );
+  const [items, setItems] = useState<DatasetTab[]>(datasets);
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+
+  const itemsRef = useRef(items);
+  const listRef = useRef<HTMLElement>(null);
+  const draggingRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  });
+
+  useEffect(() => {
+    if (!arranging) setItems(datasets);
+  }, [datasets, arranging]);
 
   const activeKey = location.pathname.startsWith("/d/")
     ? location.pathname.replace("/d/", "")
@@ -44,7 +65,94 @@ export function Sidebar({
   function toggleCollapsed() {
     const next = !collapsed;
     setCollapsed(next);
+    if (next) setRenamingKey(null);
     localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+  }
+
+  function withMoved(list: DatasetTab[], key: string, to: number) {
+    const from = list.findIndex((i) => i.key === key);
+    if (from < 0 || to < 0 || to >= list.length || from === to) return list;
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+  }
+
+  async function saveOrder(next: DatasetTab[]) {
+    try {
+      await api.reorderDatasets(user.role, next.map((i) => i.key));
+      await refreshDatasets();
+    } catch (err) {
+      toast.error("Gagal menyimpan urutan menu: " + String(err));
+      setItems(datasets);
+    }
+  }
+
+  async function saveName(key: string, value: string) {
+    const previous = datasets.find((d) => d.key === key)?.displayName ?? "";
+    const name = value.trim();
+    if (!name || name === previous) {
+      setItems((prev) =>
+        prev.map((i) => (i.key === key ? { ...i, displayName: previous } : i))
+      );
+      return;
+    }
+    try {
+      await api.renameDataset(user.role, key, name);
+      await refreshDatasets();
+    } catch (err: unknown) {
+      toast.error("Gagal mengganti nama menu: " + String(err));
+      setItems((prev) =>
+        prev.map((i) => (i.key === key ? { ...i, displayName: previous } : i))
+      );
+    }
+  }
+
+  function startDrag(e: React.PointerEvent<HTMLButtonElement>, key: string) {
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      void 0;
+    }
+    draggingRef.current = key;
+  }
+
+  function dragOver(e: React.PointerEvent<HTMLButtonElement>) {
+    const key = draggingRef.current;
+    if (!key || !listRef.current) return;
+    const rows = [...listRef.current.querySelectorAll<HTMLElement>("[data-key]")];
+    const over = rows.findIndex((row) => {
+      const box = row.getBoundingClientRect();
+      return e.clientY >= box.top && e.clientY <= box.bottom;
+    });
+    if (over < 0) return;
+    const next = withMoved(itemsRef.current, key, over);
+    if (next === itemsRef.current) return;
+    itemsRef.current = next;
+    setItems(next);
+  }
+
+  function endDrag(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!draggingRef.current) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      void 0;
+    }
+    draggingRef.current = null;
+    saveOrder(itemsRef.current);
+  }
+
+  function nudge(e: React.KeyboardEvent<HTMLButtonElement>, key: string) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const from = itemsRef.current.findIndex((i) => i.key === key);
+    const next = withMoved(itemsRef.current, key, from + (e.key === "ArrowUp" ? -1 : 1));
+    if (next === itemsRef.current) return;
+    itemsRef.current = next;
+    setItems(next);
+    saveOrder(next);
   }
 
   async function handleConfirmLogout() {
@@ -83,26 +191,90 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="sidebar-nav">
-          {datasets.length === 0 ? (
-            <span className="nav-empty sidebar-hideable">No datasets yet</span>
+        <nav className="sidebar-nav" ref={listRef}>
+          {items.length === 0 ? (
+            <span className="nav-empty sidebar-hideable">
+              {admin
+                ? "Belum ada dataset. Mulai dari Import Dataset di bawah."
+                : `Admin ${user.role} belum mengimpor dataset.`}
+            </span>
           ) : (
-            datasets.map((d) => (
-              <Link
-                key={d.key}
-                to={`/d/${d.key}`}
-                className={`nav-link${activeKey === d.key ? " active" : ""}`}
-                aria-current={activeKey === d.key ? "page" : undefined}
-                aria-label={d.displayName}
-                title={d.displayName}
-              >
-                <span className="nav-initial">{initials(d.displayName)}</span>
-                <span className="nav-label sidebar-hideable">{d.displayName}</span>
-              </Link>
-            ))
+            items.map((d) =>
+              arranging ? (
+                <div key={d.key} data-key={d.key} className="nav-row">
+                  <button
+                    type="button"
+                    className="nav-grip"
+                    aria-label={`Pindahkan ${d.displayName}`}
+                    title="Seret, atau tekan panah atas dan bawah"
+                    onPointerDown={(e) => startDrag(e, d.key)}
+                    onPointerMove={dragOver}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    onKeyDown={(e) => nudge(e, d.key)}
+                  >
+                    <GripIcon width={14} height={14} />
+                  </button>
+                  {renamingKey === d.key ? (
+                    <input
+                      className="nav-rename"
+                      defaultValue={d.displayName}
+                      maxLength={60}
+                      autoFocus
+                      aria-label={`Nama menu untuk ${d.displayName}`}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") {
+                          e.currentTarget.value = d.displayName;
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      onBlur={(e) => {
+                        setRenamingKey(null);
+                        saveName(d.key, e.target.value);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <Link
+                        to={`/d/${d.key}`}
+                        className={`nav-link nav-row-link${activeKey === d.key ? " active" : ""}`}
+                        aria-current={activeKey === d.key ? "page" : undefined}
+                        title={d.displayName}
+                      >
+                        <span className="nav-initial">{initials(d.displayName)}</span>
+                        <span className="nav-label sidebar-hideable">{d.displayName}</span>
+                      </Link>
+                      <button
+                        type="button"
+                        className="nav-rename-btn"
+                        aria-label={`Ganti nama ${d.displayName}`}
+                        title="Ganti nama menu"
+                        onClick={() => setRenamingKey(d.key)}
+                      >
+                        <PencilIcon width={13} height={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  key={d.key}
+                  data-key={d.key}
+                  to={`/d/${d.key}`}
+                  className={`nav-link${activeKey === d.key ? " active" : ""}`}
+                  aria-current={activeKey === d.key ? "page" : undefined}
+                  aria-label={d.displayName}
+                  title={d.displayName}
+                >
+                  <span className="nav-initial">{initials(d.displayName)}</span>
+                  <span className="nav-label sidebar-hideable">{d.displayName}</span>
+                </Link>
+              )
+            )
           )}
 
-          {isAdmin(user) && (
+          {admin && (
             <Link
               to="/import"
               className={`nav-link import${location.pathname === "/import" ? " active" : ""}`}
@@ -127,6 +299,23 @@ export function Sidebar({
             </span>
             <span className="user-name sidebar-hideable">{user.username}</span>
           </div>
+          {admin && (
+            <button
+              type="button"
+              className={`sidebar-edit${editMode ? " on" : ""}`}
+              aria-pressed={editMode}
+              onClick={() => {
+                setRenamingKey(null);
+                setEditMode((v) => !v);
+              }}
+              title={editMode ? "Keluar dari mode edit" : "Masuk mode edit"}
+            >
+              <PencilIcon width={15} height={15} />
+              <span className="sidebar-hideable">
+                {editMode ? "Selesai Edit" : "Mode Edit"}
+              </span>
+            </button>
+          )}
           <button
             type="button"
             className="sidebar-logout"

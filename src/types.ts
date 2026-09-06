@@ -34,6 +34,7 @@ export type DatasetRegistry = {
   lastSyncedMtime: string | null;
 
   watchedBy: string | null;
+  sortOrder: number | null;
 };
 
 export type ChartDataPoint = {

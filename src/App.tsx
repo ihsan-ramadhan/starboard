@@ -41,6 +41,8 @@ type AppContextType = {
   importState: ImportWizardState;
   setImportState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
   syncStatuses: SyncStatuses;
+  editMode: boolean;
+  setEditMode: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 const REGISTRY_POLL_MS = 20_000;
@@ -68,6 +70,8 @@ type ProtectedLayoutProps = {
   readonly onLogout: () => void;
   readonly importState: ImportWizardState;
   readonly setImportState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
+  readonly editMode: boolean;
+  readonly setEditMode: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 function ProtectedLayout({
@@ -80,6 +84,8 @@ function ProtectedLayout({
   onLogout,
   importState,
   setImportState,
+  editMode,
+  setEditMode,
 }: ProtectedLayoutProps) {
   const syncStatuses = useExcelSync(datasets, user, refreshDatasets);
 
@@ -95,6 +101,8 @@ function ProtectedLayout({
       importState,
       setImportState,
       syncStatuses,
+      editMode,
+      setEditMode,
     }),
     [
       user,
@@ -107,6 +115,8 @@ function ProtectedLayout({
       importState,
       setImportState,
       syncStatuses,
+      editMode,
+      setEditMode,
     ]
   );
 
@@ -145,6 +155,7 @@ export default function App() {
   const [importState, setImportState] = useState<ImportWizardState>(
     initialImportWizardState
   );
+  const [editMode, setEditMode] = useState(false);
 
   const datasetsSigRef = useRef("");
 
@@ -235,6 +246,7 @@ export default function App() {
     }
     setAuthToken(null);
     setUser(null);
+    setEditMode(false);
     applyDatasets([]);
     setDatasetCache({});
     setImportState(initialImportWizardState);
@@ -274,6 +286,8 @@ export default function App() {
               onLogout={handleLogout}
               importState={importState}
               setImportState={setImportState}
+              editMode={editMode}
+              setEditMode={setEditMode}
             />
           }
         >
