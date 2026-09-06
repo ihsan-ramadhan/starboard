@@ -164,6 +164,8 @@ export const api = {
     baseKey: string;
     selectedSheets: string[];
     selectedColumns: Record<string, string[]>;
+    sourcePath?: string;
+    sourceMtime?: string;
   }) {
     const res = await request<{ primaryKey: string; totalImported: number }>(
       "/api/excel/import",
@@ -176,6 +178,37 @@ export const api = {
     // forget and leave widgets showing pre-import numbers.
     clearWidgetDataCache();
     return res;
+  },
+
+  // Re-runs the dataset's stored import recipe against fresh bytes. The
+  // wizard's sheet and column picks live on the server, so a sync only has to
+  // carry the file itself.
+  async syncDataset(
+    dept: string,
+    key: string,
+    payload: { fileBytes: number[]; sourceMtime: string }
+  ) {
+    const res = await request<{ primaryKey: string; totalImported: number }>(
+      `/api/datasets/${encodeURIComponent(key)}/sync`,
+      { method: "POST", body: JSON.stringify({ dept, ...payload }) }
+    );
+    clearWidgetDataCache();
+    return res;
+  },
+
+  setSyncEnabled(
+    dept: string,
+    key: string,
+    enabled: boolean,
+    sourcePath?: string
+  ) {
+    return request<boolean>(
+      `/api/datasets/${encodeURIComponent(key)}/sync`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ dept, enabled, sourcePath }),
+      }
+    );
   },
 
   async queryWidgetData(q: WidgetQuery) {

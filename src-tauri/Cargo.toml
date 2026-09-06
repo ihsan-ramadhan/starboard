@@ -13,7 +13,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
-# The shell needs nothing but Tauri itself. Everything the old IPC commands
-# pulled in -- postgres, calamine, bcrypt, chrono, regex -- now lives only in
-# crates/server, which is the single place that touches the database.
+# The shell stays thin: no database, no Excel parsing, none of what the old IPC
+# commands pulled in. The two commands it does own exist because a web page
+# cannot read a file path, and live sync needs exactly that.
 tauri = { version = "2.1.1", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }

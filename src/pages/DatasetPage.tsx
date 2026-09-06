@@ -6,6 +6,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api, clearWidgetDataCache } from "../lib/api";
+import { fileNameOf, isDesktop } from "../lib/desktop";
+import type { SyncStatus } from "../lib/excelSync";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
@@ -22,6 +24,21 @@ import type {
 } from "../types";
 
 const GRID_COLS = 12;
+
+function formatSyncTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.floor((Date.now() - at) / 60_000);
+  if (minutes < 1) return "baru saja";
+  if (minutes < 60) return `${minutes} menit lalu`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} jam lalu`;
+  return new Date(at).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+  });
+}
 
 function toLayoutItem(w: WidgetDefinition): LayoutItem {
   const def = defaultLayoutFor(w.type);
@@ -63,7 +80,8 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
 }
 
 export default function DatasetPage() {
-  const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
+  const { user, refreshDatasets, datasetCache, fetchDatasetDetail, syncStatuses } =
+    useApp();
   const { key } = useParams<{ key: string }>();
   const navigate = useNavigate();
 
@@ -83,6 +101,9 @@ export default function DatasetPage() {
   const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [togglingSync, setTogglingSync] = useState(false);
+
+  const syncStatus = key ? syncStatuses[key] : undefined;
 
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<(() => void) | null>(null);
@@ -162,6 +183,14 @@ export default function DatasetPage() {
     };
   }, [key, user.role]);
 
+  // A background sync just replaced the rows under this dashboard. Reuse the
+  // refresh button's path so the row count, the table preview, and every widget
+  // move at the same time instead of drifting apart.
+  useEffect(() => {
+    if (!syncStatus?.syncedAt) return;
+    handleRefresh();
+  }, [syncStatus?.syncedAt]);
+
   // The debounced save is flushed on unmount instead of dropped. Navigating
   // away inside the 400ms window used to discard the layout just arranged.
   useEffect(() => {
@@ -194,6 +223,22 @@ export default function DatasetPage() {
       toast.error("Gagal memuat ulang data: " + String(err));
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function handleToggleSync() {
+    if (!key || togglingSync) return;
+    const next = !detail?.dataset?.syncEnabled;
+    setTogglingSync(true);
+    try {
+      await api.setSyncEnabled(user.role, key, next);
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+    } catch (err) {
+      toast.error("Gagal mengubah sync: " + String(err));
+    } finally {
+      setTogglingSync(false);
     }
   }
 
@@ -333,6 +378,16 @@ export default function DatasetPage() {
             <strong>{totalRows.toLocaleString()}</strong> · Terdeteksi{" "}
             <strong>{columns.length} kolom</strong>
           </p>
+          {dataset.sourcePath && (
+            <SyncLine
+              sourcePath={dataset.sourcePath}
+              enabled={dataset.syncEnabled}
+              lastSyncedAt={dataset.lastSyncedAt}
+              status={syncStatus}
+              busy={togglingSync}
+              onToggle={handleToggleSync}
+            />
+          )}
         </div>
         <div className="dataset-actions">
           <button
@@ -536,5 +591,64 @@ export default function DatasetPage() {
         onCancel={() => setWidgetToDelete(null)}
       />
     </main>
+  );
+}
+
+type SyncLineProps = {
+  readonly sourcePath: string;
+  readonly enabled: boolean;
+  readonly lastSyncedAt: string | null;
+  readonly status: SyncStatus | undefined;
+  readonly busy: boolean;
+  readonly onToggle: () => void;
+};
+
+function SyncLine({
+  sourcePath,
+  enabled,
+  lastSyncedAt,
+  status,
+  busy,
+  onToggle,
+}: SyncLineProps) {
+  const name = fileNameOf(sourcePath);
+  let tone = "paused";
+  let text: string;
+
+  if (!enabled) {
+    text = `Sync dijeda untuk ${name}`;
+  } else if (!isDesktop()) {
+    // The browser build can still show the dataset, it just cannot reach the
+    // file, so saying "mengikuti" here would be a lie.
+    text = `${name} hanya diikuti dari aplikasi desktop`;
+  } else if (status?.state === "importing") {
+    tone = "busy";
+    text = `Membaca perubahan ${name}…`;
+  } else if (status?.state === "error") {
+    tone = "error";
+    // The server says which sheet or column went missing. Repeating that beats
+    // a generic failure the operator would have to guess at.
+    text = status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`;
+  } else {
+    tone = "live";
+    const when = formatSyncTime(lastSyncedAt);
+    text = when ? `Mengikuti ${name} · diperbarui ${when}` : `Mengikuti ${name}`;
+  }
+
+  return (
+    <p className={`dataset-sync tone-${tone}`}>
+      <span className="dataset-sync-dot" aria-hidden="true" />
+      <span className="dataset-sync-text" title={status?.error ?? sourcePath}>
+        {text}
+      </span>
+      <button
+        type="button"
+        className="dataset-sync-toggle"
+        onClick={onToggle}
+        disabled={busy}
+      >
+        {enabled ? "Jeda" : "Aktifkan"}
+      </button>
+    </p>
   );
 }

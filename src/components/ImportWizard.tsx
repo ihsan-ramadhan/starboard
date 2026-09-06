@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useApp } from "../App";
 import { api } from "../lib/api";
+import {
+  fileNameOf,
+  isDesktop,
+  pickExcelPath,
+  readSourceFile,
+} from "../lib/desktop";
 import FilePlusIcon from "../assets/icons/file-plus.svg?react";
 
 type InferredType = "numeric" | "date" | "category";
@@ -25,8 +31,10 @@ export type DetectedSheet = {
 };
 
 export type ImportWizardState = {
-  file: File | null;
+  fileName: string;
   fileBytes: number[] | null;
+  sourcePath: string | null;
+  sourceRevision: string | null;
   displayName: string;
   searchQuery: string;
   activeSheetName: string | null;
@@ -36,8 +44,10 @@ export type ImportWizardState = {
 };
 
 export const initialImportWizardState: ImportWizardState = {
-  file: null,
+  fileName: "",
   fileBytes: null,
+  sourcePath: null,
+  sourceRevision: null,
   displayName: "",
   searchQuery: "",
   activeSheetName: null,
@@ -91,8 +101,10 @@ export default function ImportWizard({
   const [error, setError] = useState<string | null>(null);
 
   const {
-    file,
+    fileName,
     fileBytes,
+    sourcePath,
+    sourceRevision,
     displayName,
     searchQuery,
     activeSheetName,
@@ -121,15 +133,16 @@ export default function ImportWizard({
     );
   }, [sheets, activeSheetName, filteredSheets]);
 
-  async function processFile(selectedFile: File) {
+  async function analyze(
+    bytes: number[],
+    name: string,
+    source: { path: string; revision: string } | null
+  ) {
     setError(null);
     setAnalyzing(true);
-    const cleaned = cleanInitialName(selectedFile.name);
+    const cleaned = cleanInitialName(name);
 
     try {
-      const buffer = await selectedFile.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(buffer));
-
       const result = await api.analyzeExcel(bytes, cleaned);
 
       const initSel: Record<string, boolean> = {};
@@ -140,8 +153,10 @@ export default function ImportWizard({
       }
 
       setWizardState({
-        file: selectedFile,
+        fileName: name,
         fileBytes: bytes,
+        sourcePath: source?.path ?? null,
+        sourceRevision: source?.revision ?? null,
         displayName: "",
         searchQuery: "",
         activeSheetName: result.length > 0 ? result[0].sheetName : null,
@@ -154,6 +169,36 @@ export default function ImportWizard({
       setWizardState(initialImportWizardState);
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  async function processFile(selectedFile: File) {
+    const buffer = await selectedFile.arrayBuffer();
+    await analyze(Array.from(new Uint8Array(buffer)), selectedFile.name, null);
+  }
+
+  async function pickFromDisk() {
+    try {
+      const path = await pickExcelPath();
+      if (!path) return;
+      setAnalyzing(true);
+      const source = await readSourceFile(path);
+      await analyze(source.bytes, fileNameOf(path), {
+        path,
+        revision: source.revision,
+      });
+    } catch (e: any) {
+      setAnalyzing(false);
+      toast.error(e?.toString() || "Gagal membuka file.");
+    }
+  }
+
+  function openPicker() {
+    if (analyzing) return;
+    if (isDesktop()) {
+      pickFromDisk();
+    } else {
+      fileRef.current?.click();
     }
   }
 
@@ -209,7 +254,7 @@ export default function ImportWizard({
   }
 
   async function handleImport() {
-    if (!file || !fileBytes || !sheets) return;
+    if (!fileName || !fileBytes || !sheets) return;
     const valid = sheets
       .filter((s) => selected[s.sheetName])
       .filter((s) => (selectedCols[s.sheetName]?.length ?? 0) > 0)
@@ -230,10 +275,12 @@ export default function ImportWizard({
       const res = await api.importExcel({
         dept: user.role,
         fileBytes,
-        displayName: displayName.trim() || cleanInitialName(file.name),
-        baseKey: displayName.trim() || cleanInitialName(file.name),
+        displayName: displayName.trim() || cleanInitialName(fileName),
+        baseKey: displayName.trim() || cleanInitialName(fileName),
         selectedSheets: valid,
         selectedColumns: selCols,
+        sourcePath: sourcePath ?? undefined,
+        sourceMtime: sourceRevision ?? undefined,
       });
 
       setWizardState(initialImportWizardState);
@@ -267,7 +314,7 @@ export default function ImportWizard({
           }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          onClick={() => !analyzing && fileRef.current?.click()}
+          onClick={openPicker}
         >
           <input
             ref={fileRef}
@@ -288,7 +335,9 @@ export default function ImportWizard({
               {analyzing ? "Membaca file Excel..." : "Klik atau seret file Excel ke sini"}
             </div>
             <div className="dropzone-sub">
-              Format yang didukung: .xlsx, .xls
+              {isDesktop()
+                ? "Pilih dari disk atau folder share departemen. Starboard akan mengikuti perubahan file itu."
+                : "Format yang didukung: .xlsx, .xls"}
             </div>
           </div>
         </button>
@@ -308,7 +357,7 @@ export default function ImportWizard({
                       displayName: e.target.value,
                     }))
                   }
-                  placeholder={file ? cleanInitialName(file.name) : "Contoh: Daywork 2026"}
+                  placeholder={fileName ? cleanInitialName(fileName) : "Contoh: Daywork 2026"}
                 />
               </div>
             </div>

@@ -1297,6 +1297,82 @@ a {
   color: var(--fg-dim);
   font-size: 13px;
   margin: 0;
+}
+
+.dataset-sync {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.dataset-sync-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-sync-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-subtle);
+}
+
+.dataset-sync.tone-live .dataset-sync-dot {
+  background: var(--success);
+}
+
+.dataset-sync.tone-busy .dataset-sync-dot {
+  background: var(--accent);
+  animation: sync-pulse 1.2s ease-in-out infinite;
+}
+
+/* red-700 rather than --danger: at 13px the lighter red misses AA on white. */
+.dataset-sync.tone-error {
+  color: #b91c1c;
+}
+
+.dataset-sync.tone-error .dataset-sync-dot {
+  background: var(--danger);
+}
+
+@keyframes sync-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dataset-sync.tone-busy .dataset-sync-dot {
+    animation: none;
+  }
+}
+
+.dataset-sync-toggle {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.dataset-sync-toggle:hover {
+  color: var(--accent-hover);
+}
+
+.dataset-sync-toggle:disabled {
+  color: var(--fg-subtle);
+  text-decoration: none;
+  cursor: default;
 }.kpi-label {
   font-size: 11px;
   font-weight: 700;

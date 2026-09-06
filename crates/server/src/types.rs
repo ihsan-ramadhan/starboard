@@ -21,6 +21,14 @@ pub struct DatasetRegistry {
     pub display_name: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    #[serde(rename = "sourcePath")]
+    pub source_path: Option<String>,
+    #[serde(rename = "syncEnabled")]
+    pub sync_enabled: bool,
+    #[serde(rename = "lastSyncedAt")]
+    pub last_synced_at: Option<String>,
+    #[serde(rename = "lastSyncedMtime")]
+    pub last_synced_mtime: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

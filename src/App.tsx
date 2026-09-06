@@ -10,6 +10,7 @@ import {
   initialImportWizardState,
 } from "./components/ImportWizard";
 import { api, restoreAuthToken, setAuthToken } from "./lib/api";
+import { useExcelSync, type SyncStatuses } from "./lib/excelSync";
 import type { SessionUser, DatasetRegistry, DatasetDetail } from "./types";
 
 type AppContextType = {
@@ -27,6 +28,7 @@ type AppContextType = {
   onLogout: () => void;
   importState: ImportWizardState;
   setImportState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
+  syncStatuses: SyncStatuses;
 };
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -65,6 +67,10 @@ function ProtectedLayout({
   importState,
   setImportState,
 }: ProtectedLayoutProps) {
+  // Lives here rather than in DatasetPage: a workbook keeps syncing while the
+  // operator is on another dataset, or on the import page.
+  const syncStatuses = useExcelSync(datasets, user.role, refreshDatasets);
+
   const contextValue = useMemo(
     () => ({
       user,
@@ -76,6 +82,7 @@ function ProtectedLayout({
       onLogout,
       importState,
       setImportState,
+      syncStatuses,
     }),
     [
       user,
@@ -87,6 +94,7 @@ function ProtectedLayout({
       onLogout,
       importState,
       setImportState,
+      syncStatuses,
     ]
   );
 
