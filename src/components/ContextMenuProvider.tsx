@@ -58,7 +58,6 @@ export default function ContextMenuProvider() {
     };
   }, []);
 
-  // execCommand is the only path that keeps the native undo stack intact.
   function run(command: string) {
     setMenu(null);
     document.execCommand(command);
@@ -111,7 +110,7 @@ export default function ContextMenuProvider() {
   try {
     hasSelection = target.selectionStart !== target.selectionEnd;
   } catch {
-    /* selection API does not apply to this input type */
+
   }
 
   return createPortal(

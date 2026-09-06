@@ -11,15 +11,12 @@ import PieChartWidget from "./PieChartWidget";
 
 export type WidgetRenderProps = {
   readonly widget: WidgetDefinition;
-  // Bumped by the refresh button. The query fields are unchanged on a refresh,
-  // so without this the memo below keeps its identity and nothing refetches.
+
   readonly reloadNonce?: number;
 };
 
 export default function WidgetRender({ widget, reloadNonce = 0 }: WidgetRenderProps) {
-  // Only these fields reach the server. Depending on the whole widget object
-  // meant every drag and resize handed this effect a fresh identity and
-  // refetched data that had not changed.
+
   const query = useMemo<WidgetQuery>(
     () => ({
       datasetId: widget.datasetId,

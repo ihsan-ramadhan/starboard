@@ -4,11 +4,12 @@ use crate::types::{WidgetQueryRequest, WidgetQueryResult};
 pub async fn execute_widget_query(
     client: &Client,
     req: WidgetQueryRequest,
+    dept: &str,
 ) -> Result<WidgetQueryResult, String> {
     let ds_row = client
         .query_opt(
-            r#"SELECT "tableName" FROM dataset_registry WHERE id = $1"#,
-            &[&req.dataset_id],
+            r#"SELECT "tableName" FROM dataset_registry WHERE id = $1 AND dept = $2"#,
+            &[&req.dataset_id, &dept],
         )
         .await
         .map_err(|e| e.to_string())?;

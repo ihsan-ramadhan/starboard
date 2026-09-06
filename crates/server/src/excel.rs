@@ -18,12 +18,30 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
+pub fn parse_date_value(val: &str) -> Option<String> {
+    for fmt in ["%Y-%m-%d", "%d/%m/%Y"] {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(val, fmt) {
+            return Some(d.format("%Y-%m-%d").to_string());
+        }
+    }
+    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%.f"] {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(val, fmt) {
+            return Some(dt.date().format("%Y-%m-%d").to_string());
+        }
+    }
+    None
+}
+
 pub fn format_sql_cell_value(val: &str, col_type: &str) -> String {
     let trimmed = val.trim();
     if trimmed.is_empty() {
         return "NULL".to_string();
     }
     match col_type {
+        "date" => match parse_date_value(trimmed) {
+            Some(d) => format!("'{}'", d),
+            None => "NULL".to_string(),
+        },
         "numeric" => {
             let cleaned = trimmed.replace(['$', '€', '£', '¥', ',', ' '], "");
             if cleaned.is_empty() {
@@ -46,17 +64,17 @@ pub fn normalize_category_value(val: &str) -> String {
     if trimmed.is_empty() {
         return "".to_string();
     }
-    
+
     let re_spaces = Regex::new(r"\s+").unwrap();
     let unified_spaces = re_spaces.replace_all(trimmed, " ");
-    
+
     if unified_spaces.eq_ignore_ascii_case("post mining") {
         return "POST-MINING".to_string();
     }
     if unified_spaces.eq_ignore_ascii_case("pre mining") {
         return "PRE-MINING".to_string();
     }
-    
+
     unified_spaces.to_string()
 }
 
@@ -232,7 +250,6 @@ pub fn parse_and_analyze_sheets(
     Ok(detected)
 }
 
-
 pub struct ImportSpec<'a> {
     pub dept: &'a str,
     pub display_name: &'a str,
@@ -241,6 +258,8 @@ pub struct ImportSpec<'a> {
     pub selected_columns: &'a HashMap<String, Vec<String>>,
     pub source_path: Option<&'a str>,
     pub source_mtime: Option<&'a str>,
+
+    pub watched_by: Option<&'a str>,
     pub strict: bool,
 }
 
@@ -406,17 +425,17 @@ pub async fn execute_import(
             r#"
             INSERT INTO dataset_registry
                 ("id", "dept", "key", "tableName", "displayName", "createdAt",
-                 "sourcePath", "syncConfig", "syncEnabled", "lastSyncedAt", "lastSyncedMtime")
-            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9)
+                 "sourcePath", "syncConfig", "syncEnabled", "lastSyncedAt",
+                 "lastSyncedMtime", "watchedBy")
+            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9, $10)
             ON CONFLICT ("dept", "key") DO UPDATE
             SET "tableName" = EXCLUDED."tableName",
                 "displayName" = EXCLUDED."displayName",
                 "syncConfig" = EXCLUDED."syncConfig",
                 "lastSyncedAt" = now(),
                 "lastSyncedMtime" = EXCLUDED."lastSyncedMtime",
-                -- A sync run sends no path, so keep whatever is already stored
-                -- instead of unsetting it.
                 "sourcePath" = COALESCE(EXCLUDED."sourcePath", dataset_registry."sourcePath"),
+                "watchedBy" = COALESCE(EXCLUDED."watchedBy", dataset_registry."watchedBy"),
                 "syncEnabled" = EXCLUDED."syncEnabled" OR dataset_registry."syncEnabled"
             "#,
             &[
@@ -429,6 +448,7 @@ pub async fn execute_import(
                 &sync_config,
                 &sync_enabled,
                 &spec.source_mtime,
+                &spec.watched_by,
             ],
         )
         .await
@@ -486,7 +506,10 @@ pub async fn execute_import(
                         }
                         Data::Float(f) => f.to_string(),
                         Data::Int(i) => i.to_string(),
-                        Data::DateTime(d) => format!("{:.4}", d.as_f64()),
+                        Data::DateTime(d) => d
+                            .as_datetime()
+                            .map(|dt| dt.date().format("%Y-%m-%d").to_string())
+                            .unwrap_or_default(),
                         Data::DateTimeIso(s) => s.clone(),
                         Data::Bool(b) => b.to_string(),
                         _ => "".to_string(),

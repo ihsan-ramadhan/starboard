@@ -4,14 +4,12 @@ import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
-import type { SessionUser } from "../types";
+import { isAdmin, type SessionUser } from "../types";
 
 type DatasetTab = { key: string; displayName: string };
 
 const COLLAPSE_KEY = "starboard_sidebar_collapsed";
 
-// Two letters, so names sharing a first word stay apart in the collapsed rail
-// ("Produksi Harian" vs "Pemakaian Bahan Bakar").
 function initials(name: string) {
   return name
     .trim()
@@ -104,16 +102,18 @@ export function Sidebar({
             ))
           )}
 
-          <Link
-            to="/import"
-            className={`nav-link import${location.pathname === "/import" ? " active" : ""}`}
-            aria-current={location.pathname === "/import" ? "page" : undefined}
-            aria-label="Import Dataset"
-            title="Import Dataset"
-          >
-            <span className="nav-initial">+</span>
-            <span className="nav-label sidebar-hideable">Import Dataset</span>
-          </Link>
+          {isAdmin(user) && (
+            <Link
+              to="/import"
+              className={`nav-link import${location.pathname === "/import" ? " active" : ""}`}
+              aria-current={location.pathname === "/import" ? "page" : undefined}
+              aria-label="Import Dataset"
+              title="Import Dataset"
+            >
+              <span className="nav-initial">+</span>
+              <span className="nav-label sidebar-hideable">Import Dataset</span>
+            </Link>
+          )}
         </nav>
 
         <div className="sidebar-foot">

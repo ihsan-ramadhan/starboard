@@ -12,6 +12,21 @@ use crate::AppState;
 #[derive(Clone)]
 pub struct AuthUser {
     pub role: String,
+    pub access_level: String,
+}
+
+impl AuthUser {
+
+    pub fn require_admin(&self) -> Result<(), (StatusCode, String)> {
+        if self.access_level == "admin" {
+            Ok(())
+        } else {
+            Err((
+                StatusCode::FORBIDDEN,
+                "Akun ini hanya bisa melihat dashboard.".to_string(),
+            ))
+        }
+    }
 }
 
 impl FromRequestParts<Arc<AppState>> for AuthUser {
@@ -67,7 +82,7 @@ async fn resolve_user(pool: &Pool, token: &str) -> Option<AuthUser> {
     let row = client
         .query_opt(
             r#"
-            SELECT u.role
+            SELECT u.role, u."accessLevel"
             FROM sessions s
             JOIN users u ON u.id = s."userId"
             WHERE s.token = $1 AND s."expiresAt" > now()
@@ -78,5 +93,6 @@ async fn resolve_user(pool: &Pool, token: &str) -> Option<AuthUser> {
         .ok()?;
     row.map(|r| AuthUser {
         role: r.get(0),
+        access_level: r.get(1),
     })
 }

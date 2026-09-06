@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "./api";
-import { fileNameOf, isDesktop, readSourceFile, sourceFileRevision } from "./desktop";
-import type { DatasetRegistry } from "../types";
+import {
+  fileNameOf,
+  isDesktop,
+  machineName,
+  readSourceFile,
+  sourceFileRevision,
+} from "./desktop";
+import { isAdmin, type DatasetRegistry, type SessionUser } from "../types";
 
-// Long enough that a workbook on a department share is not restatted
-// constantly, short enough that an operator who saves the file sees the
-// dashboard move before wondering whether it is broken.
 const POLL_INTERVAL_MS = 20_000;
 
 export type SyncStatus = {
   state: "watching" | "importing" | "error";
   error?: string;
-  /** Set when this session imported the dataset. Bumps on every fresh import. */
   syncedAt?: number;
 };
 
@@ -23,17 +25,31 @@ function messageOf(err: unknown) {
   return text.replace(/^Error:\s*/, "");
 }
 
-/**
- * Watches every dataset that was imported from a file path and re-imports it
- * when that file changes. Only the desktop shell can do this: the path may be
- * a local disk or a department share, and only the machine running the app can
- * reach both.
- */
+export function useMachineName(): string | null {
+  const [name, setName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isDesktop()) return;
+    let active = true;
+    machineName()
+      .then((n) => {
+        if (active) setName(n);
+      })
+      .catch(() => {
+
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return name;
+}
+
 export function useExcelSync(
   datasets: DatasetRegistry[],
-  dept: string,
+  user: SessionUser,
   onSynced: () => void | Promise<void>
 ): SyncStatuses {
+  const dept = user.role;
   const [statuses, setStatuses] = useState<SyncStatuses>({});
 
   const datasetsRef = useRef(datasets);
@@ -43,18 +59,16 @@ export function useExcelSync(
     onSyncedRef.current = onSynced;
   });
 
-  // Revisions already imported this session. The dataset list only catches up
-  // after onSynced refreshes it, and the next tick can arrive first.
   const importedRef = useRef<Record<string, string>>({});
-  // Revisions the server rejected, usually because a picked sheet or column was
-  // renamed. Retrying them every 20s would upload the same doomed file forever.
   const rejectedRef = useRef<Record<string, string>>({});
   const runningRef = useRef(false);
 
   useEffect(() => {
-    if (!isDesktop()) return;
+
+    if (!isDesktop() || !isAdmin(user)) return;
 
     let active = true;
+    let machine: string | null = null;
 
     function forget(key: string) {
       setStatuses((prev) => {
@@ -72,8 +86,6 @@ export function useExcelSync(
     ) {
       setStatuses((prev) => {
         const cur = prev[key];
-        // Carried forward rather than reset, so the "last synced" line does not
-        // blink away on the next quiet poll.
         const merged: SyncStatus = { ...status, syncedAt: syncedAt ?? cur?.syncedAt };
         if (
           cur &&
@@ -88,17 +100,23 @@ export function useExcelSync(
     }
 
     async function tick() {
-      // A slow import must not overlap the next tick, or the same file gets
-      // sent twice and the second run wins a race with the first.
       if (runningRef.current) return;
       runningRef.current = true;
       try {
+        machine ??= await machineName().catch(() => null);
+        if (!active || !machine) return;
+
         let anyImported = false;
 
         for (const ds of datasetsRef.current) {
           if (!active) return;
           const path = ds.sourcePath;
           if (!ds.syncEnabled || !path) {
+            forget(ds.key);
+            continue;
+          }
+
+          if (ds.watchedBy !== machine) {
             forget(ds.key);
             continue;
           }
@@ -131,14 +149,15 @@ export function useExcelSync(
               sourceMtime: file.revision,
             });
             if (!active) return;
-            // Recorded from the read, not the stat above: the file may have
-            // been saved again in between, and that write must not be skipped.
             importedRef.current[ds.key] = file.revision;
-            anyImported = true;
             setStatus(ds.key, { state: "watching" }, Date.now());
-            toast.success(
-              `${ds.displayName} diperbarui dari ${fileNameOf(path)} (${res.totalImported.toLocaleString()} baris).`
-            );
+
+            if (!res.skipped) {
+              anyImported = true;
+              toast.success(
+                `${ds.displayName} diperbarui dari ${fileNameOf(path)} (${res.totalImported.toLocaleString()} baris).`
+              );
+            }
           } catch (err) {
             rejectedRef.current[ds.key] = revision;
             setStatus(ds.key, { state: "error", error: messageOf(err) });
@@ -157,7 +176,7 @@ export function useExcelSync(
       active = false;
       window.clearInterval(id);
     };
-  }, [dept]);
+  }, [dept, user.accessLevel]);
 
   return statuses;
 }

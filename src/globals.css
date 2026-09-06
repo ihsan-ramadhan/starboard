@@ -1332,7 +1332,6 @@ a {
   animation: sync-pulse 1.2s ease-in-out infinite;
 }
 
-/* red-700 rather than --danger: at 13px the lighter red misses AA on white. */
 .dataset-sync.tone-error {
   color: #b91c1c;
 }

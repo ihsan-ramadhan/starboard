@@ -8,6 +8,9 @@ pub struct SessionUser {
     pub role: String,
     #[serde(rename = "deptColor")]
     pub dept_color: Option<String>,
+
+    #[serde(rename = "accessLevel")]
+    pub access_level: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -29,6 +32,9 @@ pub struct DatasetRegistry {
     pub last_synced_at: Option<String>,
     #[serde(rename = "lastSyncedMtime")]
     pub last_synced_mtime: Option<String>,
+
+    #[serde(rename = "watchedBy")]
+    pub watched_by: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

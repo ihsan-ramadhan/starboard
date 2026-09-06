@@ -4,7 +4,13 @@ export type SessionUser = {
   email: string;
   role: string;
   deptColor: string | null;
+
+  accessLevel: "admin" | "viewer";
 };
+
+export function isAdmin(user: SessionUser) {
+  return user.accessLevel === "admin";
+}
 
 export type DatasetColumn = {
   id: string;
@@ -22,12 +28,12 @@ export type DatasetRegistry = {
   displayName: string;
   createdAt: string;
   columns?: DatasetColumn[];
-  /** Absolute path or UNC share the workbook was imported from, if known. */
   sourcePath: string | null;
   syncEnabled: boolean;
   lastSyncedAt: string | null;
-  /** Opaque revision of the file at the last import. Compare for equality only. */
   lastSyncedMtime: string | null;
+
+  watchedBy: string | null;
 };
 
 export type ChartDataPoint = {

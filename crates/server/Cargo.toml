@@ -16,6 +16,6 @@ dotenvy = "0.15"
 regex = "1.10"
 lazy_static = "1.4"
 rust_decimal = { version = "1.36", features = ["db-postgres"] }
-calamine = "0.36"
+calamine = { version = "0.36", features = ["dates"] }
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "json", "query"] }
 tower-http = { version = "0.6", features = ["cors"] }

@@ -6,8 +6,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api, clearWidgetDataCache } from "../lib/api";
-import { fileNameOf, isDesktop } from "../lib/desktop";
-import type { SyncStatus } from "../lib/excelSync";
+import { fileNameOf, isDesktop, machineName, pickExcelPath } from "../lib/desktop";
+import { useMachineName, type SyncStatus } from "../lib/excelSync";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
@@ -16,11 +16,12 @@ import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
 import SchemaInspector from "../components/table/SchemaInspector";
 import RawTablePreview from "../components/table/RawTablePreview";
-import type {
-  DatasetDetail,
-  WidgetDefinition,
-  WidgetLayout,
-  WidgetType,
+import {
+  isAdmin,
+  type DatasetDetail,
+  type WidgetDefinition,
+  type WidgetLayout,
+  type WidgetType,
 } from "../types";
 
 const GRID_COLS = 12;
@@ -80,13 +81,21 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
 }
 
 export default function DatasetPage() {
-  const { user, refreshDatasets, datasetCache, fetchDatasetDetail, syncStatuses } =
-    useApp();
+  const {
+    user,
+    datasets,
+    refreshDatasets,
+    datasetCache,
+    fetchDatasetDetail,
+    syncStatuses,
+  } = useApp();
+  const admin = isAdmin(user);
+  const machine = useMachineName();
   const { key } = useParams<{ key: string }>();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
-  // Not persisted: opening a dashboard should always land in the read-only state.
+
   const [editMode, setEditMode] = useState(false);
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
@@ -104,6 +113,10 @@ export default function DatasetPage() {
   const [togglingSync, setTogglingSync] = useState(false);
 
   const syncStatus = key ? syncStatuses[key] : undefined;
+
+  const registry = datasets.find((d) => d.key === key);
+  const registryStamp = registry?.lastSyncedAt ?? null;
+  const seenStampRef = useRef<string | null>(null);
 
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<(() => void) | null>(null);
@@ -133,16 +146,11 @@ export default function DatasetPage() {
     }
   }, []);
 
-  // datasetCache is read for the value it holds when the dataset opens, so it
-  // is deliberately not a dependency. Listing it re-ran this effect every time
-  // any dataset got cached, which blanked the widget list and fetched it twice.
   useEffect(() => {
     if (!key) return;
-    // A const so the narrowing survives into the async closure below.
+
     const datasetKey = key;
 
-    // Stops a slow response for a dataset the user has already left from
-    // overwriting the one now on screen.
     let active = true;
     setWidgets([]);
 
@@ -183,16 +191,16 @@ export default function DatasetPage() {
     };
   }, [key, user.role]);
 
-  // A background sync just replaced the rows under this dashboard. Reuse the
-  // refresh button's path so the row count, the table preview, and every widget
-  // move at the same time instead of drifting apart.
   useEffect(() => {
-    if (!syncStatus?.syncedAt) return;
-    handleRefresh();
-  }, [syncStatus?.syncedAt]);
+    const mark = `${key}:${registryStamp ?? ""}`;
+    const previous = seenStampRef.current;
+    seenStampRef.current = mark;
 
-  // The debounced save is flushed on unmount instead of dropped. Navigating
-  // away inside the 400ms window used to discard the layout just arranged.
+    if (previous === null || !previous.startsWith(`${key}:`)) return;
+    if (previous === mark) return;
+    handleRefresh();
+  }, [key, registryStamp]);
+
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
@@ -202,8 +210,6 @@ export default function DatasetPage() {
     };
   }, []);
 
-  // Bypasses every cache: the dataset detail in App, the widget query results in
-  // api.ts, and the memoised query inside each mounted WidgetRender.
   async function handleRefresh() {
     if (!key || refreshing) return;
     setRefreshing(true);
@@ -226,9 +232,28 @@ export default function DatasetPage() {
     }
   }
 
+  async function handleClaimWatch() {
+    if (!key || togglingSync) return;
+    setTogglingSync(true);
+    try {
+      const path = await pickExcelPath();
+      if (!path) return;
+      await api.setSyncEnabled(user.role, key, true, path, await machineName());
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+      toast.success("Dataset ini sekarang diawasi dari laptop ini.");
+    } catch (err) {
+      toast.error("Gagal mengambil alih pengawasan: " + String(err));
+    } finally {
+      setTogglingSync(false);
+    }
+  }
+
   async function handleToggleSync() {
     if (!key || togglingSync) return;
-    const next = !detail?.dataset?.syncEnabled;
+
+    const next = !(registry ?? detail?.dataset)?.syncEnabled;
     setTogglingSync(true);
     try {
       await api.setSyncEnabled(user.role, key, next);
@@ -378,14 +403,18 @@ export default function DatasetPage() {
             <strong>{totalRows.toLocaleString()}</strong> · Terdeteksi{" "}
             <strong>{columns.length} kolom</strong>
           </p>
-          {dataset.sourcePath && (
+          {(registry ?? dataset).sourcePath && (
             <SyncLine
-              sourcePath={dataset.sourcePath}
-              enabled={dataset.syncEnabled}
-              lastSyncedAt={dataset.lastSyncedAt}
+              sourcePath={(registry ?? dataset).sourcePath as string}
+              enabled={(registry ?? dataset).syncEnabled}
+              lastSyncedAt={(registry ?? dataset).lastSyncedAt}
+              watchedBy={(registry ?? dataset).watchedBy}
+              machine={machine}
               status={syncStatus}
+              canEdit={admin}
               busy={togglingSync}
               onToggle={handleToggleSync}
+              onClaim={handleClaimWatch}
             />
           )}
         </div>
@@ -419,39 +448,40 @@ export default function DatasetPage() {
               Tabel Data
             </button>
           </div>
-          {activeTab === "dashboard" && editMode ? (
-            <>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={openCreateWidget}
-              >
-                + Tambah Widget
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => setEditMode(false)}
-              >
-                Selesai
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to="/import" className="btn-ghost">
-                + Import File Lain
-              </Link>
-              {activeTab === "dashboard" && (
+          {admin &&
+            (activeTab === "dashboard" && editMode ? (
+              <>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={openCreateWidget}
+                >
+                  + Tambah Widget
+                </button>
                 <button
                   type="button"
                   className="btn-ghost"
-                  onClick={() => setEditMode(true)}
+                  onClick={() => setEditMode(false)}
                 >
-                  Atur Dashboard
+                  Selesai
                 </button>
-              )}
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                <Link to="/import" className="btn-ghost">
+                  + Import File Lain
+                </Link>
+                {activeTab === "dashboard" && (
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => setEditMode(true)}
+                  >
+                    Atur Dashboard
+                  </button>
+                )}
+              </>
+            ))}
         </div>
       </div>
 
@@ -460,19 +490,27 @@ export default function DatasetPage() {
           {widgets.length === 0 ? (
             <div className="empty-widgets-card">
               <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
-              <p className="empty-widgets-desc">
-                Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
-              </p>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => {
-                  setEditMode(true);
-                  openCreateWidget();
-                }}
-              >
-                + Tambah Widget Pertama
-              </button>
+              {admin ? (
+                <>
+                  <p className="empty-widgets-desc">
+                    Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      setEditMode(true);
+                      openCreateWidget();
+                    }}
+                  >
+                    + Tambah Widget Pertama
+                  </button>
+                </>
+              ) : (
+                <p className="empty-widgets-desc">
+                  Admin {user.role} belum menyusun dashboard untuk dataset ini.
+                </p>
+              )}
             </div>
           ) : (
             <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
@@ -533,6 +571,7 @@ export default function DatasetPage() {
         <div className="data-view-container">
           <SchemaInspector columns={columns} />
           <RawTablePreview columns={columns} sampleRows={sampleRows} />
+          {admin && (
           <div className="danger-zone">
             <div>
               <p className="danger-zone-title">Zona Berbahaya</p>
@@ -549,6 +588,7 @@ export default function DatasetPage() {
               Hapus Dataset
             </button>
           </div>
+          )}
         </div>
       )}
 
@@ -598,41 +638,60 @@ type SyncLineProps = {
   readonly sourcePath: string;
   readonly enabled: boolean;
   readonly lastSyncedAt: string | null;
+  readonly watchedBy: string | null;
+  readonly machine: string | null;
   readonly status: SyncStatus | undefined;
+  readonly canEdit: boolean;
   readonly busy: boolean;
   readonly onToggle: () => void;
+  readonly onClaim: () => void;
 };
 
 function SyncLine({
   sourcePath,
   enabled,
   lastSyncedAt,
+  watchedBy,
+  machine,
   status,
+  canEdit,
   busy,
   onToggle,
+  onClaim,
 }: SyncLineProps) {
   const name = fileNameOf(sourcePath);
+  const when = formatSyncTime(lastSyncedAt);
+  const mine = !!machine && watchedBy === machine;
   let tone = "paused";
   let text: string;
+  let action: { label: string; run: () => void } | null = null;
 
   if (!enabled) {
     text = `Sync dijeda untuk ${name}`;
+    if (canEdit) action = { label: "Aktifkan", run: onToggle };
   } else if (!isDesktop()) {
-    // The browser build can still show the dataset, it just cannot reach the
-    // file, so saying "mengikuti" here would be a lie.
-    text = `${name} hanya diikuti dari aplikasi desktop`;
+    text = `${name} diikuti dari aplikasi desktop`;
+  } else if (!watchedBy) {
+    text = `${name} belum diawasi laptop mana pun`;
+    if (canEdit) action = { label: "Awasi dari laptop ini", run: onClaim };
+  } else if (!mine) {
+
+    tone = "live";
+    text = when
+      ? `Diikuti dari ${watchedBy} · diperbarui ${when}`
+      : `Diikuti dari ${watchedBy}`;
+    if (canEdit) action = { label: "Awasi dari laptop ini", run: onClaim };
   } else if (status?.state === "importing") {
     tone = "busy";
     text = `Membaca perubahan ${name}…`;
   } else if (status?.state === "error") {
     tone = "error";
-    // The server says which sheet or column went missing. Repeating that beats
-    // a generic failure the operator would have to guess at.
     text = status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`;
+    if (canEdit) action = { label: "Jeda", run: onToggle };
   } else {
     tone = "live";
-    const when = formatSyncTime(lastSyncedAt);
     text = when ? `Mengikuti ${name} · diperbarui ${when}` : `Mengikuti ${name}`;
+    if (canEdit) action = { label: "Jeda", run: onToggle };
   }
 
   return (
@@ -641,14 +700,16 @@ function SyncLine({
       <span className="dataset-sync-text" title={status?.error ?? sourcePath}>
         {text}
       </span>
-      <button
-        type="button"
-        className="dataset-sync-toggle"
-        onClick={onToggle}
-        disabled={busy}
-      >
-        {enabled ? "Jeda" : "Aktifkan"}
-      </button>
+      {action && (
+        <button
+          type="button"
+          className="dataset-sync-toggle"
+          onClick={action.run}
+          disabled={busy}
+        >
+          {action.label}
+        </button>
+      )}
     </p>
   );
 }

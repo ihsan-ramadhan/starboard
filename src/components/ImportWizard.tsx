@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import {
   fileNameOf,
   isDesktop,
+  machineName,
   pickExcelPath,
   readSourceFile,
 } from "../lib/desktop";
@@ -281,6 +282,8 @@ export default function ImportWizard({
         selectedColumns: selCols,
         sourcePath: sourcePath ?? undefined,
         sourceMtime: sourceRevision ?? undefined,
+
+        watchedBy: sourcePath ? await machineName() : undefined,
       });
 
       setWizardState(initialImportWizardState);

@@ -73,11 +73,6 @@ export type WidgetQuery = {
   orderByKey?: boolean;
 };
 
-// A widget's rows only change when its dataset is re-imported, but data may
-// change elsewhere too. A short TTL balances fast remounts (paint cached
-// numbers instead of flashing a loader) with eventually-fresh data: any query
-// older than WIDGET_CACHE_TTL is re-fetched. Import always clears it so the
-// dashboard reflects the new rows immediately.
 const WIDGET_CACHE_TTL_MS = 30_000;
 const widgetDataCache = new Map<string, { at: number; value: WidgetQueryResult }>();
 
@@ -92,9 +87,6 @@ function widgetDataKey(q: WidgetQuery) {
   ].join("|");
 }
 
-// Synchronous read, so a remounting widget can paint its old numbers on the
-// first frame instead of flashing a loading state. Never returns a stale
-// entry once its TTL has passed.
 export function peekWidgetData(q: WidgetQuery) {
   const entry = widgetDataCache.get(widgetDataKey(q));
   if (!entry) return undefined;
@@ -105,8 +97,6 @@ export function peekWidgetData(q: WidgetQuery) {
   return entry.value;
 }
 
-// Exported so the refresh button can drop every cached result at once. Import
-// calls it too, which is why it does not take a dataset argument.
 export function clearWidgetDataCache() {
   widgetDataCache.clear();
 }
@@ -166,6 +156,7 @@ export const api = {
     selectedColumns: Record<string, string[]>;
     sourcePath?: string;
     sourceMtime?: string;
+    watchedBy?: string;
   }) {
     const res = await request<{ primaryKey: string; totalImported: number }>(
       "/api/excel/import",
@@ -174,25 +165,26 @@ export const api = {
         body: JSON.stringify(payload),
       }
     );
-    // Invalidating here rather than at the call site means no caller can
-    // forget and leave widgets showing pre-import numbers.
+
     clearWidgetDataCache();
     return res;
   },
 
-  // Re-runs the dataset's stored import recipe against fresh bytes. The
-  // wizard's sheet and column picks live on the server, so a sync only has to
-  // carry the file itself.
   async syncDataset(
     dept: string,
     key: string,
     payload: { fileBytes: number[]; sourceMtime: string }
   ) {
-    const res = await request<{ primaryKey: string; totalImported: number }>(
-      `/api/datasets/${encodeURIComponent(key)}/sync`,
-      { method: "POST", body: JSON.stringify({ dept, ...payload }) }
-    );
-    clearWidgetDataCache();
+    const res = await request<{
+      primaryKey: string;
+      totalImported: number;
+      skipped: boolean;
+    }>(`/api/datasets/${encodeURIComponent(key)}/sync`, {
+      method: "POST",
+      body: JSON.stringify({ dept, ...payload }),
+    });
+
+    if (!res.skipped) clearWidgetDataCache();
     return res;
   },
 
@@ -200,13 +192,14 @@ export const api = {
     dept: string,
     key: string,
     enabled: boolean,
-    sourcePath?: string
+    sourcePath?: string,
+    watchedBy?: string
   ) {
     return request<boolean>(
       `/api/datasets/${encodeURIComponent(key)}/sync`,
       {
         method: "PUT",
-        body: JSON.stringify({ dept, enabled, sourcePath }),
+        body: JSON.stringify({ dept, enabled, sourcePath, watchedBy }),
       }
     );
   },

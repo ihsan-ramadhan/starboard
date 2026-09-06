@@ -105,6 +105,9 @@ struct ImportRequest {
     source_path: Option<String>,
     #[serde(rename = "sourceMtime", default)]
     source_mtime: Option<String>,
+
+    #[serde(rename = "watchedBy", default)]
+    watched_by: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -122,6 +125,8 @@ struct SyncSettingsRequest {
     enabled: bool,
     #[serde(rename = "sourcePath", default)]
     source_path: Option<String>,
+    #[serde(rename = "watchedBy", default)]
+    watched_by: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -130,6 +135,8 @@ struct ImportResponse {
     primary_key: String,
     #[serde(rename = "totalImported")]
     total_imported: usize,
+
+    skipped: bool,
 }
 
 #[derive(Serialize)]
@@ -171,8 +178,8 @@ async fn main() {
         }
     };
 
-    if let Err(e) = ensure_sync_columns(&pool).await {
-        eprintln!("[ERROR] Gagal menyiapkan kolom sync: {}", e);
+    if let Err(e) = ensure_schema(&pool).await {
+        eprintln!("[ERROR] Gagal menyiapkan skema: {}", e);
         std::process::exit(1);
     }
 
@@ -235,17 +242,27 @@ async fn main() {
     }
 }
 
-async fn ensure_sync_columns(pool: &Pool) -> Result<(), String> {
+async fn ensure_schema(pool: &Pool) -> Result<(), String> {
     let client = pool.get().await.map_err(|e| e.to_string())?;
     client
         .batch_execute(
             r#"
+            BEGIN;
+
             ALTER TABLE dataset_registry
                 ADD COLUMN IF NOT EXISTS "sourcePath" text,
                 ADD COLUMN IF NOT EXISTS "syncConfig" jsonb,
                 ADD COLUMN IF NOT EXISTS "syncEnabled" boolean NOT NULL DEFAULT false,
                 ADD COLUMN IF NOT EXISTS "lastSyncedAt" timestamptz,
-                ADD COLUMN IF NOT EXISTS "lastSyncedMtime" text;
+                ADD COLUMN IF NOT EXISTS "lastSyncedMtime" text,
+                ADD COLUMN IF NOT EXISTS "watchedBy" text;
+
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS "accessLevel" text;
+            UPDATE users SET "accessLevel" = 'admin' WHERE "accessLevel" IS NULL;
+            ALTER TABLE users ALTER COLUMN "accessLevel" SET DEFAULT 'viewer';
+            ALTER TABLE users ALTER COLUMN "accessLevel" SET NOT NULL;
+
+            COMMIT;
             "#,
         )
         .await
@@ -255,7 +272,7 @@ async fn ensure_sync_columns(pool: &Pool) -> Result<(), String> {
 const REGISTRY_COLUMNS: &str = r#"id, dept, key, "tableName", "displayName", "createdAt"::text,
     "sourcePath", "syncEnabled",
     to_char("lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    "lastSyncedMtime""#;
+    "lastSyncedMtime", "watchedBy""#;
 
 fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
     DatasetRegistry {
@@ -269,6 +286,7 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         sync_enabled: r.get(7),
         last_synced_at: r.get(8),
         last_synced_mtime: r.get(9),
+        watched_by: r.get(10),
     }
 }
 
@@ -292,7 +310,8 @@ async fn login_handler(
     let row = client
         .query_opt(
             r#"
-            SELECT u.id, u.username, u.email, u."passwordHash", u.role, d.color as dept_color
+            SELECT u.id, u.username, u.email, u."passwordHash", u.role, d.color as dept_color,
+                   u."accessLevel"
             FROM users u
             LEFT JOIN departments d ON d.code = u.role
             WHERE lower(u.email) = lower($1) OR lower(u.username) = lower($1)
@@ -328,6 +347,7 @@ async fn login_handler(
         email: row.get(2),
         role: row.get(4),
         dept_color: row.get(5),
+        access_level: row.get(6),
     };
 
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -373,8 +393,16 @@ async fn logout_handler(
 
 async fn get_datasets_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Query(query): Query<DeptQuery>,
 ) -> Result<Json<Vec<DatasetRegistry>>, (StatusCode, String)> {
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
     let client = state
         .pool
         .get()
@@ -404,9 +432,17 @@ async fn get_datasets_handler(
 
 async fn get_dataset_detail_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Path(key): Path<String>,
     Query(query): Query<DeptQuery>,
 ) -> Result<Json<DatasetDetail>, (StatusCode, String)> {
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
     let client = state
         .pool
         .get()
@@ -514,6 +550,8 @@ async fn delete_dataset_handler(
     auth: crate::auth::AuthUser,
     Path(dataset_id): Path<String>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+
     let mut client = state
         .pool
         .get()
@@ -649,6 +687,8 @@ async fn save_widgets_handler(
     Query(query): Query<DeptQuery>,
     Json(payload): Json<Vec<WidgetPayload>>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+
     if payload.len() > 50 {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -762,8 +802,11 @@ async fn save_widgets_handler(
 }
 
 async fn analyze_excel_handler(
+    auth: crate::auth::AuthUser,
     Json(payload): Json<AnalyzeRequest>,
 ) -> Result<Json<Vec<DetectedSheet>>, (StatusCode, String)> {
+    auth.require_admin()?;
+
     let key = payload.dataset_key.unwrap_or_else(|| "dataset".to_string());
     let sheets = parse_and_analyze_sheets(&payload.file_bytes, &key)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
@@ -772,8 +815,17 @@ async fn analyze_excel_handler(
 
 async fn import_excel_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Json(payload): Json<ImportRequest>,
 ) -> Result<Json<ImportResponse>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
     let mut client = state
         .pool
         .get()
@@ -791,6 +843,7 @@ async fn import_excel_handler(
             selected_columns: &payload.selected_columns,
             source_path: payload.source_path.as_deref(),
             source_mtime: payload.source_mtime.as_deref(),
+            watched_by: payload.watched_by.as_deref(),
             strict: false,
         },
     )
@@ -800,6 +853,7 @@ async fn import_excel_handler(
     Ok(Json(ImportResponse {
         primary_key,
         total_imported,
+        skipped: false,
     }))
 }
 
@@ -809,6 +863,7 @@ async fn sync_dataset_handler(
     Path(key): Path<String>,
     Json(payload): Json<SyncRequest>,
 ) -> Result<Json<ImportResponse>, (StatusCode, String)> {
+    auth.require_admin()?;
     if payload.dept != auth.role {
         return Err((
             StatusCode::FORBIDDEN,
@@ -824,14 +879,16 @@ async fn sync_dataset_handler(
 
     let row = client
         .query_opt(
-            r#"SELECT "syncConfig", "syncEnabled" FROM dataset_registry WHERE dept = $1 AND key = $2"#,
+            r#"SELECT "syncConfig", "syncEnabled", "lastSyncedMtime"
+               FROM dataset_registry WHERE dept = $1 AND key = $2"#,
             &[&payload.dept, &key],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch sync config error: {}", e)))?;
 
-    let (config, enabled): (Option<serde_json::Value>, bool) = match row {
-        Some(r) => (r.get(0), r.get(1)),
+    let (config, enabled, last_mtime): (Option<serde_json::Value>, bool, Option<String>) = match row
+    {
+        Some(r) => (r.get(0), r.get(1), r.get(2)),
         None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
     };
 
@@ -840,6 +897,14 @@ async fn sync_dataset_handler(
             StatusCode::CONFLICT,
             "Sync dimatikan untuk dataset ini.".to_string(),
         ));
+    }
+
+    if last_mtime.as_deref() == Some(payload.source_mtime.as_str()) {
+        return Ok(Json(ImportResponse {
+            primary_key: key,
+            total_imported: 0,
+            skipped: true,
+        }));
     }
 
     let config = config.ok_or((
@@ -876,6 +941,7 @@ async fn sync_dataset_handler(
             selected_columns: &selected_columns,
             source_path: None,
             source_mtime: Some(&payload.source_mtime),
+            watched_by: None,
             strict: true,
         },
     )
@@ -885,6 +951,7 @@ async fn sync_dataset_handler(
     Ok(Json(ImportResponse {
         primary_key,
         total_imported,
+        skipped: false,
     }))
 }
 
@@ -894,6 +961,7 @@ async fn update_sync_settings_handler(
     Path(key): Path<String>,
     Json(payload): Json<SyncSettingsRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
     if payload.dept != auth.role {
         return Err((
             StatusCode::FORBIDDEN,
@@ -912,10 +980,17 @@ async fn update_sync_settings_handler(
             r#"
             UPDATE dataset_registry
             SET "syncEnabled" = $3,
-                "sourcePath" = COALESCE($4, "sourcePath")
+                "sourcePath" = COALESCE($4, "sourcePath"),
+                "watchedBy" = COALESCE($5, "watchedBy")
             WHERE dept = $1 AND key = $2
             "#,
-            &[&payload.dept, &key, &payload.enabled, &payload.source_path],
+            &[
+                &payload.dept,
+                &key,
+                &payload.enabled,
+                &payload.source_path,
+                &payload.watched_by,
+            ],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Update sync error: {}", e)))?;
@@ -929,6 +1004,7 @@ async fn update_sync_settings_handler(
 
 async fn query_widget_data_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Json(req): Json<WidgetQueryRequest>,
 ) -> Result<Json<WidgetQueryResult>, (StatusCode, String)> {
     let client = state
@@ -937,7 +1013,7 @@ async fn query_widget_data_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
-    let res = execute_widget_query(&client, req)
+    let res = execute_widget_query(&client, req, &auth.role)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(res))

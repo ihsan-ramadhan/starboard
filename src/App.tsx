@@ -1,4 +1,11 @@
-import { useState, useEffect, useMemo, createContext, useContext } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
@@ -11,7 +18,12 @@ import {
 } from "./components/ImportWizard";
 import { api, restoreAuthToken, setAuthToken } from "./lib/api";
 import { useExcelSync, type SyncStatuses } from "./lib/excelSync";
-import type { SessionUser, DatasetRegistry, DatasetDetail } from "./types";
+import {
+  isAdmin,
+  type SessionUser,
+  type DatasetRegistry,
+  type DatasetDetail,
+} from "./types";
 
 type AppContextType = {
   user: SessionUser;
@@ -30,6 +42,8 @@ type AppContextType = {
   setImportState: React.Dispatch<React.SetStateAction<ImportWizardState>>;
   syncStatuses: SyncStatuses;
 };
+
+const REGISTRY_POLL_MS = 20_000;
 
 const AppContext = createContext<AppContextType | null>(null);
 
@@ -67,9 +81,7 @@ function ProtectedLayout({
   importState,
   setImportState,
 }: ProtectedLayoutProps) {
-  // Lives here rather than in DatasetPage: a workbook keeps syncing while the
-  // operator is on another dataset, or on the import page.
-  const syncStatuses = useExcelSync(datasets, user.role, refreshDatasets);
+  const syncStatuses = useExcelSync(datasets, user, refreshDatasets);
 
   const contextValue = useMemo(
     () => ({
@@ -111,7 +123,19 @@ function ProtectedLayout({
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(() => {
     const saved = localStorage.getItem("starboard_user");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved) as SessionUser;
+
+      if (!parsed?.accessLevel) {
+        localStorage.removeItem("starboard_user");
+        return null;
+      }
+      return parsed;
+    } catch {
+      localStorage.removeItem("starboard_user");
+      return null;
+    }
   });
   const [datasets, setDatasets] = useState<DatasetRegistry[]>([]);
   const [datasetCache, setDatasetCache] = useState<
@@ -122,10 +146,20 @@ export default function App() {
     initialImportWizardState
   );
 
+  const datasetsSigRef = useRef("");
+
+  function applyDatasets(list: DatasetRegistry[]) {
+    const signature = JSON.stringify(list);
+    if (signature === datasetsSigRef.current) return false;
+    datasetsSigRef.current = signature;
+    setDatasets(list);
+    return true;
+  }
+
   async function loadDatasets(role: string) {
     try {
       const data = await api.getDatasets(role);
-      setDatasets(data);
+      applyDatasets(data);
     } catch (err: any) {
       if (err?.message?.includes("Unauthorized") || err?.message?.includes("401")) {
         handleLogout();
@@ -152,6 +186,25 @@ export default function App() {
       return null;
     }
   }
+
+  useEffect(() => {
+    const role = user?.role;
+    if (!role) return;
+    let active = true;
+    const id = window.setInterval(async () => {
+      try {
+        const list = await api.getDatasets(role);
+        if (!active) return;
+        if (applyDatasets(list)) setDatasetCache({});
+      } catch {
+
+      }
+    }, REGISTRY_POLL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [user?.role]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -225,7 +278,10 @@ export default function App() {
           }
         >
           <Route path="/" element={<HomePage />} />
-          <Route path="/import" element={<ImportPage />} />
+          <Route
+            path="/import"
+            element={isAdmin(user) ? <ImportPage /> : <Navigate to="/" replace />}
+          />
           <Route path="/d/:key" element={<DatasetPage />} />
         </Route>
       ) : (
