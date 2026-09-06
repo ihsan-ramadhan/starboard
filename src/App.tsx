@@ -235,7 +235,7 @@ export default function App() {
     }
     setAuthToken(null);
     setUser(null);
-    setDatasets([]);
+    applyDatasets([]);
     setDatasetCache({});
     setImportState(initialImportWizardState);
     localStorage.removeItem("starboard_user");

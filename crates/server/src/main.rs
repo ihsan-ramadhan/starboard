@@ -262,6 +262,18 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE users ALTER COLUMN "accessLevel" SET DEFAULT 'viewer';
             ALTER TABLE users ALTER COLUMN "accessLevel" SET NOT NULL;
 
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "createdBy" text;
+            ALTER TABLE dashboard_widgets ADD COLUMN IF NOT EXISTS "userId" text;
+
+            ALTER TABLE dashboard_widgets
+                DROP CONSTRAINT IF EXISTS "dashboard_widgets_userId_fkey";
+            ALTER TABLE dashboard_widgets
+                ADD CONSTRAINT "dashboard_widgets_userId_fkey"
+                FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE SET NULL;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username));
+            CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON users (lower(email));
+
             COMMIT;
             "#,
         )
@@ -727,6 +739,21 @@ async fn save_widgets_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Tx error: {}", e)))?;
 
+    let prior_rows = tx
+        .query(
+            r#"SELECT id, "userId" FROM dashboard_widgets WHERE "datasetId" = $1"#,
+            &[&dataset_id],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch widget owners error: {}", e)))?;
+
+    let mut prior_owners: HashMap<String, String> = HashMap::new();
+    for row in prior_rows {
+        if let Some(owner) = row.get::<_, Option<String>>(1) {
+            prior_owners.insert(row.get(0), owner);
+        }
+    }
+
     tx.execute(
         r#"DELETE FROM dashboard_widgets WHERE "datasetId" = $1"#,
         &[&dataset_id],
@@ -746,10 +773,21 @@ async fn save_widgets_handler(
             cfgs.push(cfg);
         }
 
+        let owners: Vec<String> = payload
+            .iter()
+            .map(|w| {
+                prior_owners
+                    .get(&w.id)
+                    .cloned()
+                    .unwrap_or_else(|| auth.id.clone())
+            })
+            .collect();
+
         let mut rows: Vec<Vec<&(dyn tokio_postgres::types::ToSql + Sync)>> = Vec::new();
-        for (w, cfg) in payload.iter().zip(cfgs.iter()) {
+        for ((w, cfg), owner) in payload.iter().zip(cfgs.iter()).zip(owners.iter()) {
             rows.push(vec![
                 &w.id as &(dyn tokio_postgres::types::ToSql + Sync),
+                owner,
                 &dataset_id,
                 &w.id as &(dyn tokio_postgres::types::ToSql + Sync),
                 &w.r#type,
@@ -763,7 +801,7 @@ async fn save_widgets_handler(
 
         let mut insert = String::from(
             r#"INSERT INTO dashboard_widgets
-            (id, "datasetId", "widgetKey", "chartType", "positionX", "positionY", width, height, "filterConfig")
+            (id, "userId", "datasetId", "widgetKey", "chartType", "positionX", "positionY", width, height, "filterConfig")
             VALUES "#,
         );
         let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = rows
@@ -772,19 +810,9 @@ async fn save_widgets_handler(
             .collect();
         let placeholders: Vec<String> = (0..payload.len())
             .map(|i| {
-                let base = i * 9 + 1;
-                format!(
-                    "(${base}, ${b1}, ${b2}, ${b3}, ${b4}, ${b5}, ${b6}, ${b7}, ${b8})",
-                    base = base,
-                    b1 = base + 1,
-                    b2 = base + 2,
-                    b3 = base + 3,
-                    b4 = base + 4,
-                    b5 = base + 5,
-                    b6 = base + 6,
-                    b7 = base + 7,
-                    b8 = base + 8
-                )
+                let base = i * 10 + 1;
+                let slots: Vec<String> = (0..10).map(|n| format!("${}", base + n)).collect();
+                format!("({})", slots.join(", "))
             })
             .collect();
         insert.push_str(&placeholders.join(","));
@@ -844,6 +872,7 @@ async fn import_excel_handler(
             source_path: payload.source_path.as_deref(),
             source_mtime: payload.source_mtime.as_deref(),
             watched_by: payload.watched_by.as_deref(),
+            created_by: Some(&auth.id),
             strict: false,
         },
     )
@@ -942,6 +971,7 @@ async fn sync_dataset_handler(
             source_path: None,
             source_mtime: Some(&payload.source_mtime),
             watched_by: None,
+            created_by: Some(&auth.id),
             strict: true,
         },
     )

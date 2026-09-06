@@ -586,13 +586,6 @@ a {
   padding: 0;
 }
 
-.login-demo {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--fg-dim);
-  line-height: 1.6;
-  text-align: center;
-}
 
 .alert {
   background: var(--danger-bg);

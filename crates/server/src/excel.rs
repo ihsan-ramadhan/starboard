@@ -59,23 +59,54 @@ pub fn format_sql_cell_value(val: &str, col_type: &str) -> String {
     }
 }
 
-pub fn normalize_category_value(val: &str) -> String {
-    let trimmed = val.trim();
-    if trimmed.is_empty() {
-        return "".to_string();
+pub fn tidy_whitespace(val: &str) -> String {
+    val.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub fn category_fold_key(val: &str) -> String {
+    let spaced: String = val
+        .chars()
+        .map(|c| if c == '-' || c == '_' { ' ' } else { c })
+        .collect();
+    tidy_whitespace(&spaced).to_uppercase()
+}
+
+pub fn canonical_spellings<I: Iterator<Item = String>>(values: I) -> HashMap<String, String> {
+    let mut seen: HashMap<String, HashMap<String, usize>> = HashMap::new();
+    for value in values {
+        if value.is_empty() {
+            continue;
+        }
+        *seen
+            .entry(category_fold_key(&value))
+            .or_default()
+            .entry(value)
+            .or_insert(0) += 1;
     }
 
-    let re_spaces = Regex::new(r"\s+").unwrap();
-    let unified_spaces = re_spaces.replace_all(trimmed, " ");
+    seen.into_iter()
+        .filter_map(|(key, spellings)| {
+            let mut ranked: Vec<(String, usize)> = spellings.into_iter().collect();
+            ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            ranked.into_iter().next().map(|(best, _)| (key, best))
+        })
+        .collect()
+}
 
-    if unified_spaces.eq_ignore_ascii_case("post mining") {
-        return "POST-MINING".to_string();
+pub fn unify_category_spellings(rows: &mut [HashMap<String, String>], columns: &[ColumnSchema]) {
+    for col in columns.iter().filter(|c| c.r#type == "category") {
+        let canonical =
+            canonical_spellings(rows.iter().filter_map(|r| r.get(&col.slug)).cloned());
+        for row in rows.iter_mut() {
+            if let Some(value) = row.get_mut(&col.slug) {
+                if let Some(best) = canonical.get(&category_fold_key(value)) {
+                    if best != value {
+                        *value = best.clone();
+                    }
+                }
+            }
+        }
     }
-    if unified_spaces.eq_ignore_ascii_case("pre mining") {
-        return "PRE-MINING".to_string();
-    }
-
-    unified_spaces.to_string()
 }
 
 pub fn infer_type_from_cells(values: &[&Data]) -> String {
@@ -260,6 +291,7 @@ pub struct ImportSpec<'a> {
     pub source_mtime: Option<&'a str>,
 
     pub watched_by: Option<&'a str>,
+    pub created_by: Option<&'a str>,
     pub strict: bool,
 }
 
@@ -426,8 +458,8 @@ pub async fn execute_import(
             INSERT INTO dataset_registry
                 ("id", "dept", "key", "tableName", "displayName", "createdAt",
                  "sourcePath", "syncConfig", "syncEnabled", "lastSyncedAt",
-                 "lastSyncedMtime", "watchedBy")
-            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9, $10)
+                 "lastSyncedMtime", "watchedBy", "createdBy")
+            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9, $10, $11)
             ON CONFLICT ("dept", "key") DO UPDATE
             SET "tableName" = EXCLUDED."tableName",
                 "displayName" = EXCLUDED."displayName",
@@ -436,7 +468,8 @@ pub async fn execute_import(
                 "lastSyncedMtime" = EXCLUDED."lastSyncedMtime",
                 "sourcePath" = COALESCE(EXCLUDED."sourcePath", dataset_registry."sourcePath"),
                 "watchedBy" = COALESCE(EXCLUDED."watchedBy", dataset_registry."watchedBy"),
-                "syncEnabled" = EXCLUDED."syncEnabled" OR dataset_registry."syncEnabled"
+                "syncEnabled" = EXCLUDED."syncEnabled" OR dataset_registry."syncEnabled",
+                "createdBy" = COALESCE(dataset_registry."createdBy", EXCLUDED."createdBy")
             "#,
             &[
                 &ds_id,
@@ -449,6 +482,7 @@ pub async fn execute_import(
                 &sync_enabled,
                 &spec.source_mtime,
                 &spec.watched_by,
+                &spec.created_by,
             ],
         )
         .await
@@ -496,7 +530,7 @@ pub async fn execute_import(
                         Data::Empty => "".to_string(),
                         Data::String(s) => {
                             if col.r#type == "category" {
-                                normalize_category_value(s)
+                                tidy_whitespace(s)
                             } else if col.r#type == "numeric" {
                                 let cleaned = s.replace(['$', '€', '£', '¥', ',', ' '], "");
                                 cleaned.trim().to_string()
@@ -526,6 +560,8 @@ pub async fn execute_import(
                 rows_data.push(row_map);
             }
         }
+
+        unify_category_spellings(&mut rows_data, &import_cols);
 
         if !rows_data.is_empty() {
             let chunk_size = 250;

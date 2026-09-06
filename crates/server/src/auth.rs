@@ -11,6 +11,7 @@ use crate::AppState;
 
 #[derive(Clone)]
 pub struct AuthUser {
+    pub id: String,
     pub role: String,
     pub access_level: String,
 }
@@ -82,7 +83,7 @@ async fn resolve_user(pool: &Pool, token: &str) -> Option<AuthUser> {
     let row = client
         .query_opt(
             r#"
-            SELECT u.role, u."accessLevel"
+            SELECT u.id, u.role, u."accessLevel"
             FROM sessions s
             JOIN users u ON u.id = s."userId"
             WHERE s.token = $1 AND s."expiresAt" > now()
@@ -92,7 +93,8 @@ async fn resolve_user(pool: &Pool, token: &str) -> Option<AuthUser> {
         .await
         .ok()?;
     row.map(|r| AuthUser {
-        role: r.get(0),
-        access_level: r.get(1),
+        id: r.get(0),
+        role: r.get(1),
+        access_level: r.get(2),
     })
 }
