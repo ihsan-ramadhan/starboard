@@ -14,7 +14,7 @@ import RefreshIcon from "../assets/icons/refresh.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
-import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
+import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
 import {
   isAdmin,
   type DatasetDetail,
@@ -102,8 +102,7 @@ export default function DatasetPage() {
   const [loading, setLoading] = useState(!detail);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [togglingSync, setTogglingSync] = useState(false);
@@ -207,6 +206,37 @@ export default function DatasetPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!editMode) {
+      setSelectedWidgetId(null);
+    }
+  }, [editMode]);
+
+  useEffect(() => {
+    if (!selectedWidgetId) return;
+
+    function handleOutsidePointerDown(e: PointerEvent) {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest(".widget-card") ||
+        target.closest(".builder-sidebar") ||
+        target.closest("dialog") ||
+        target.closest(".ctx-menu")
+      ) {
+        return;
+      }
+      setSelectedWidgetId(null);
+    }
+
+    window.addEventListener("pointerdown", handleOutsidePointerDown);
+    return () => window.removeEventListener("pointerdown", handleOutsidePointerDown);
+  }, [selectedWidgetId]);
+
+  const editingWidget = selectedWidgetId
+    ? widgets.find((w) => w.id === selectedWidgetId) ?? null
+    : null;
 
   async function handleRefresh() {
     if (!key || refreshing) return;
@@ -320,8 +350,8 @@ export default function DatasetPage() {
       persistWidgets(next);
       return next;
     });
-    setShowBuilder(false);
-    setEditingWidget(null);
+    toast.success(selectedWidgetId ? "Widget berhasil diperbarui" : "Widget berhasil ditambahkan");
+    setSelectedWidgetId(null);
   }
 
   function handleDeleteWidget(id: string) {
@@ -330,7 +360,11 @@ export default function DatasetPage() {
       persistWidgets(next);
       return next;
     });
+    if (selectedWidgetId === id) {
+      setSelectedWidgetId(null);
+    }
     setWidgetToDelete(null);
+    toast.success("Widget berhasil dihapus");
   }
 
   function openWidgetDeleteConfirm(widget: WidgetDefinition) {
@@ -364,20 +398,19 @@ export default function DatasetPage() {
   }
 
   function openCreateWidget() {
-    setEditingWidget(null);
-    setShowBuilder(true);
+    setSelectedWidgetId(null);
   }
 
   function openEditWidget(widget: WidgetDefinition) {
-    setEditingWidget(widget);
-    setShowBuilder(true);
+    setSelectedWidgetId(widget.id);
   }
 
   const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
 
   return (
-    <main className="content">
-      <div className="dataset-header">
+    <div className="dataset-page-layout">
+      <main className="content">
+        <div className="dataset-header">
         <div className="dataset-heading">
           <h1 className="dataset-title">{dataset.displayName}</h1>
           <p className="dataset-meta">
@@ -411,15 +444,6 @@ export default function DatasetPage() {
           >
             <RefreshIcon width={15} height={15} />
           </button>
-          {admin && editMode && (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={openCreateWidget}
-            >
-              + Tambah Widget
-            </button>
-          )}
         </div>
       </div>
 
@@ -430,7 +454,7 @@ export default function DatasetPage() {
             {admin ? (
               <>
                 <p className="empty-widgets-desc">
-                  Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
+                  Pilih tipe visual di panel kanan untuk menambahkan widget pertama.
                 </p>
                 <button
                   type="button"
@@ -470,52 +494,56 @@ export default function DatasetPage() {
                 resizeConfig={{ enabled: editMode }}
                 onLayoutChange={handleLayoutChange}
               >
-                {widgets.map((widget) => (
-                  <div key={widget.id}>
-                    <div className="widget-card wrap">
-                      {editMode && (
-                        <div className="widget-toolbar">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            aria-label={`Edit widget ${widget.title}`}
-                            title="Edit widget"
-                            onClick={() => openEditWidget(widget)}
-                          >
-                            <PencilIcon width={15} height={15} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn danger"
-                            aria-label={`Hapus widget ${widget.title}`}
-                            title="Hapus widget"
-                            onClick={() => openWidgetDeleteConfirm(widget)}
-                          >
-                            <TrashIcon width={15} height={15} />
-                          </button>
-                        </div>
-                      )}
-                      <WidgetRender widget={widget} reloadNonce={reloadNonce} />
+                {widgets.map((widget) => {
+                  const isSelected = editMode && selectedWidgetId === widget.id;
+                  return (
+                    <div key={widget.id}>
+                      <div
+                        className={`widget-card wrap${isSelected ? " is-selected" : ""}`}
+                        onClick={() => {
+                          if (editMode) {
+                            openEditWidget(widget);
+                          }
+                        }}
+                      >
+                        {editMode && (
+                          <div className="widget-toolbar">
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              aria-label={`Edit widget ${widget.title}`}
+                              title="Edit visual di sidebar"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditWidget(widget);
+                              }}
+                            >
+                              <PencilIcon width={15} height={15} />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-btn danger"
+                              aria-label={`Hapus widget ${widget.title}`}
+                              title="Hapus widget"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openWidgetDeleteConfirm(widget);
+                              }}
+                            >
+                              <TrashIcon width={15} height={15} />
+                            </button>
+                          </div>
+                        )}
+                        <WidgetRender widget={widget} reloadNonce={reloadNonce} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </GridLayout>
             )}
           </div>
         )}
       </div>
-
-      <WidgetBuilderModal
-        isOpen={showBuilder}
-        columns={columns}
-        datasetId={dataset.id}
-        editing={editingWidget}
-        onSave={handleSaveWidget}
-        onCancel={() => {
-          setShowBuilder(false);
-          setEditingWidget(null);
-        }}
-      />
 
       <ConfirmModal
         isOpen={widgetToDelete !== null}
@@ -532,7 +560,20 @@ export default function DatasetPage() {
         onCancel={() => setWidgetToDelete(null)}
       />
     </main>
-  );
+
+    {admin && (
+      <WidgetBuilderSidebar
+        isOpen={editMode}
+        columns={columns}
+        datasetId={dataset.id}
+        editing={editingWidget}
+        onSave={handleSaveWidget}
+        onDeselect={() => setSelectedWidgetId(null)}
+        onDelete={openWidgetDeleteConfirm}
+      />
+    )}
+  </div>
+);
 }
 
 type SyncLineProps = {
