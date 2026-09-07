@@ -8,9 +8,10 @@ import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import GripIcon from "../assets/icons/grip.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
+import TrashIcon from "../assets/icons/trash.svg?react";
 import { isAdmin, type SessionUser } from "../types";
 
-type DatasetTab = { key: string; displayName: string };
+type DatasetTab = { id: string; key: string; displayName: string };
 
 const COLLAPSE_KEY = "starboard_sidebar_collapsed";
 
@@ -45,6 +46,8 @@ export function Sidebar({
   );
   const [items, setItems] = useState<DatasetTab[]>(datasets);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  const [datasetToDelete, setDatasetToDelete] = useState<DatasetTab | null>(null);
+  const [isDeletingDataset, setIsDeletingDataset] = useState(false);
 
   const itemsRef = useRef(items);
   const listRef = useRef<HTMLElement>(null);
@@ -55,8 +58,9 @@ export function Sidebar({
   });
 
   useEffect(() => {
-    if (!arranging) setItems(datasets);
-  }, [datasets, arranging]);
+    if (draggingRef.current || renamingKey) return;
+    setItems(datasets);
+  }, [datasets, renamingKey]);
 
   const activeKey = location.pathname.startsWith("/d/")
     ? location.pathname.replace("/d/", "")
@@ -153,6 +157,22 @@ export function Sidebar({
     itemsRef.current = next;
     setItems(next);
     saveOrder(next);
+  }
+
+  async function handleDeleteDataset() {
+    if (!datasetToDelete) return;
+    setIsDeletingDataset(true);
+    try {
+      await api.deleteDataset(datasetToDelete.id);
+      await refreshDatasets();
+      toast.success(`Dataset "${datasetToDelete.displayName}" berhasil dihapus.`);
+      if (activeKey === datasetToDelete.key) navigate("/", { replace: true });
+      setDatasetToDelete(null);
+    } catch (err) {
+      toast.error("Gagal menghapus dataset: " + String(err));
+    } finally {
+      setIsDeletingDataset(false);
+    }
   }
 
   async function handleConfirmLogout() {
@@ -254,6 +274,15 @@ export function Sidebar({
                       >
                         <PencilIcon width={13} height={13} />
                       </button>
+                      <button
+                        type="button"
+                        className="nav-del-btn"
+                        aria-label={`Hapus dataset ${d.displayName}`}
+                        title="Hapus dataset"
+                        onClick={() => setDatasetToDelete(d)}
+                      >
+                        <TrashIcon width={13} height={13} />
+                      </button>
                     </>
                   )}
                 </div>
@@ -274,7 +303,7 @@ export function Sidebar({
             )
           )}
 
-          {admin && (
+          {admin && (arranging || items.length === 0) && (
             <Link
               to="/import"
               className={`nav-link import${location.pathname === "/import" ? " active" : ""}`}
@@ -339,6 +368,18 @@ export function Sidebar({
         isLoading={isLoggingOut}
         onConfirm={handleConfirmLogout}
         onCancel={() => setShowLogoutModal(false)}
+      />
+
+      <ConfirmModal
+        isOpen={datasetToDelete !== null}
+        title="Hapus Dataset"
+        message={`Dataset "${datasetToDelete?.displayName ?? ""}" akan dihapus permanen beserta seluruh baris datanya dan semua widget yang memakainya. Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Hapus Dataset"
+        cancelLabel="Batal"
+        isDestructive={true}
+        isLoading={isDeletingDataset}
+        onConfirm={handleDeleteDataset}
+        onCancel={() => setDatasetToDelete(null)}
       />
     </>
   );

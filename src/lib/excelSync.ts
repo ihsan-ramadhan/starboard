@@ -8,6 +8,7 @@ import {
   readSourceFile,
   sourceFileRevision,
 } from "./desktop";
+import { formatCount } from "./format";
 import { isAdmin, type DatasetRegistry, type SessionUser } from "../types";
 
 const POLL_INTERVAL_MS = 20_000;
@@ -155,7 +156,7 @@ export function useExcelSync(
             if (!res.skipped) {
               anyImported = true;
               toast.success(
-                `${ds.displayName} diperbarui dari ${fileNameOf(path)} (${res.totalImported.toLocaleString()} baris).`
+                `${ds.displayName} diperbarui dari ${fileNameOf(path)} (${formatCount(res.totalImported)} baris).`
               );
             }
           } catch (err) {

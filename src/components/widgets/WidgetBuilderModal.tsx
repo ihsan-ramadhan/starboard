@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import type { DatasetColumn, WidgetDefinition, WidgetType } from "../../types";
-import { WIDGET_TYPE_LABEL } from "../../types";
+import type {
+  CurrencyCode,
+  DatasetColumn,
+  WidgetDefinition,
+  WidgetType,
+} from "../../types";
+import { CURRENCY_LABEL, WIDGET_TYPE_LABEL } from "../../types";
 export type WidgetBuilderModalProps = {
   readonly isOpen: boolean;
   readonly columns: readonly DatasetColumn[];
@@ -44,6 +49,7 @@ export default function WidgetBuilderModal({
   const [metricColumn, setMetricColumn] = useState("");
   const [groupByColumn, setGroupByColumn] = useState("");
   const [isCurrency, setIsCurrency] = useState(false);
+  const [currency, setCurrency] = useState<CurrencyCode>("IDR");
   const [unit, setUnit] = useState("");
   const [limit, setLimit] = useState<number>(10);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -64,6 +70,7 @@ export default function WidgetBuilderModal({
         setMetricColumn(editing.metricColumn ?? "");
         setGroupByColumn(editing.groupByColumn ?? "");
         setIsCurrency(editing.isCurrency ?? false);
+        setCurrency(editing.currency ?? "IDR");
         setUnit(editing.unit ?? "");
         setLimit(editing.limit ?? 10);
       } else {
@@ -73,6 +80,7 @@ export default function WidgetBuilderModal({
         setMetricColumn("");
         setGroupByColumn("");
         setIsCurrency(false);
+        setCurrency("IDR");
         setUnit("");
         setLimit(10);
       }
@@ -134,6 +142,7 @@ export default function WidgetBuilderModal({
       groupByColumn: needsGroup ? groupByColumn || undefined : undefined,
       limit: widgetType === "kpi" ? undefined : limit,
       isCurrency: isCurrencyRelevant ? isCurrency : false,
+      currency: isCurrencyRelevant && isCurrency ? currency : undefined,
       unit: unit || undefined,
     };
 
@@ -268,7 +277,24 @@ export default function WidgetBuilderModal({
                 checked={isCurrency}
                 onChange={(e) => setIsCurrency(e.target.checked)}
               />
-              <span>Format sebagai mata uang (Rp)</span>
+              <span>Format sebagai mata uang</span>
+            </label>
+          )}
+
+          {isCurrencyRelevant && isCurrency && (
+            <label className="builder-field">
+              <span className="builder-label">Mata Uang</span>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                className="builder-input"
+              >
+                {(Object.keys(CURRENCY_LABEL) as CurrencyCode[]).map((code) => (
+                  <option key={code} value={code}>
+                    {CURRENCY_LABEL[code]}
+                  </option>
+                ))}
+              </select>
             </label>
           )}
 

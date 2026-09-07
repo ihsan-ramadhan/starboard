@@ -6,14 +6,14 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import type { ChartDataPoint } from "../../types";
-import { formatChartValue } from "./widgetUtils";
+import type { ChartDataPoint, CurrencyCode } from "../../types";
+import { formatFullValue } from "../../lib/format";
 
 export type PieChartWidgetProps = {
   readonly title: string;
   readonly data: ChartDataPoint[];
   readonly unit?: string;
-  readonly isCurrency?: boolean;
+  readonly currency?: CurrencyCode;
 };
 
 const DEFAULT_COLORS = [
@@ -35,7 +35,7 @@ export default function PieChartWidget({
   title,
   data,
   unit,
-  isCurrency = false,
+  currency,
 }: PieChartWidgetProps) {
   return (
     <div className="chart-wrapper">
@@ -48,7 +48,7 @@ export default function PieChartWidget({
             <PieChart margin={{ top: 0, bottom: 5, left: 0, right: 0 }}>
               <Tooltip
                 formatter={(v: any) => [
-                  formatChartValue(Number(v), isCurrency, unit),
+                  formatFullValue(Number(v), currency, unit),
                   "Total",
                 ]}
                 contentStyle={{

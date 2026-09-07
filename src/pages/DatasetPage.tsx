@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -7,6 +7,7 @@ import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api, clearWidgetDataCache } from "../lib/api";
 import { fileNameOf, isDesktop, machineName, pickExcelPath } from "../lib/desktop";
+import { formatCount } from "../lib/format";
 import { useMachineName, type SyncStatus } from "../lib/excelSync";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
@@ -14,8 +15,6 @@ import TrashIcon from "../assets/icons/trash.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
-import SchemaInspector from "../components/table/SchemaInspector";
-import RawTablePreview from "../components/table/RawTablePreview";
 import {
   isAdmin,
   type DatasetDetail,
@@ -94,17 +93,13 @@ export default function DatasetPage() {
   const admin = isAdmin(user);
   const machine = useMachineName();
   const { key } = useParams<{ key: string }>();
-  const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
 
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
 
   const [loading, setLoading] = useState(!detail);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
   const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
   const [showBuilder, setShowBuilder] = useState(false);
@@ -117,6 +112,7 @@ export default function DatasetPage() {
 
   const registry = datasets.find((d) => d.key === key);
   const registryStamp = registry?.lastSyncedAt ?? null;
+  const inRegistry = registry !== undefined;
   const seenStampRef = useRef<string | null>(null);
 
   const saveTimerRef = useRef<number | null>(null);
@@ -197,10 +193,11 @@ export default function DatasetPage() {
     const previous = seenStampRef.current;
     seenStampRef.current = mark;
 
+    if (!inRegistry) return;
     if (previous === null || !previous.startsWith(`${key}:`)) return;
     if (previous === mark) return;
     handleRefresh();
-  }, [key, registryStamp]);
+  }, [key, registryStamp, inRegistry]);
 
   useEffect(() => {
     return () => {
@@ -268,22 +265,6 @@ export default function DatasetPage() {
     }
   }
 
-  async function handleDeleteDataset() {
-    if (!detail?.dataset) return;
-    setIsDeleting(true);
-    try {
-      await api.deleteDataset(detail.dataset.id);
-      await refreshDatasets();
-      setShowDeleteModal(false);
-      toast.success("Dataset berhasil dihapus.");
-      navigate("/", { replace: true });
-    } catch (err) {
-      toast.error("Gagal menghapus dataset: " + String(err));
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
   if (loading && !detail) {
     return (
       <main className="content">
@@ -306,7 +287,7 @@ export default function DatasetPage() {
     );
   }
 
-  const { dataset, columns, totalRows, sampleRows } = detail;
+  const { dataset, columns, totalRows } = detail;
 
   function persistWidgets(next: WidgetDefinition[]) {
     if (!key) return;
@@ -401,7 +382,7 @@ export default function DatasetPage() {
           <h1 className="dataset-title">{dataset.displayName}</h1>
           <p className="dataset-meta">
             Tabel database: <code>{dataset.tableName}</code> · Total baris:{" "}
-            <strong>{totalRows.toLocaleString()}</strong> · Terdeteksi{" "}
+            <strong>{formatCount(totalRows)}</strong> · Terdeteksi{" "}
             <strong>{columns.length} kolom</strong>
           </p>
           {(registry ?? dataset).sourcePath && (
@@ -430,147 +411,99 @@ export default function DatasetPage() {
           >
             <RefreshIcon width={15} height={15} />
           </button>
-          <div className="view-toggle">
+          {admin && editMode && (
             <button
               type="button"
-              className={`toggle-btn${activeTab === "dashboard" ? " active" : ""}`}
-              onClick={() => setActiveTab("dashboard")}
+              className="btn-primary"
+              onClick={openCreateWidget}
             >
-              Dashboard
+              + Tambah Widget
             </button>
-            <button
-              type="button"
-              className={`toggle-btn${activeTab === "data" ? " active" : ""}`}
-              onClick={() => setActiveTab("data")}
-            >
-              Tabel Data
-            </button>
-          </div>
-          {admin && (
-            <>
-              {activeTab === "dashboard" && editMode && (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={openCreateWidget}
-                >
-                  + Tambah Widget
-                </button>
-              )}
-              <Link to="/import" className="btn-ghost">
-                + Import File Lain
-              </Link>
-            </>
           )}
         </div>
       </div>
 
-      {activeTab === "dashboard" ? (
-        <div className="dashboard-container">
-          {widgets.length === 0 ? (
-            <div className="empty-widgets-card">
-              <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
-              {admin ? (
-                <>
-                  <p className="empty-widgets-desc">
-                    Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => {
-                      setEditMode(true);
-                      openCreateWidget();
-                    }}
-                  >
-                    + Tambah Widget Pertama
-                  </button>
-                </>
-              ) : (
+      <div className="dashboard-container">
+        {widgets.length === 0 ? (
+          <div className="empty-widgets-card">
+            <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
+            {admin ? (
+              <>
                 <p className="empty-widgets-desc">
-                  Admin {user.role} belum menyusun dashboard untuk dataset ini.
+                  Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
                 </p>
-              )}
-            </div>
-          ) : (
-            <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
-              {containerWidth > 0 && (
-                <GridLayout
-                  className={`charts-grid${editMode ? " edit-mode" : ""}`}
-                  width={containerWidth}
-                  layout={gridLayout}
-                  gridConfig={{
-                    cols: GRID_COLS,
-                    rowHeight: 60,
-                    margin: [16, 16],
-                    containerPadding: [0, 0],
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    setEditMode(true);
+                    openCreateWidget();
                   }}
-                  dragConfig={{
-                    enabled: editMode,
-                    handle: ".widget-card",
-                    cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
-                  }}
-                  resizeConfig={{ enabled: editMode }}
-                  onLayoutChange={handleLayoutChange}
                 >
-                  {widgets.map((widget) => (
-                    <div key={widget.id}>
-                      <div className="widget-card wrap">
-                        {editMode && (
-                          <div className="widget-toolbar">
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              aria-label={`Edit widget ${widget.title}`}
-                              title="Edit widget"
-                              onClick={() => openEditWidget(widget)}
-                            >
-                              <PencilIcon width={15} height={15} />
-                            </button>
-                            <button
-                              type="button"
-                              className="icon-btn danger"
-                              aria-label={`Hapus widget ${widget.title}`}
-                              title="Hapus widget"
-                              onClick={() => openWidgetDeleteConfirm(widget)}
-                            >
-                              <TrashIcon width={15} height={15} />
-                            </button>
-                          </div>
-                        )}
-                        <WidgetRender widget={widget} reloadNonce={reloadNonce} />
-                      </div>
-                    </div>
-                  ))}
-                </GridLayout>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="data-view-container">
-          <SchemaInspector columns={columns} />
-          <RawTablePreview columns={columns} sampleRows={sampleRows} />
-          {admin && (
-          <div className="danger-zone">
-            <div>
-              <p className="danger-zone-title">Zona Berbahaya</p>
-              <p className="danger-zone-desc">
-                Menghapus dataset ikut membuang {totalRows.toLocaleString()} baris
-                data beserta seluruh widget yang memakainya.
+                  + Tambah Widget Pertama
+                </button>
+              </>
+            ) : (
+              <p className="empty-widgets-desc">
+                Admin {user.role} belum menyusun dashboard untuk dataset ini.
               </p>
-            </div>
-            <button
-              type="button"
-              className="btn-danger-outline"
-              onClick={() => setShowDeleteModal(true)}
-            >
-              Hapus Dataset
-            </button>
+            )}
           </div>
-          )}
-        </div>
-      )}
+        ) : (
+          <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
+            {containerWidth > 0 && (
+              <GridLayout
+                className={`charts-grid${editMode ? " edit-mode" : ""}`}
+                width={containerWidth}
+                layout={gridLayout}
+                gridConfig={{
+                  cols: GRID_COLS,
+                  rowHeight: 60,
+                  margin: [16, 16],
+                  containerPadding: [0, 0],
+                }}
+                dragConfig={{
+                  enabled: editMode,
+                  handle: ".widget-card",
+                  cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
+                }}
+                resizeConfig={{ enabled: editMode }}
+                onLayoutChange={handleLayoutChange}
+              >
+                {widgets.map((widget) => (
+                  <div key={widget.id}>
+                    <div className="widget-card wrap">
+                      {editMode && (
+                        <div className="widget-toolbar">
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={`Edit widget ${widget.title}`}
+                            title="Edit widget"
+                            onClick={() => openEditWidget(widget)}
+                          >
+                            <PencilIcon width={15} height={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            aria-label={`Hapus widget ${widget.title}`}
+                            title="Hapus widget"
+                            onClick={() => openWidgetDeleteConfirm(widget)}
+                          >
+                            <TrashIcon width={15} height={15} />
+                          </button>
+                        </div>
+                      )}
+                      <WidgetRender widget={widget} reloadNonce={reloadNonce} />
+                    </div>
+                  </div>
+                ))}
+              </GridLayout>
+            )}
+          </div>
+        )}
+      </div>
 
       <WidgetBuilderModal
         isOpen={showBuilder}
@@ -582,18 +515,6 @@ export default function DatasetPage() {
           setShowBuilder(false);
           setEditingWidget(null);
         }}
-      />
-
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        title="Hapus Dataset"
-        message={`Dataset "${dataset.displayName}" dan seluruh baris datanya akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus Dataset"
-        cancelLabel="Batal"
-        isDestructive={true}
-        isLoading={isDeleting}
-        onConfirm={handleDeleteDataset}
-        onCancel={() => setShowDeleteModal(false)}
       />
 
       <ConfirmModal

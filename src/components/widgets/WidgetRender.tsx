@@ -5,6 +5,7 @@ import type {
   WidgetQueryResult,
 } from "../../types";
 import KpiCard from "./KpiCard";
+import { formatCompactValue } from "../../lib/format";
 import BarChartWidget from "./BarChartWidget";
 import LineChartWidget from "./LineChartWidget";
 import PieChartWidget from "./PieChartWidget";
@@ -67,6 +68,7 @@ export default function WidgetRender({ widget, reloadNonce = 0 }: WidgetRenderPr
 
   const data = result?.rows ?? [];
   const scalar = result?.scalarValue ?? null;
+  const currency = widget.isCurrency ? widget.currency ?? "IDR" : undefined;
 
   if (!result) {
     return (
@@ -80,15 +82,11 @@ export default function WidgetRender({ widget, reloadNonce = 0 }: WidgetRenderPr
   }
 
   if (widget.type === "kpi") {
-    const formattedVal = widget.isCurrency
-      ? formatRp(scalar ?? 0)
-      : (scalar ?? 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
-
     return (
       <KpiCard
         label={widget.title}
-        value={formattedVal}
-        unit={widget.isCurrency ? undefined : widget.unit}
+        value={formatCompactValue(scalar ?? 0, currency)}
+        unit={currency ? undefined : widget.unit}
       />
     );
   }
@@ -98,7 +96,7 @@ export default function WidgetRender({ widget, reloadNonce = 0 }: WidgetRenderPr
       <BarChartWidget
         title={widget.title}
         data={data}
-        isCurrency={widget.isCurrency}
+        currency={currency}
       />
     );
   }
@@ -109,7 +107,7 @@ export default function WidgetRender({ widget, reloadNonce = 0 }: WidgetRenderPr
         title={widget.title}
         data={data}
         unit={widget.unit}
-        isCurrency={widget.isCurrency}
+        currency={currency}
       />
     );
   }
@@ -119,17 +117,7 @@ export default function WidgetRender({ widget, reloadNonce = 0 }: WidgetRenderPr
       title={widget.title}
       data={data}
       unit={widget.unit}
-      isCurrency={widget.isCurrency}
+      currency={currency}
     />
   );
-}
-
-function formatRp(val: number): string {
-  if (val >= 1_000_000_000) {
-    return `Rp ${(val / 1_000_000_000).toFixed(1)} M`;
-  }
-  if (val >= 1_000_000) {
-    return `Rp ${(val / 1_000_000).toFixed(1)} Jt`;
-  }
-  return `Rp ${Math.round(val).toLocaleString("id-ID")}`;
 }

@@ -75,6 +75,8 @@ struct WidgetPayload {
     #[serde(rename = "isCurrency", default)]
     is_currency: Option<bool>,
     #[serde(default)]
+    currency: Option<String>,
+    #[serde(default)]
     unit: Option<String>,
     #[serde(default)]
     layout: WidgetLayout,

@@ -7,15 +7,15 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import type { ChartDataPoint } from "../../types";
-import { formatChartValue } from "./widgetUtils";
+import type { ChartDataPoint, CurrencyCode } from "../../types";
+import { formatCompactValue, formatFullValue } from "../../lib/format";
 
 export type LineChartWidgetProps = {
   readonly title: string;
   readonly data: ChartDataPoint[];
   readonly unit?: string;
   readonly color?: string;
-  readonly isCurrency?: boolean;
+  readonly currency?: CurrencyCode;
 };
 
 export default function LineChartWidget({
@@ -23,7 +23,7 @@ export default function LineChartWidget({
   data,
   unit,
   color = "#2563eb",
-  isCurrency = false,
+  currency,
 }: LineChartWidgetProps) {
   return (
     <div className="chart-wrapper">
@@ -52,12 +52,12 @@ export default function LineChartWidget({
               />
               <YAxis
                 tick={{ fontSize: 11, fill: "#64748b" }}
-                tickFormatter={(v) => formatChartValue(v, isCurrency, unit)}
+                tickFormatter={(v) => formatCompactValue(v, currency, unit)}
                 width={65}
               />
               <Tooltip
                 formatter={(v: any) => [
-                  formatChartValue(Number(v), isCurrency, unit),
+                  formatFullValue(Number(v), currency, unit),
                   "Nilai",
                 ]}
                 contentStyle={{

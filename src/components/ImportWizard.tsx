@@ -10,6 +10,7 @@ import {
   pickExcelPath,
   readSourceFile,
 } from "../lib/desktop";
+import { formatCount } from "../lib/format";
 import FilePlusIcon from "../assets/icons/file-plus.svg?react";
 
 type InferredType = "numeric" | "date" | "category";
@@ -289,7 +290,7 @@ export default function ImportWizard({
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
       toast.success(
-        `${valid.length} sheet berhasil diimpor (${res.totalImported.toLocaleString()} baris).`
+        `${valid.length} sheet berhasil diimpor (${formatCount(res.totalImported)} baris).`
       );
       navigate(`/d/${res.primaryKey}`);
     } catch (e: any) {
@@ -455,7 +456,7 @@ export default function ImportWizard({
                       <div className="sheet-nav-info">
                         <div className="sheet-nav-title">{s.sheetName}</div>
                         <div className="sheet-nav-meta">
-                          {s.rowCount.toLocaleString()} baris ·{" "}
+                          {formatCount(s.rowCount)} baris ·{" "}
                           {pickedCols.length}/{s.columns.length} kol
                         </div>
                       </div>
@@ -474,7 +475,7 @@ export default function ImportWizard({
                         {activeSheet.sheetName}
                       </div>
                       <div className="sheet-detail-meta">
-                        {activeSheet.rowCount.toLocaleString()} total baris ·{" "}
+                        {formatCount(activeSheet.rowCount)} total baris ·{" "}
                         {activeSheet.columns.length} kolom tersedia · Header baris ke-
                         {activeSheet.headerRowIndex}
                       </div>

@@ -303,8 +303,29 @@ a {
   color: var(--fg);
 }
 
+.nav-del-btn {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.nav-del-btn:hover {
+  background: var(--danger-bg);
+  color: #b91c1c;
+}
+
 .sidebar.collapsed .nav-grip,
-.sidebar.collapsed .nav-rename-btn {
+.sidebar.collapsed .nav-rename-btn,
+.sidebar.collapsed .nav-del-btn {
   display: none;
 }
 
@@ -721,10 +742,14 @@ a {
 
 .import-container {
   max-width: 1160px;
+  min-height: 100%;
   margin: 0 auto;
+  display: flex;
 }
 
 .import-card {
+  width: 100%;
+  margin: auto;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1137,41 +1162,6 @@ a {
   flex-shrink: 0;
 }
 
-.view-toggle {
-  display: flex;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 3px;
-  gap: 2px;
-}
-
-.toggle-btn {
-  background: transparent;
-  border: none;
-  padding: 3px 12px;
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 500;
-  color: var(--fg-dim);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: inherit;
-  white-space: nowrap;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.toggle-btn:hover {
-  color: var(--fg);
-}
-
-.toggle-btn.active {
-  background: var(--bg);
-  color: var(--fg);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
 .dashboard-container {
   display: flex;
   flex-direction: column;
@@ -1501,6 +1491,7 @@ a {
   font-weight: 700;
   color: var(--fg);
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .kpi-unit {
@@ -1611,6 +1602,11 @@ a {
 
 .data-table tbody tr:hover {
   background: #f8fafc;
+}
+.data-table th.cell-num,
+.data-table td.cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .chip-type {
@@ -1771,28 +1767,3 @@ dialog.modal-native::backdrop {
   }
 }
 
-.danger-zone {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-top: 24px;
-  padding: 16px 18px;
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-border);
-  border-radius: var(--radius-lg);
-}
-
-.danger-zone-title {
-  margin: 0 0 4px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #b91c1c;
-}
-
-.danger-zone-desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--fg-dim);
-}

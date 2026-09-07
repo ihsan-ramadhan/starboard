@@ -56,6 +56,13 @@ export type WidgetQueryResult = {
 
 export type WidgetType = "kpi" | "bar" | "line" | "pie";
 
+export type CurrencyCode = "IDR" | "USD";
+
+export const CURRENCY_LABEL: Record<CurrencyCode, string> = {
+  IDR: "Rupiah (Rp)",
+  USD: "Dolar AS ($)",
+};
+
 export type WidgetLayout = {
   x: number;
   y: number;
@@ -73,6 +80,7 @@ export type WidgetDefinition = {
   groupByColumn?: string;
   limit?: number;
   isCurrency?: boolean;
+  currency?: CurrencyCode;
   unit?: string;
   layout?: WidgetLayout;
 };
