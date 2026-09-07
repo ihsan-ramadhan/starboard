@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useApp } from "../App";
@@ -7,6 +7,7 @@ import {
   fileNameOf,
   isDesktop,
   machineName,
+  onFileDrop,
   pickExcelPath,
   readSourceFile,
 } from "../lib/desktop";
@@ -179,10 +180,12 @@ export default function ImportWizard({
     await analyze(Array.from(new Uint8Array(buffer)), selectedFile.name, null);
   }
 
-  async function pickFromDisk() {
+  async function loadFromPath(path: string) {
+    if (!/\.(xlsx|xls)$/i.test(path)) {
+      setError("Hanya file Excel (.xlsx, .xls) yang didukung.");
+      return;
+    }
     try {
-      const path = await pickExcelPath();
-      if (!path) return;
       setAnalyzing(true);
       const source = await readSourceFile(path);
       await analyze(source.bytes, fileNameOf(path), {
@@ -195,6 +198,16 @@ export default function ImportWizard({
     }
   }
 
+  async function pickFromDisk() {
+    try {
+      const path = await pickExcelPath();
+      if (!path) return;
+      await loadFromPath(path);
+    } catch (e: any) {
+      toast.error(e?.toString() || "Gagal membuka file.");
+    }
+  }
+
   function openPicker() {
     if (analyzing) return;
     if (isDesktop()) {
@@ -203,6 +216,17 @@ export default function ImportWizard({
       fileRef.current?.click();
     }
   }
+
+  useEffect(() => {
+    if (!isDesktop() || sheets || analyzing) return;
+    return onFileDrop({
+      onEnter: () => setIsDragging(true),
+      onLeave: () => setIsDragging(false),
+      onDrop: (paths) => {
+        if (paths[0]) loadFromPath(paths[0]);
+      },
+    });
+  }, [sheets, analyzing]);
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
