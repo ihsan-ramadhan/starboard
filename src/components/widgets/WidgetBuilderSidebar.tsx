@@ -346,20 +346,22 @@ export default function WidgetBuilderSidebar({
             )}
 
             {isCurrencyRelevant && isCurrency && (
-              <label className="builder-field">
-                <span className="builder-label">Mata Uang</span>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                  className="builder-input"
-                >
-                  {(Object.keys(CURRENCY_LABEL) as CurrencyCode[]).map((code) => (
-                    <option key={code} value={code}>
-                      {CURRENCY_LABEL[code]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="builder-dependent-field">
+                <label className="builder-field">
+                  <span className="builder-label">Mata Uang</span>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                    className="builder-input"
+                  >
+                    {(Object.keys(CURRENCY_LABEL) as CurrencyCode[]).map((code) => (
+                      <option key={code} value={code}>
+                        {CURRENCY_LABEL[code]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             )}
 
             {widgetType === "kpi" && !isCurrency && (

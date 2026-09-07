@@ -62,6 +62,19 @@ export function Sidebar({
     setItems(datasets);
   }, [datasets, renamingKey]);
 
+  useEffect(() => {
+    if (!editMode) return;
+    function checkWidth() {
+      if (window.innerWidth <= 1024) {
+        setCollapsed(true);
+        setRenamingKey(null);
+      }
+    }
+    checkWidth();
+    window.addEventListener("resize", checkWidth);
+    return () => window.removeEventListener("resize", checkWidth);
+  }, [editMode]);
+
   const activeKey = location.pathname.startsWith("/d/")
     ? location.pathname.replace("/d/", "")
     : undefined;
