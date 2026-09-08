@@ -128,8 +128,8 @@ fn filter_conditions(
             "date" if op == "contains" => {
                 return Err("Operator \"mengandung\" tidak berlaku untuk kolom tanggal.".to_string())
             }
-            "numeric" => format!("{} {} ${}::numeric", column, comparison, slot),
-            "date" => format!("{} {} ${}::date", column, comparison, slot),
+            "numeric" => format!("{} {} (${}::text)::numeric", column, comparison, slot),
+            "date" => format!("{} {} (${}::text)::date", column, comparison, slot),
             _ if ordered => {
                 return Err(format!(
                     "Kolom \"{}\" bertipe teks, jadi tidak bisa dibandingkan lebih besar/kecil.",

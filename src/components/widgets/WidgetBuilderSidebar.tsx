@@ -155,7 +155,8 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     title: widget.title,
     metric: widget.metric,
     metricColumn: widget.metricColumn ?? "",
-    metricColumns: widget.metricColumns ?? [],
+    metricColumns:
+      widget.metricColumns ?? (widget.metricColumn ? [widget.metricColumn] : []),
     groupByColumn: widget.groupByColumn ?? "",
     seriesColumn: widget.seriesColumn ?? "",
     seriesMode: widget.seriesMode ?? "grouped",

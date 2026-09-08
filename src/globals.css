@@ -316,10 +316,15 @@ a {
 }
 
 .nav-empty {
+  display: block;
   padding: 9px 8px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--fg-dim);
+}
+
+.sidebar.collapsed .nav-empty {
+  display: none;
 }
 
 .nav-row {
@@ -2603,4 +2608,16 @@ dialog.modal-native::backdrop {
   border-style: solid;
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.widget-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 16px;
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
 }

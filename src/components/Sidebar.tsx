@@ -226,7 +226,7 @@ export function Sidebar({
 
         <nav className="sidebar-nav" ref={listRef}>
           {items.length === 0 ? (
-            <span className="nav-empty sidebar-hideable">
+            <span className="nav-empty">
               {admin
                 ? "Belum ada dataset. Mulai dari Import Dataset di bawah."
                 : `Admin ${user.role} belum mengimpor dataset.`}

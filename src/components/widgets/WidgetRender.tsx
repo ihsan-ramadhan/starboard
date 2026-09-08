@@ -45,10 +45,11 @@ function valueColumns(widget: WidgetDefinition): string[] | undefined {
     if (widget.metricColumn && widget.targetColumn) {
       return [widget.metricColumn, widget.targetColumn];
     }
-    return undefined;
+    return widget.metricColumn ? [widget.metricColumn] : undefined;
   }
   const picked = widget.metricColumns ?? [];
-  return picked.length > 1 ? picked : undefined;
+  if (picked.length > 0) return picked;
+  return widget.metricColumn ? [widget.metricColumn] : undefined;
 }
 
 function usableFilters(widget: WidgetDefinition) {
@@ -68,12 +69,13 @@ function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
     };
   }
 
-  const multi = valueColumns(widget);
+  const values = valueColumns(widget);
+  const multi = (values?.length ?? 0) > 1;
   return {
     datasetId: widget.datasetId,
     metric: widget.metric,
-    metricColumn: multi ? undefined : widget.metricColumn,
-    metricColumns: multi,
+    metricColumn: !multi && values ? values[0] : undefined,
+    metricColumns: multi ? values : undefined,
     groupByColumn: widget.groupByColumn,
     seriesColumn: multi ? undefined : widget.seriesColumn,
     limit: widget.limit ?? 10,
@@ -94,6 +96,7 @@ export default function WidgetRender({
   const [result, setResult] = useState<WidgetQueryResult | null>(() =>
     query ? peekWidgetData(query) ?? null : null
   );
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!query) return;
@@ -106,6 +109,7 @@ export default function WidgetRender({
 
     let active = true;
     setResult(null);
+    setError(null);
     api
       .queryWidgetData(query)
       .then((res) => {
@@ -113,7 +117,9 @@ export default function WidgetRender({
       })
       .catch((e) => {
         console.error("Failed to load widget:", e);
-        if (active) setResult({ rows: [] });
+        if (!active) return;
+        setError(String(e instanceof Error ? e.message : e));
+        setResult({ rows: [] });
       });
 
     return () => {
@@ -156,6 +162,19 @@ export default function WidgetRender({
         mode="sinceColumn"
         sinceDate={result?.scalarText ?? null}
       />
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="chart-wrapper">
+        <h4 className="widget-title" title={widget.title}>
+          {widget.title}
+        </h4>
+        <div className="chart-body">
+          <div className="widget-error">{error}</div>
+        </div>
+      </div>
     );
   }
 
