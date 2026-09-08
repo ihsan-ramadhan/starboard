@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import { formatCell } from "../../lib/format";
+import { formatCell, formatCount } from "../../lib/format";
 import type { DatasetColumn } from "../../types";
 
 export type TableWidgetProps = {
@@ -23,9 +23,12 @@ export default function TableWidget({
   reloadNonce,
 }: TableWidgetProps) {
   const [sort, setSort] = useState<SortState>(null);
+  const [page, setPage] = useState(0);
+  const [pageDraft, setPageDraft] = useState("1");
   const [rows, setRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [shown, setShown] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const wanted = useMemo(
@@ -34,8 +37,12 @@ export default function TableWidget({
   );
 
   useEffect(() => {
+    setPage(0);
+  }, [datasetId, wanted, limit]);
+
+  useEffect(() => {
     let active = true;
-    setRows(null);
+    setLoading(true);
     setError(null);
 
     api
@@ -43,6 +50,7 @@ export default function TableWidget({
         datasetId,
         columns: wanted,
         limit,
+        offset: page * limit,
         sortColumn: sort?.column,
         sortDir: sort?.dir,
       })
@@ -56,12 +64,25 @@ export default function TableWidget({
         if (!active) return;
         setError(String(e instanceof Error ? e.message : e));
         setRows([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
 
     return () => {
       active = false;
     };
-  }, [datasetId, wanted, limit, sort, reloadNonce]);
+  }, [datasetId, wanted, limit, page, sort, reloadNonce]);
+
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+
+  useEffect(() => {
+    if (page > pageCount - 1) setPage(pageCount - 1);
+  }, [page, pageCount]);
+
+  useEffect(() => {
+    setPageDraft(String(page + 1));
+  }, [page]);
 
   const typeOf = useMemo(() => {
     const map = new Map(columns.map((c) => [c.name, c.type]));
@@ -74,12 +95,31 @@ export default function TableWidget({
   }, [columns]);
 
   function toggleSort(column: string) {
+    setPage(0);
     setSort((current) => {
       if (!current || current.column !== column) return { column, dir: "asc" };
       if (current.dir === "asc") return { column, dir: "desc" };
       return null;
     });
   }
+
+  function goTo(next: number) {
+    setPage(Math.min(Math.max(next, 0), pageCount - 1));
+  }
+
+  function commitPageDraft() {
+    const parsed = Number.parseInt(pageDraft, 10);
+    if (Number.isNaN(parsed)) {
+      setPageDraft(String(page + 1));
+      return;
+    }
+    const clamped = Math.min(Math.max(parsed, 1), pageCount);
+    setPageDraft(String(clamped));
+    setPage(clamped - 1);
+  }
+
+  const firstRow = total === 0 ? 0 : page * limit + 1;
+  const lastRow = page * limit + (rows?.length ?? 0);
 
   return (
     <div className="chart-wrapper">
@@ -91,11 +131,11 @@ export default function TableWidget({
         <div className="widget-empty">{error}</div>
       ) : rows === null ? (
         <div className="widget-empty">Memuat data…</div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && total === 0 ? (
         <div className="widget-empty">Tidak ada baris untuk ditampilkan</div>
       ) : (
         <>
-          <div className="table-scroll">
+          <div className={`table-scroll${loading ? " is-loading" : ""}`}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -146,8 +186,54 @@ export default function TableWidget({
               </tbody>
             </table>
           </div>
-          <div className="table-footnote">
-            Menampilkan {rows.length} dari {total.toLocaleString("id-ID")} baris
+
+          <div className="table-foot">
+            <span className="table-range">
+              {firstRow}–{lastRow} dari {formatCount(total)} baris
+            </span>
+
+            {pageCount > 1 && (
+              <nav className="table-pager" aria-label="Navigasi halaman tabel">
+                <button
+                  type="button"
+                  className="table-page-btn"
+                  onClick={() => goTo(page - 1)}
+                  disabled={page === 0}
+                  aria-label="Halaman sebelumnya"
+                >
+                  ‹
+                </button>
+
+                <span className="table-page-jump">
+                  <input
+                    className="table-page-input"
+                    type="text"
+                    inputMode="numeric"
+                    value={pageDraft}
+                    aria-label={`Halaman, dari ${pageCount} halaman`}
+                    onChange={(e) => setPageDraft(e.target.value.replace(/\D/g, ""))}
+                    onBlur={commitPageDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitPageDraft();
+                      }
+                    }}
+                  />
+                  <span>dari {pageCount}</span>
+                </span>
+
+                <button
+                  type="button"
+                  className="table-page-btn"
+                  onClick={() => goTo(page + 1)}
+                  disabled={page >= pageCount - 1}
+                  aria-label="Halaman berikutnya"
+                >
+                  ›
+                </button>
+              </nav>
+            )}
           </div>
         </>
       )}

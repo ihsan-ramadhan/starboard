@@ -31,6 +31,8 @@ export type WidgetBuilderSidebarProps = {
 
 const METRICS = ["SUM", "AVG", "COUNT", "MIN", "MAX"] as const;
 
+const TABLE_PAGE_SIZES = [25, 50, 100];
+
 type Caps = {
   values: "none" | "one" | "many";
   group: boolean;
@@ -155,8 +157,17 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     isCurrency: widget.isCurrency ?? false,
     currency: widget.currency ?? "IDR",
     unit: widget.unit ?? "",
-    limit: widget.limit ?? (widget.type === "table" ? 100 : 10),
+    limit:
+      widget.type === "table"
+        ? nearestPageSize(widget.limit ?? 25)
+        : widget.limit ?? 10,
   };
+}
+
+function nearestPageSize(value: number): number {
+  return TABLE_PAGE_SIZES.reduce((best, size) =>
+    Math.abs(size - value) < Math.abs(best - value) ? size : best
+  );
 }
 
 function toggle(list: string[], value: string): string[] {
@@ -221,7 +232,12 @@ export default function WidgetBuilderSidebar({
         targetColumn: nextCaps.target ? current.targetColumn : "",
         lineColumn: nextCaps.combo ? current.lineColumn : "",
         showTrendline: nextCaps.trend ? current.showTrendline : false,
-        limit: next === "table" ? 100 : current.limit > 100 ? 10 : current.limit,
+        limit:
+          next === "table"
+            ? nearestPageSize(current.limit)
+            : current.limit > 100
+              ? 10
+              : current.limit,
       };
     });
   }
@@ -608,17 +624,17 @@ export default function WidgetBuilderSidebar({
               {caps.limit && (
                 <label className="builder-field">
                   <span className="builder-label">
-                    {caps.table ? "Jumlah Baris" : "Batas Kategori"}
+                    {caps.table ? "Baris per Halaman" : "Batas Kategori"}
                   </span>
                   <select
                     value={draft.limit}
                     onChange={(e) => set("limit", Number(e.target.value))}
                     className="builder-input"
                   >
-                    {(caps.table ? [50, 100, 200, 500] : [5, 10, 15, 20, 50, 100]).map(
+                    {(caps.table ? TABLE_PAGE_SIZES : [5, 10, 15, 20, 50, 100]).map(
                       (n) => (
                         <option key={n} value={n}>
-                          {caps.table ? `${n} baris` : `Top ${n}`}
+                          {caps.table ? `${n} baris per halaman` : `Top ${n}`}
                         </option>
                       )
                     )}

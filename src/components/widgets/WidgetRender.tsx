@@ -131,7 +131,7 @@ export default function WidgetRender({
         datasetId={widget.datasetId}
         columns={columns}
         selected={widget.tableColumns}
-        limit={widget.limit ?? 100}
+        limit={widget.limit ?? 25}
         reloadNonce={reloadNonce}
       />
     );
