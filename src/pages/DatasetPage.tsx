@@ -68,11 +68,15 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
   const base = { x: 0, y: 0 };
   switch (type) {
     case "kpi":
-      return { ...base, w: 3, h: 2 };
+    case "date":
+      return { ...base, w: 3, h: 3 };
     case "pie":
       return { ...base, w: 4, h: 5 };
+    case "table":
+      return { ...base, w: 12, h: 7 };
     case "line":
-      return { ...base, w: 6, h: 5 };
+    case "area":
+    case "combo":
     case "bar":
     default:
       return { ...base, w: 6, h: 5 };
@@ -534,7 +538,11 @@ export default function DatasetPage() {
                             </button>
                           </div>
                         )}
-                        <WidgetRender widget={widget} reloadNonce={reloadNonce} />
+                        <WidgetRender
+                          widget={widget}
+                          columns={columns}
+                          reloadNonce={reloadNonce}
+                        />
                       </div>
                     </div>
                   );

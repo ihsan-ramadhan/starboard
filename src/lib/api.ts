@@ -3,6 +3,7 @@ import type {
   DatasetRegistry,
   DatasetDetail,
   WidgetQueryResult,
+  RowsQueryResult,
   WidgetDefinition,
 } from "../types";
 import type { DetectedSheet } from "../components/ImportWizard";
@@ -68,9 +69,20 @@ export type WidgetQuery = {
   datasetId: string;
   metric: string;
   metricColumn?: string;
+  metricColumns?: string[];
   groupByColumn?: string;
+  seriesColumn?: string;
   limit?: number;
   orderByKey?: boolean;
+};
+
+export type RowsQuery = {
+  datasetId: string;
+  columns?: string[];
+  limit?: number;
+  offset?: number;
+  sortColumn?: string;
+  sortDir?: "asc" | "desc";
 };
 
 const WIDGET_CACHE_TTL_MS = 30_000;
@@ -81,7 +93,9 @@ function widgetDataKey(q: WidgetQuery) {
     q.datasetId,
     q.metric,
     q.metricColumn,
+    q.metricColumns?.join(","),
     q.groupByColumn,
+    q.seriesColumn,
     q.limit,
     q.orderByKey,
   ].join("|");
@@ -228,5 +242,12 @@ export const api = {
     });
     widgetDataCache.set(key, { at: Date.now(), value: res });
     return res;
+  },
+
+  queryRows(q: RowsQuery) {
+    return request<RowsQueryResult>("/api/analytics/rows", {
+      method: "POST",
+      body: JSON.stringify(q),
+    });
   },
 };

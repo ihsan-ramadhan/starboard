@@ -51,10 +51,40 @@ export type DatasetDetail = {
 
 export type WidgetQueryResult = {
   scalarValue?: number;
-  rows: Array<{ groupKey: string; value: number }>;
+  scalarText?: string | null;
+  rows: Array<{ groupKey: string; series?: string; value: number }>;
 };
 
-export type WidgetType = "kpi" | "bar" | "line" | "pie";
+export type RowsQueryResult = {
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  total: number;
+};
+
+export type WidgetType =
+  | "kpi"
+  | "bar"
+  | "line"
+  | "area"
+  | "combo"
+  | "pie"
+  | "table"
+  | "date";
+
+export type SeriesMode = "grouped" | "stacked" | "stacked100";
+
+export type DateMode =
+  | "yearRemaining"
+  | "quarterRemaining"
+  | "untilDate"
+  | "sinceColumn";
+
+export const DATE_MODE_LABEL: Record<DateMode, string> = {
+  yearRemaining: "Sisa hari tahun ini",
+  quarterRemaining: "Sisa hari kuartal ini",
+  untilDate: "Hitung mundur ke tanggal",
+  sinceColumn: "Hari sejak tanggal terakhir",
+};
 
 export type CurrencyCode = "IDR" | "USD";
 
@@ -77,7 +107,16 @@ export type WidgetDefinition = {
   datasetId: string;
   metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
   metricColumn?: string;
+  metricColumns?: string[];
   groupByColumn?: string;
+  seriesColumn?: string;
+  seriesMode?: SeriesMode;
+  lineColumn?: string;
+  targetColumn?: string;
+  showTrendline?: boolean;
+  tableColumns?: string[];
+  dateMode?: DateMode;
+  targetDate?: string;
   limit?: number;
   isCurrency?: boolean;
   currency?: CurrencyCode;
@@ -89,5 +128,9 @@ export const WIDGET_TYPE_LABEL: Record<WidgetType, string> = {
   kpi: "KPI Card",
   bar: "Bar Chart",
   line: "Line Chart",
+  area: "Area Chart",
+  combo: "Combo Chart",
   pie: "Pie / Donut Chart",
+  table: "Tabel",
+  date: "KPI Tanggal",
 };

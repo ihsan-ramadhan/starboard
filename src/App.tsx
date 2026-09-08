@@ -28,6 +28,7 @@ import {
 type AppContextType = {
   user: SessionUser;
   datasets: DatasetRegistry[];
+  datasetsLoaded: boolean;
   datasetCache: Record<string, DatasetDetail>;
   setDatasetCache: React.Dispatch<
     React.SetStateAction<Record<string, DatasetDetail>>
@@ -58,6 +59,7 @@ export function useApp() {
 type ProtectedLayoutProps = {
   readonly user: SessionUser;
   readonly datasets: DatasetRegistry[];
+  readonly datasetsLoaded: boolean;
   readonly datasetCache: Record<string, DatasetDetail>;
   readonly setDatasetCache: React.Dispatch<
     React.SetStateAction<Record<string, DatasetDetail>>
@@ -77,6 +79,7 @@ type ProtectedLayoutProps = {
 function ProtectedLayout({
   user,
   datasets,
+  datasetsLoaded,
   datasetCache,
   setDatasetCache,
   fetchDatasetDetail,
@@ -93,6 +96,7 @@ function ProtectedLayout({
     () => ({
       user,
       datasets,
+      datasetsLoaded,
       datasetCache,
       setDatasetCache,
       fetchDatasetDetail,
@@ -107,6 +111,7 @@ function ProtectedLayout({
     [
       user,
       datasets,
+      datasetsLoaded,
       datasetCache,
       setDatasetCache,
       fetchDatasetDetail,
@@ -148,6 +153,7 @@ export default function App() {
     }
   });
   const [datasets, setDatasets] = useState<DatasetRegistry[]>([]);
+  const [datasetsLoaded, setDatasetsLoaded] = useState(false);
   const [datasetCache, setDatasetCache] = useState<
     Record<string, DatasetDetail>
   >({});
@@ -177,6 +183,8 @@ export default function App() {
         return;
       }
       console.error("Failed to load datasets:", err);
+    } finally {
+      setDatasetsLoaded(true);
     }
   }
 
@@ -248,6 +256,7 @@ export default function App() {
     setUser(null);
     setEditMode(false);
     applyDatasets([]);
+    setDatasetsLoaded(false);
     setDatasetCache({});
     setImportState(initialImportWizardState);
     localStorage.removeItem("starboard_user");
@@ -276,6 +285,7 @@ export default function App() {
             <ProtectedLayout
               user={user}
               datasets={datasets}
+              datasetsLoaded={datasetsLoaded}
               datasetCache={datasetCache}
               setDatasetCache={setDatasetCache}
               fetchDatasetDetail={fetchDatasetDetail}

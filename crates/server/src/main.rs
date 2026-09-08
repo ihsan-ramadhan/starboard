@@ -20,11 +20,11 @@ use std::sync::Arc;
 use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 
-use crate::analytics::execute_widget_query;
+use crate::analytics::{execute_rows_query, execute_widget_query};
 use crate::excel::{execute_import, parse_and_analyze_sheets, ImportSpec};
 use crate::types::{
     DatasetColumn, DatasetDetail, DatasetRegistry, DetectedSheet, SessionUser,
-    WidgetQueryRequest, WidgetQueryResult,
+    RowsQueryRequest, RowsQueryResult, WidgetQueryRequest, WidgetQueryResult,
 };
 
 #[derive(Clone)]
@@ -68,8 +68,26 @@ struct WidgetPayload {
     metric: String,
     #[serde(rename = "metricColumn", default)]
     metric_column: Option<String>,
+    #[serde(rename = "metricColumns", default)]
+    metric_columns: Option<Vec<String>>,
     #[serde(rename = "groupByColumn", default)]
     group_by_column: Option<String>,
+    #[serde(rename = "seriesColumn", default)]
+    series_column: Option<String>,
+    #[serde(rename = "seriesMode", default)]
+    series_mode: Option<String>,
+    #[serde(rename = "lineColumn", default)]
+    line_column: Option<String>,
+    #[serde(rename = "targetColumn", default)]
+    target_column: Option<String>,
+    #[serde(rename = "showTrendline", default)]
+    show_trendline: Option<bool>,
+    #[serde(rename = "tableColumns", default)]
+    table_columns: Option<Vec<String>>,
+    #[serde(rename = "dateMode", default)]
+    date_mode: Option<String>,
+    #[serde(rename = "targetDate", default)]
+    target_date: Option<String>,
     #[serde(default)]
     limit: Option<i32>,
     #[serde(rename = "isCurrency", default)]
@@ -233,6 +251,7 @@ async fn main() {
         .route("/api/excel/analyze", post(analyze_excel_handler))
         .route("/api/excel/import", post(import_excel_handler))
         .route("/api/analytics/query", post(query_widget_data_handler))
+        .route("/api/analytics/rows", post(query_rows_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
@@ -1152,6 +1171,23 @@ async fn query_widget_data_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
     let res = execute_widget_query(&client, req, &auth.role)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(res))
+}
+
+async fn query_rows_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(req): Json<RowsQueryRequest>,
+) -> Result<Json<RowsQueryResult>, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let res = execute_rows_query(&client, req, &auth.role)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(res))

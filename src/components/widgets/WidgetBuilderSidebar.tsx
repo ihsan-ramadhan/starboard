@@ -1,15 +1,22 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CurrencyCode,
+  DateMode,
   DatasetColumn,
+  SeriesMode,
   WidgetDefinition,
   WidgetType,
 } from "../../types";
-import { CURRENCY_LABEL } from "../../types";
+import { CURRENCY_LABEL, DATE_MODE_LABEL } from "../../types";
+import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
 import BarChartIcon from "../../assets/icons/chart-bar.svg?react";
 import LineChartIcon from "../../assets/icons/chart-line.svg?react";
+import AreaChartIcon from "../../assets/icons/chart-area.svg?react";
+import ComboChartIcon from "../../assets/icons/chart-combo.svg?react";
 import PieChartIcon from "../../assets/icons/chart-pie.svg?react";
-import KpiIcon from "../../assets/icons/chart-kpi.svg?react";
+import KpiIcon from "../../assets/icons/gauge.svg?react";
+import TableIcon from "../../assets/icons/table.svg?react";
+import CalendarIcon from "../../assets/icons/calendar-clock.svg?react";
 import TrashIcon from "../../assets/icons/trash.svg?react";
 
 export type WidgetBuilderSidebarProps = {
@@ -24,30 +31,138 @@ export type WidgetBuilderSidebarProps = {
 
 const METRICS = ["SUM", "AVG", "COUNT", "MIN", "MAX"] as const;
 
-// ponytail: 4 core chart types cover operational dashboards; add combo/scatter when requested.
+type Caps = {
+  values: "none" | "one" | "many";
+  group: boolean;
+  series: boolean;
+  stack: boolean;
+  trend: boolean;
+  combo: boolean;
+  target: boolean;
+  limit: boolean;
+  money: boolean;
+  unit: boolean;
+  table: boolean;
+  date: boolean;
+};
+
+const NO_CAPS: Caps = {
+  values: "none",
+  group: false,
+  series: false,
+  stack: false,
+  trend: false,
+  combo: false,
+  target: false,
+  limit: false,
+  money: false,
+  unit: false,
+  table: false,
+  date: false,
+};
+
+const CAPS: Record<WidgetType, Caps> = {
+  kpi: { ...NO_CAPS, values: "one", target: true, money: true, unit: true },
+  bar: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true },
+  line: { ...NO_CAPS, values: "many", group: true, series: true, trend: true, limit: true, money: true },
+  area: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true },
+  combo: { ...NO_CAPS, values: "many", group: true, combo: true, limit: true, money: true },
+  pie: { ...NO_CAPS, values: "one", group: true, limit: true, money: true },
+  table: { ...NO_CAPS, table: true, limit: true },
+  date: { ...NO_CAPS, date: true },
+};
+
 const VISUAL_TYPES: {
   type: WidgetType;
   label: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }[] = [
-  { type: "bar", label: "Bar Chart", icon: BarChartIcon },
-  { type: "line", label: "Line Chart", icon: LineChartIcon },
-  { type: "pie", label: "Pie Chart", icon: PieChartIcon },
-  { type: "kpi", label: "KPI Card", icon: KpiIcon },
+  { type: "bar", label: "Bar", icon: BarChartIcon },
+  { type: "line", label: "Line", icon: LineChartIcon },
+  { type: "area", label: "Area", icon: AreaChartIcon },
+  { type: "combo", label: "Combo", icon: ComboChartIcon },
+  { type: "pie", label: "Pie", icon: PieChartIcon },
+  { type: "kpi", label: "KPI", icon: KpiIcon },
+  { type: "table", label: "Tabel", icon: TableIcon },
+  { type: "date", label: "Tanggal", icon: CalendarIcon },
 ];
 
-function metricColumnFilter(widgetType: WidgetType): (col: DatasetColumn) => boolean {
-  if (widgetType === "kpi" || widgetType === "bar" || widgetType === "line") {
-    return (col) => col.type === "numeric";
-  }
-  return () => true;
+const SERIES_MODE_LABEL: Record<SeriesMode, string> = {
+  grouped: "Berdampingan",
+  stacked: "Bertumpuk",
+  stacked100: "Bertumpuk 100%",
+};
+
+type Draft = {
+  type: WidgetType;
+  title: string;
+  metric: WidgetDefinition["metric"];
+  metricColumn: string;
+  metricColumns: string[];
+  groupByColumn: string;
+  seriesColumn: string;
+  seriesMode: SeriesMode;
+  lineColumn: string;
+  targetColumn: string;
+  showTrendline: boolean;
+  tableColumns: string[];
+  dateMode: DateMode;
+  targetDate: string;
+  isCurrency: boolean;
+  currency: CurrencyCode;
+  unit: string;
+  limit: number;
+};
+
+const BLANK: Draft = {
+  type: "bar",
+  title: "",
+  metric: "SUM",
+  metricColumn: "",
+  metricColumns: [],
+  groupByColumn: "",
+  seriesColumn: "",
+  seriesMode: "grouped",
+  lineColumn: "",
+  targetColumn: "",
+  showTrendline: false,
+  tableColumns: [],
+  dateMode: "yearRemaining",
+  targetDate: "",
+  isCurrency: false,
+  currency: "IDR",
+  unit: "",
+  limit: 10,
+};
+
+function draftFrom(widget: WidgetDefinition | null): Draft {
+  if (!widget) return BLANK;
+  return {
+    type: widget.type,
+    title: widget.title,
+    metric: widget.metric,
+    metricColumn: widget.metricColumn ?? "",
+    metricColumns: widget.metricColumns ?? [],
+    groupByColumn: widget.groupByColumn ?? "",
+    seriesColumn: widget.seriesColumn ?? "",
+    seriesMode: widget.seriesMode ?? "grouped",
+    lineColumn: widget.lineColumn ?? "",
+    targetColumn: widget.targetColumn ?? "",
+    showTrendline: widget.showTrendline ?? false,
+    tableColumns: widget.tableColumns ?? [],
+    dateMode: widget.dateMode ?? "yearRemaining",
+    targetDate: widget.targetDate ?? "",
+    isCurrency: widget.isCurrency ?? false,
+    currency: widget.currency ?? "IDR",
+    unit: widget.unit ?? "",
+    limit: widget.limit ?? (widget.type === "table" ? 100 : 10),
+  };
 }
 
-function groupColumnFilter(widgetType: WidgetType): (col: DatasetColumn) => boolean {
-  if (widgetType === "kpi") {
-    return () => false;
-  }
-  return (col) => col.type === "category" || col.type === "date" || col.type === "numeric";
+function toggle(list: string[], value: string): string[] {
+  return list.includes(value)
+    ? list.filter((item) => item !== value)
+    : [...list, value];
 }
 
 function createId(): string {
@@ -63,114 +178,114 @@ export default function WidgetBuilderSidebar({
   onDeselect,
   onDelete,
 }: WidgetBuilderSidebarProps) {
-  const [widgetType, setWidgetType] = useState<WidgetType>("bar");
-  const [title, setTitle] = useState("");
-  const [metric, setMetric] = useState<WidgetDefinition["metric"]>("SUM");
-  const [metricColumn, setMetricColumn] = useState("");
-  const [groupByColumn, setGroupByColumn] = useState("");
-  const [isCurrency, setIsCurrency] = useState(false);
-  const [currency, setCurrency] = useState<CurrencyCode>("IDR");
-  const [unit, setUnit] = useState("");
-  const [limit, setLimit] = useState<number>(10);
+  const [draft, setDraft] = useState<Draft>(BLANK);
+  const warningHidden = useScaleWarningHidden();
 
   useEffect(() => {
-    if (editing) {
-      setWidgetType(editing.type);
-      setTitle(editing.title);
-      setMetric(editing.metric);
-      setMetricColumn(editing.metricColumn ?? "");
-      setGroupByColumn(editing.groupByColumn ?? "");
-      setIsCurrency(editing.isCurrency ?? false);
-      setCurrency(editing.currency ?? "IDR");
-      setUnit(editing.unit ?? "");
-      setLimit(editing.limit ?? 10);
-    } else {
-      setWidgetType("bar");
-      setTitle("");
-      setMetric("SUM");
-      setMetricColumn("");
-      setGroupByColumn("");
-      setIsCurrency(false);
-      setCurrency("IDR");
-      setUnit("");
-      setLimit(10);
-    }
+    setDraft(draftFrom(editing));
   }, [editing]);
 
-  const metricCols = columns.filter(metricColumnFilter(widgetType));
-  const groupCols = columns.filter(groupColumnFilter(widgetType));
-  const needsMetricColumn = widgetType === "kpi" || widgetType === "bar" || widgetType === "line";
-  const needsGroup = widgetType === "bar" || widgetType === "line" || widgetType === "pie";
-  const isCurrencyRelevant = widgetType === "kpi" || widgetType === "bar" || widgetType === "line";
-  const noMetricOption = metric === "COUNT" || widgetType === "pie";
-
-  function handleTypeChange(nextType: WidgetType) {
-    setWidgetType(nextType);
-    const needNewMetric = nextType === "kpi" || nextType === "bar" || nextType === "line";
-    const needNewGroup = nextType === "bar" || nextType === "line" || nextType === "pie";
-
-    if (nextType === "pie") {
-      setMetric("COUNT");
-    } else if (metric === "COUNT") {
-      setMetric("SUM");
-    }
-
-    if (needNewMetric && metricColumn) {
-      const col = columns.find((c) => c.name === metricColumn);
-      if (col?.type !== "numeric") {
-        setMetricColumn("");
-      }
-    }
-    if (!needNewMetric) {
-      setMetricColumn("");
-    }
-    if (!needNewGroup) {
-      setGroupByColumn("");
-    }
+  function set<K extends keyof Draft>(key: K, value: Draft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function handleReset() {
-    if (editing) {
-      setWidgetType(editing.type);
-      setTitle(editing.title);
-      setMetric(editing.metric);
-      setMetricColumn(editing.metricColumn ?? "");
-      setGroupByColumn(editing.groupByColumn ?? "");
-      setIsCurrency(editing.isCurrency ?? false);
-      setCurrency(editing.currency ?? "IDR");
-      setUnit(editing.unit ?? "");
-      setLimit(editing.limit ?? 10);
-    } else {
-      setWidgetType("bar");
-      setTitle("");
-      setMetric("SUM");
-      setMetricColumn("");
-      setGroupByColumn("");
-      setIsCurrency(false);
-      setCurrency("IDR");
-      setUnit("");
-      setLimit(10);
-    }
+  const caps = CAPS[draft.type];
+  const numericCols = useMemo(
+    () => columns.filter((c) => c.type === "numeric"),
+    [columns]
+  );
+  const dateCols = useMemo(() => columns.filter((c) => c.type === "date"), [columns]);
+  const dimensionCols = useMemo(
+    () => columns.filter((c) => c.type !== "numeric"),
+    [columns]
+  );
+
+  const isCount = draft.metric === "COUNT";
+  const picked = draft.metricColumns;
+  const multiValue = caps.values === "many" && picked.length > 1;
+  const labelOf = (name: string) =>
+    columns.find((c) => c.name === name)?.label || name;
+
+  function changeType(next: WidgetType) {
+    setDraft((current) => {
+      const nextCaps = CAPS[next];
+      const keepMetric = columns.find((c) => c.name === current.metricColumn)?.type;
+      return {
+        ...current,
+        type: next,
+        metric: next === "pie" && current.metric === "SUM" ? "COUNT" : current.metric,
+        metricColumn: keepMetric === "numeric" ? current.metricColumn : "",
+        metricColumns: nextCaps.values === "many" ? current.metricColumns : [],
+        groupByColumn: nextCaps.group ? current.groupByColumn : "",
+        seriesColumn: nextCaps.series ? current.seriesColumn : "",
+        targetColumn: nextCaps.target ? current.targetColumn : "",
+        lineColumn: nextCaps.combo ? current.lineColumn : "",
+        showTrendline: nextCaps.trend ? current.showTrendline : false,
+        limit: next === "table" ? 100 : current.limit > 100 ? 10 : current.limit,
+      };
+    });
   }
+
+  function blocked(): string | null {
+    if (!draft.title.trim()) return "Judul widget belum diisi.";
+
+    if (caps.values === "one" && !isCount && !draft.metricColumn) {
+      return "Kolom nilai belum dipilih.";
+    }
+    if (caps.values === "many" && !isCount && picked.length === 0) {
+      return "Pilih minimal satu kolom nilai.";
+    }
+    if (caps.group && !draft.groupByColumn) return "Sumbu / kategori belum dipilih.";
+    if (caps.combo && picked.length < 2) {
+      return "Combo chart butuh minimal dua kolom nilai.";
+    }
+    if (caps.combo && !draft.lineColumn) return "Pilih kolom yang tampil sebagai garis.";
+    if (caps.table && draft.tableColumns.length === 0) {
+      return "Pilih minimal satu kolom tabel.";
+    }
+    if (caps.date && draft.dateMode === "untilDate" && !draft.targetDate) {
+      return "Tanggal target belum diisi.";
+    }
+    if (caps.date && draft.dateMode === "sinceColumn" && !draft.metricColumn) {
+      return "Kolom tanggal belum dipilih.";
+    }
+    return null;
+  }
+
+  const problem = blocked();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
-    if (needsMetricColumn && !noMetricOption && !metricColumn) return;
-    if (needsGroup && !groupByColumn) return;
+    if (problem) return;
+
+    const money = caps.money && draft.isCurrency;
 
     const widget: WidgetDefinition = {
       id: editing?.id ?? createId(),
-      type: widgetType,
-      title: title.trim(),
+      type: draft.type,
+      title: draft.title.trim(),
       datasetId: editing?.datasetId ?? datasetId,
-      metric,
-      metricColumn: noMetricOption ? undefined : metricColumn || undefined,
-      groupByColumn: needsGroup ? groupByColumn || undefined : undefined,
-      limit: widgetType === "kpi" ? undefined : limit,
-      isCurrency: isCurrencyRelevant ? isCurrency : false,
-      currency: isCurrencyRelevant && isCurrency ? currency : undefined,
-      unit: widgetType === "kpi" && !isCurrency ? unit.trim() || undefined : undefined,
+      metric: caps.date && draft.dateMode === "sinceColumn" ? "MAX" : draft.metric,
+      metricColumn:
+        caps.values === "one" && !isCount
+          ? draft.metricColumn
+          : caps.date && draft.dateMode === "sinceColumn"
+            ? draft.metricColumn
+            : undefined,
+      metricColumns: caps.values === "many" && !isCount && picked.length > 0 ? picked : undefined,
+      groupByColumn: caps.group ? draft.groupByColumn : undefined,
+      seriesColumn: caps.series && !multiValue ? draft.seriesColumn || undefined : undefined,
+      seriesMode: caps.stack ? draft.seriesMode : undefined,
+      lineColumn: caps.combo ? draft.lineColumn : undefined,
+      targetColumn: caps.target ? draft.targetColumn || undefined : undefined,
+      showTrendline: caps.trend ? draft.showTrendline : undefined,
+      tableColumns: caps.table ? draft.tableColumns : undefined,
+      dateMode: caps.date ? draft.dateMode : undefined,
+      targetDate: caps.date && draft.dateMode === "untilDate" ? draft.targetDate : undefined,
+      limit: caps.limit ? draft.limit : undefined,
+      isCurrency: money,
+      currency: money ? draft.currency : undefined,
+      unit: caps.unit && !money ? draft.unit.trim() || undefined : undefined,
       layout: editing?.layout,
     };
 
@@ -180,7 +295,7 @@ export default function WidgetBuilderSidebar({
   return (
     <aside
       className={`builder-sidebar${isOpen ? "" : " is-hidden"}`}
-      aria-label="Panel Visualisasi Power BI"
+      aria-label="Panel visualisasi"
       aria-hidden={!isOpen}
     >
       <div className="builder-sidebar-inner">
@@ -204,230 +319,421 @@ export default function WidgetBuilderSidebar({
         </div>
 
         <form className="builder-sidebar-form" onSubmit={handleSubmit}>
-        <div className="builder-sidebar-body">
-          {/* Section: Visual Gallery */}
-          <section className="builder-section">
-            <span className="builder-section-title">Tipe Visual</span>
-            <div className="builder-visual-gallery" role="radiogroup" aria-label="Pilih tipe chart">
-              {VISUAL_TYPES.map((v) => {
-                const Icon = v.icon;
-                const active = widgetType === v.type;
-                return (
-                  <button
-                    key={v.type}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    className={`visual-tile${active ? " is-active" : ""}`}
-                    onClick={() => handleTypeChange(v.type)}
-                    title={v.label}
-                  >
-                    <span className="visual-tile-icon">
-                      <Icon width={16} height={16} />
-                    </span>
-                    <span className="visual-tile-label">{v.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <div className="builder-sidebar-body">
+            <section className="builder-section">
+              <span className="builder-section-title">Tipe Visual</span>
+              <div className="builder-visual-gallery" role="radiogroup" aria-label="Pilih tipe visual">
+                {VISUAL_TYPES.map((visual) => {
+                  const Icon = visual.icon;
+                  const active = draft.type === visual.type;
+                  return (
+                    <button
+                      key={visual.type}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`visual-tile${active ? " is-active" : ""}`}
+                      onClick={() => changeType(visual.type)}
+                      title={visual.label}
+                    >
+                      <span className="visual-tile-icon">
+                        <Icon width={16} height={16} />
+                      </span>
+                      <span className="visual-tile-label">{visual.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
 
-          {/* Section: Data Configuration */}
-          <section className="builder-section">
-            <span className="builder-section-title">Konfigurasi Data</span>
+            <section className="builder-section">
+              <span className="builder-section-title">Konfigurasi Data</span>
 
-            <label className="builder-field">
-              <span className="builder-label">Judul Widget</span>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Contoh: Total Biaya Operasional"
-                className="builder-input"
-                required
-              />
-            </label>
-
-            {needsMetricColumn && (
               <label className="builder-field">
-                <span className="builder-label">Agregasi</span>
-                <select
-                  value={metric}
-                  onChange={(e) => setMetric(e.target.value as WidgetDefinition["metric"])}
-                  className="builder-input"
-                >
-                  {METRICS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {needsMetricColumn && metric !== "COUNT" && (
-              <label className="builder-field">
-                <span className="builder-label">Kolom Nilai (Numerik)</span>
-                <select
-                  value={metricColumn}
-                  onChange={(e) => setMetricColumn(e.target.value)}
-                  className="builder-input"
-                  required
-                >
-                  {metricCols.length === 0 ? (
-                    <option value="" disabled>
-                      — Tidak ada kolom numerik —
-                    </option>
-                  ) : (
-                    <>
-                      <option value="">— Pilih kolom —</option>
-                      {metricCols.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.label || c.name}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-              </label>
-            )}
-
-            {needsGroup && (
-              <label className="builder-field">
-                <span className="builder-label">Sumbu / Kategori</span>
-                <select
-                  value={groupByColumn}
-                  onChange={(e) => setGroupByColumn(e.target.value)}
-                  className="builder-input"
-                  required
-                >
-                  <option value="">— Pilih kolom —</option>
-                  {groupCols.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.label || c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {needsGroup && (
-              <label className="builder-field">
-                <span className="builder-label">Batas Baris (Limit)</span>
-                <select
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="builder-input"
-                >
-                  <option value={5}>Top 5</option>
-                  <option value={10}>Top 10</option>
-                  <option value={15}>Top 15</option>
-                  <option value={20}>Top 20</option>
-                  <option value={50}>Top 50</option>
-                  <option value={100}>Semua (Maks 100)</option>
-                </select>
-              </label>
-            )}
-          </section>
-
-          {/* Section: Display formatting */}
-          <section className="builder-section">
-            <span className="builder-section-title">Format Tampilan</span>
-
-            {isCurrencyRelevant && (
-              <label className="builder-check">
+                <span className="builder-label">Judul Widget</span>
                 <input
-                  type="checkbox"
-                  checked={isCurrency}
-                  onChange={(e) => setIsCurrency(e.target.checked)}
+                  type="text"
+                  value={draft.title}
+                  onChange={(e) => set("title", e.target.value)}
+                  placeholder="Contoh: Produksi vs Rencana"
+                  className="builder-input"
+                  required
                 />
-                <span>Format sebagai mata uang</span>
               </label>
-            )}
 
-            {isCurrencyRelevant && isCurrency && (
-              <div className="builder-dependent-field">
+              {caps.values !== "none" && (
                 <label className="builder-field">
-                  <span className="builder-label">Mata Uang</span>
+                  <span className="builder-label">Agregasi</span>
                   <select
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                    value={draft.metric}
+                    onChange={(e) => set("metric", e.target.value as Draft["metric"])}
                     className="builder-input"
                   >
-                    {(Object.keys(CURRENCY_LABEL) as CurrencyCode[]).map((code) => (
-                      <option key={code} value={code}>
-                        {CURRENCY_LABEL[code]}
+                    {METRICS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
                       </option>
                     ))}
                   </select>
                 </label>
-              </div>
+              )}
+
+              {caps.values === "one" && !isCount && (
+                <label className="builder-field">
+                  <span className="builder-label">Kolom Nilai</span>
+                  <select
+                    value={draft.metricColumn}
+                    onChange={(e) => set("metricColumn", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">— Pilih kolom —</option>
+                    {numericCols.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.label || c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {caps.values === "many" && !isCount && (
+                <div className="builder-field">
+                  <span className="builder-label">Kolom Nilai</span>
+                  <p className="builder-field-desc">
+                    Pilih dua kolom atau lebih untuk membandingkan, misalnya rencana
+                    dan realisasi.
+                  </p>
+                  <div className="builder-checklist">
+                    {numericCols.length === 0 ? (
+                      <p className="builder-field-desc">Tidak ada kolom numerik.</p>
+                    ) : (
+                      numericCols.map((c) => (
+                        <label key={c.name} className="builder-check">
+                          <input
+                            type="checkbox"
+                            checked={picked.includes(c.name)}
+                            onChange={() => set("metricColumns", toggle(picked, c.name))}
+                          />
+                          <span>{c.label || c.name}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {caps.target && !isCount && (
+                <label className="builder-field">
+                  <span className="builder-label">Kolom Target (opsional)</span>
+                  <select
+                    value={draft.targetColumn}
+                    onChange={(e) => set("targetColumn", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">— Tanpa target —</option>
+                    {numericCols
+                      .filter((c) => c.name !== draft.metricColumn)
+                      .map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.label || c.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+
+              {caps.combo && picked.length > 0 && (
+                <label className="builder-field">
+                  <span className="builder-label">Tampil sebagai garis</span>
+                  <select
+                    value={draft.lineColumn}
+                    onChange={(e) => set("lineColumn", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">— Pilih kolom —</option>
+                    {picked.map((name) => (
+                      <option key={name} value={name}>
+                        {labelOf(name)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {caps.group && (
+                <label className="builder-field">
+                  <span className="builder-label">Sumbu / Kategori</span>
+                  <select
+                    value={draft.groupByColumn}
+                    onChange={(e) => set("groupByColumn", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">— Pilih kolom —</option>
+                    {columns.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.label || c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {caps.series && (
+                <label className="builder-field">
+                  <span className="builder-label">Pecah per Seri (opsional)</span>
+                  <select
+                    value={draft.seriesColumn}
+                    onChange={(e) => set("seriesColumn", e.target.value)}
+                    className="builder-input"
+                    disabled={multiValue}
+                  >
+                    <option value="">— Satu seri saja —</option>
+                    {dimensionCols
+                      .filter((c) => c.name !== draft.groupByColumn)
+                      .map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.label || c.name}
+                        </option>
+                      ))}
+                  </select>
+                  {multiValue && (
+                    <p className="builder-field-desc">
+                      Nonaktif karena seri sudah datang dari beberapa kolom nilai.
+                    </p>
+                  )}
+                </label>
+              )}
+
+              {caps.stack && (
+                <label className="builder-field">
+                  <span className="builder-label">Susunan Seri</span>
+                  <select
+                    value={draft.seriesMode}
+                    onChange={(e) => set("seriesMode", e.target.value as SeriesMode)}
+                    className="builder-input"
+                  >
+                    {(Object.keys(SERIES_MODE_LABEL) as SeriesMode[]).map((mode) => (
+                      <option key={mode} value={mode}>
+                        {SERIES_MODE_LABEL[mode]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {caps.trend && (
+                <label className="builder-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.showTrendline}
+                    onChange={(e) => set("showTrendline", e.target.checked)}
+                  />
+                  <span>Tampilkan garis tren</span>
+                </label>
+              )}
+
+
+              {caps.table && (
+                <div className="builder-field">
+                  <span className="builder-label">Kolom yang Ditampilkan</span>
+                  <div className="builder-checklist">
+                    {columns.map((c) => (
+                      <label key={c.name} className="builder-check">
+                        <input
+                          type="checkbox"
+                          checked={draft.tableColumns.includes(c.name)}
+                          onChange={() =>
+                            set("tableColumns", toggle(draft.tableColumns, c.name))
+                          }
+                        />
+                        <span>{c.label || c.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {caps.date && (
+                <label className="builder-field">
+                  <span className="builder-label">Jenis Hitungan</span>
+                  <select
+                    value={draft.dateMode}
+                    onChange={(e) => set("dateMode", e.target.value as DateMode)}
+                    className="builder-input"
+                  >
+                    {(Object.keys(DATE_MODE_LABEL) as DateMode[]).map((mode) => (
+                      <option key={mode} value={mode}>
+                        {DATE_MODE_LABEL[mode]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {caps.date && draft.dateMode === "untilDate" && (
+                <label className="builder-field">
+                  <span className="builder-label">Tanggal Target</span>
+                  <input
+                    type="date"
+                    value={draft.targetDate}
+                    onChange={(e) => set("targetDate", e.target.value)}
+                    className="builder-input"
+                  />
+                </label>
+              )}
+
+              {caps.date && draft.dateMode === "sinceColumn" && (
+                <label className="builder-field">
+                  <span className="builder-label">Kolom Tanggal</span>
+                  <select
+                    value={draft.metricColumn}
+                    onChange={(e) => set("metricColumn", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">— Pilih kolom —</option>
+                    {dateCols.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.label || c.name}
+                      </option>
+                    ))}
+                  </select>
+                  {dateCols.length === 0 && (
+                    <p className="builder-field-desc">
+                      Dataset ini tidak punya kolom bertipe tanggal.
+                    </p>
+                  )}
+                </label>
+              )}
+
+              {caps.limit && (
+                <label className="builder-field">
+                  <span className="builder-label">
+                    {caps.table ? "Jumlah Baris" : "Batas Kategori"}
+                  </span>
+                  <select
+                    value={draft.limit}
+                    onChange={(e) => set("limit", Number(e.target.value))}
+                    className="builder-input"
+                  >
+                    {(caps.table ? [50, 100, 200, 500] : [5, 10, 15, 20, 50, 100]).map(
+                      (n) => (
+                        <option key={n} value={n}>
+                          {caps.table ? `${n} baris` : `Top ${n}`}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
+              )}
+            </section>
+
+            {(caps.money || caps.unit) && (
+              <section className="builder-section">
+                <span className="builder-section-title">Format Tampilan</span>
+
+                {caps.money && (
+                  <label className="builder-check">
+                    <input
+                      type="checkbox"
+                      checked={draft.isCurrency}
+                      onChange={(e) => set("isCurrency", e.target.checked)}
+                    />
+                    <span>Format sebagai mata uang</span>
+                  </label>
+                )}
+
+                {caps.money && draft.isCurrency && (
+                  <div className="builder-dependent-field">
+                    <label className="builder-field">
+                      <span className="builder-label">Mata Uang</span>
+                      <select
+                        value={draft.currency}
+                        onChange={(e) => set("currency", e.target.value as CurrencyCode)}
+                        className="builder-input"
+                      >
+                        {(Object.keys(CURRENCY_LABEL) as CurrencyCode[]).map((code) => (
+                          <option key={code} value={code}>
+                            {CURRENCY_LABEL[code]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+
+                {caps.unit && !draft.isCurrency && (
+                  <label className="builder-field">
+                    <span className="builder-label">Satuan (opsional)</span>
+                    <input
+                      type="text"
+                      value={draft.unit}
+                      onChange={(e) => set("unit", e.target.value)}
+                      placeholder="Contoh: Jam, Ton, Unit"
+                      className="builder-input"
+                    />
+                  </label>
+                )}
+              </section>
             )}
 
-            {widgetType === "kpi" && !isCurrency && (
-              <label className="builder-field">
-                <span className="builder-label">Satuan (opsional)</span>
+            <section className="builder-section">
+              <span className="builder-section-title">Preferensi Semua Widget</span>
+              <label className="builder-check">
                 <input
-                  type="text"
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  placeholder="Contoh: Jam, Ton, Unit"
-                  className="builder-input"
+                  type="checkbox"
+                  checked={warningHidden}
+                  onChange={(e) => setScaleWarningHidden(e.target.checked)}
                 />
+                <span>Sembunyikan peringatan skala</span>
               </label>
-            )}
-
-            {!isCurrencyRelevant && (
               <p className="builder-field-desc">
-                Tipe visual ini otomatis menampilkan proporsi data dan tidak memerlukan format mata uang.
+                Peringatan muncul saat satu seri terlalu kecil untuk terlihat di sumbu
+                bersama. Berlaku untuk seluruh widget dan tersimpan di perangkat ini.
               </p>
-            )}
-          </section>
-        </div>
+            </section>
+          </div>
 
-        {/* Sticky footer actions */}
-        <div className="builder-sidebar-footer">
-          <div className="builder-footer-row">
-            <button
-              type="submit"
-              className="btn-primary"
-            >
-              {editing ? "Perbarui Widget" : "+ Tambah Widget"}
-            </button>
+          <div className="builder-sidebar-footer">
+            {problem && <p className="builder-problem">{problem}</p>}
 
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={handleReset}
-              title={editing ? "Kembalikan ke pengaturan awal widget" : "Bersihkan formulir"}
-            >
-              Reset
-            </button>
+            <div className="builder-footer-row">
+              <button type="submit" className="btn-primary" disabled={problem !== null}>
+                {editing ? "Perbarui Widget" : "+ Tambah Widget"}
+              </button>
 
-            {editing && (
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={onDeselect}
-                title="Batal mengubah widget"
+                onClick={() => setDraft(draftFrom(editing))}
+                title={editing ? "Kembalikan ke pengaturan awal widget" : "Bersihkan formulir"}
               >
-                Batal
+                Reset
+              </button>
+
+              {editing && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={onDeselect}
+                  title="Batal mengubah widget"
+                >
+                  Batal
+                </button>
+              )}
+            </div>
+
+            {editing && onDelete && (
+              <button
+                type="button"
+                className="btn-danger-outline btn-sidebar-delete"
+                onClick={() => onDelete(editing)}
+              >
+                <TrashIcon width={14} height={14} />
+                Hapus Widget
               </button>
             )}
           </div>
-
-          {editing && onDelete && (
-            <button
-              type="button"
-              className="btn-danger-outline btn-sidebar-delete"
-              onClick={() => onDelete(editing)}
-            >
-              <TrashIcon width={14} height={14} />
-              Hapus Widget
-            </button>
-          )}
-        </div>
-      </form>
+        </form>
       </div>
     </aside>
   );

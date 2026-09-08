@@ -92,8 +92,12 @@ pub struct WidgetQueryRequest {
     pub metric: String,
     #[serde(rename = "metricColumn")]
     pub metric_column: Option<String>,
+    #[serde(rename = "metricColumns")]
+    pub metric_columns: Option<Vec<String>>,
     #[serde(rename = "groupByColumn")]
     pub group_by_column: Option<String>,
+    #[serde(rename = "seriesColumn")]
+    pub series_column: Option<String>,
     pub limit: Option<i64>,
     #[serde(rename = "orderByKey")]
     pub order_by_key: Option<bool>,
@@ -103,5 +107,27 @@ pub struct WidgetQueryRequest {
 pub struct WidgetQueryResult {
     #[serde(rename = "scalarValue")]
     pub scalar_value: Option<f64>,
+    #[serde(rename = "scalarText")]
+    pub scalar_text: Option<String>,
     pub rows: Vec<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RowsQueryRequest {
+    #[serde(rename = "datasetId")]
+    pub dataset_id: String,
+    pub columns: Option<Vec<String>>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    #[serde(rename = "sortColumn")]
+    pub sort_column: Option<String>,
+    #[serde(rename = "sortDir")]
+    pub sort_dir: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RowsQueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<serde_json::Value>,
+    pub total: i64,
 }

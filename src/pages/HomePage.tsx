@@ -3,7 +3,15 @@ import { useApp } from "../App";
 import { isAdmin } from "../types";
 
 export default function HomePage() {
-  const { datasets, user } = useApp();
+  const { datasets, datasetsLoaded, user } = useApp();
+
+  if (!datasetsLoaded) {
+    return (
+      <main className="content">
+        <p className="hint">Memuat dashboard…</p>
+      </main>
+    );
+  }
 
   if (datasets.length > 0) {
     return <Navigate to={`/d/${datasets[0].key}`} replace />;

@@ -5,73 +5,91 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  Legend,
   CartesianGrid,
 } from "recharts";
-import type { ChartDataPoint, CurrencyCode } from "../../types";
-import { formatCompactValue, formatFullValue } from "../../lib/format";
+import type { CurrencyCode, SeriesMode } from "../../types";
+import type { WideRow } from "../../lib/series";
+import {
+  ChartFrame,
+  categoryAxisProps,
+  gridProps,
+  legendProps,
+  percentTick,
+  tooltipProps,
+  valueTick,
+  valueAxisWidth,
+  type SeriesLabeller,
+} from "./chartParts";
 
 export type BarChartWidgetProps = {
   readonly title: string;
-  readonly data: ChartDataPoint[];
+  readonly data: readonly WideRow[];
+  readonly seriesKeys: readonly string[];
+  readonly colors: Record<string, string>;
+  readonly labelOf: SeriesLabeller;
+  readonly mode: SeriesMode;
   readonly unit?: string;
-  readonly color?: string;
   readonly currency?: CurrencyCode;
+  readonly note?: string;
+  readonly onHideNote?: () => void;
 };
 
 export default function BarChartWidget({
   title,
   data,
+  seriesKeys,
+  colors,
+  labelOf,
+  mode,
   unit,
-  color = "#2563eb",
   currency,
+  note,
+  onHideNote,
 }: BarChartWidgetProps) {
+  const stacked = mode !== "grouped" && seriesKeys.length > 1;
+  const expanded = mode === "stacked100" && seriesKeys.length > 1;
+  const multi = seriesKeys.length > 1;
+
   return (
-    <div className="chart-wrapper">
-      <h4 className="widget-title" title={title}>{title}</h4>
-      <div className="chart-body">
-        {data.length === 0 ? (
-          <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={data}
-              margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-                stroke="#f1f5f9"
-              />
-              <XAxis
-                dataKey="groupKey"
-                tick={{ fontSize: 11, fill: "#64748b" }}
-                interval="preserveStartEnd"
-                angle={-20}
-                textAnchor="end"
-                height={35}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "#64748b" }}
-                tickFormatter={(v) => formatCompactValue(v, currency, unit)}
-                width={65}
-              />
-              <Tooltip
-                formatter={(v: any) => [
-                  formatFullValue(Number(v), currency, unit),
-                  "Nilai",
-                ]}
-                contentStyle={{
-                  backgroundColor: "#ffffff",
-                  borderColor: "#e2e8f0",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                }}
-              />
-              <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-    </div>
+    <ChartFrame title={title} isEmpty={data.length === 0} note={note} onHideNote={onHideNote}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={data as WideRow[]}
+          margin={{ top: 10, right: 10, left: 0, bottom: 8 }}
+          barGap={2}
+          stackOffset={expanded ? "expand" : undefined}
+        >
+          <CartesianGrid {...gridProps} />
+          <XAxis {...categoryAxisProps} />
+          <YAxis
+            tick={{ fontSize: 11, fill: "#64748b" }}
+            tickFormatter={expanded ? percentTick : valueTick(currency)}
+            width={valueAxisWidth(currency)}
+          />
+          <Tooltip
+            cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
+            {...tooltipProps(labelOf, currency, unit)}
+          />
+          {multi && <Legend {...legendProps(labelOf)} />}
+          {seriesKeys.map((key, index) => (
+            <Bar
+              key={key}
+              dataKey={key}
+              name={key}
+              fill={colors[key]}
+              stackId={stacked ? "stack" : undefined}
+              stroke={stacked ? "#ffffff" : undefined}
+              strokeWidth={stacked ? 2 : 0}
+              radius={
+                !stacked || index === seriesKeys.length - 1
+                  ? [4, 4, 0, 0]
+                  : undefined
+              }
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartFrame>
   );
 }
