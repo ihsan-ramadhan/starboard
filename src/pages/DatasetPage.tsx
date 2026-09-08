@@ -23,6 +23,8 @@ import {
   type WidgetType,
 } from "../types";
 
+const RESIZE_SETTLE_MS = 32;
+
 const GRID_COLS = 12;
 
 function formatSyncTime(iso: string | null): string | null {
@@ -122,11 +124,16 @@ export default function DatasetPage() {
   const pendingSaveRef = useRef<(() => void) | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const resizeTimerRef = useRef<number | null>(null);
 
   const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
     if (resizeObserverRef.current) {
       resizeObserverRef.current.disconnect();
       resizeObserverRef.current = null;
+    }
+    if (resizeTimerRef.current !== null) {
+      window.clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = null;
     }
 
     if (node) {
@@ -139,7 +146,15 @@ export default function DatasetPage() {
 
       requestAnimationFrame(update);
       const ro = new ResizeObserver(() => {
-        update();
+        if (resizeTimerRef.current === null) {
+          update();
+        } else {
+          window.clearTimeout(resizeTimerRef.current);
+        }
+        resizeTimerRef.current = window.setTimeout(() => {
+          resizeTimerRef.current = null;
+          update();
+        }, RESIZE_SETTLE_MS);
       });
       ro.observe(node);
       resizeObserverRef.current = ro;

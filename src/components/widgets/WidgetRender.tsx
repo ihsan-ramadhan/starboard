@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { api, peekWidgetData, type WidgetQuery } from "../../lib/api";
 import type {
   ChartDataPoint,
@@ -84,7 +84,7 @@ function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
   };
 }
 
-export default function WidgetRender({
+function WidgetRender({
   widget,
   columns,
   reloadNonce = 0,
@@ -297,3 +297,5 @@ export default function WidgetRender({
     />
   );
 }
+
+export default memo(WidgetRender);

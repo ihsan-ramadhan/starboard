@@ -162,11 +162,20 @@ fn where_clause(conditions: &[String]) -> String {
     }
 }
 
-fn aggregate(metric: &str, column: Option<&String>, alias: &str) -> String {
+fn aggregate(
+    metric: &str,
+    column: Option<&String>,
+    alias: &str,
+    guard: &ColumnGuard,
+) -> String {
     let Some(column) = column else {
         return "COUNT(*)::numeric".to_string();
     };
-    let target = format!("{}\"{}\"::numeric", alias, column);
+    let target = if guard.type_of(column) == Some("numeric") {
+        format!("{}\"{}\"", alias, column)
+    } else {
+        format!("{}\"{}\"::numeric", alias, column)
+    };
     match metric.to_uppercase().as_str() {
         "SUM" => format!("COALESCE(SUM({}), 0)", target),
         "AVG" => format!("COALESCE(AVG({}), 0)", target),
@@ -231,6 +240,7 @@ pub async fn execute_widget_query(
             &value_columns,
             &plain_conditions,
             &values,
+            &guard,
         )
         .await;
     };
@@ -254,6 +264,7 @@ pub async fn execute_widget_query(
             &plain_conditions,
             &aliased_conditions,
             &values,
+            &guard,
         )
         .await;
     }
@@ -268,6 +279,7 @@ pub async fn execute_widget_query(
         by_key,
         &plain_conditions,
         &values,
+        &guard,
     )
     .await
 }
@@ -279,6 +291,7 @@ async fn scalar_query(
     value_columns: &[String],
     conditions: &[String],
     values: &[String],
+    guard: &ColumnGuard,
 ) -> Result<WidgetQueryResult, String> {
     let params = as_params(values);
     let filter_sql = where_clause(conditions);
@@ -286,7 +299,7 @@ async fn scalar_query(
     if value_columns.len() <= 1 {
         let sql = format!(
             r#"SELECT {} FROM "{}" {}"#,
-            aggregate(metric, value_columns.first(), ""),
+            aggregate(metric, value_columns.first(), "", guard),
             table,
             filter_sql
         );
@@ -304,7 +317,7 @@ async fn scalar_query(
 
     let selects: Vec<String> = value_columns
         .iter()
-        .map(|c| aggregate(metric, Some(c), ""))
+        .map(|c| aggregate(metric, Some(c), "", guard))
         .collect();
     let sql = format!(
         r#"SELECT {} FROM "{}" {}"#,
@@ -346,13 +359,14 @@ async fn grouped_query(
     by_key: bool,
     conditions: &[String],
     values: &[String],
+    guard: &ColumnGuard,
 ) -> Result<WidgetQueryResult, String> {
     let selects: Vec<String> = if value_columns.len() <= 1 {
-        vec![aggregate(metric, value_columns.first(), "")]
+        vec![aggregate(metric, value_columns.first(), "", guard)]
     } else {
         value_columns
             .iter()
-            .map(|c| aggregate(metric, Some(c), ""))
+            .map(|c| aggregate(metric, Some(c), "", guard))
             .collect()
     };
 
@@ -430,6 +444,7 @@ async fn pivot_query(
     conditions: &[String],
     aliased_conditions: &[String],
     values: &[String],
+    guard: &ColumnGuard,
 ) -> Result<WidgetQueryResult, String> {
     let outer_order = if by_key { "1 ASC, 2 ASC" } else { "4 DESC, 2 ASC" };
     let inner_order = if by_key { "1 ASC" } else { "2 DESC" };
@@ -488,8 +503,8 @@ async fn pivot_query(
         group = group_column,
         series = series_column,
         table = table,
-        agg_plain = aggregate(metric, value_column, ""),
-        agg_alias = aggregate(metric, value_column, "t."),
+        agg_plain = aggregate(metric, value_column, "", guard),
+        agg_alias = aggregate(metric, value_column, "t.", guard),
         group_filters = where_clause(&group_conds),
         series_filters = where_clause(&series_conds),
         outer_filters = where_clause(&outer_conds),
