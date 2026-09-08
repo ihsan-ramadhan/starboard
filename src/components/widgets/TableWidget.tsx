@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
-import type { DatasetColumn } from "../../types";
+import type { DatasetColumn, WidgetFilter } from "../../types";
 
 export type TableWidgetProps = {
   readonly title: string;
   readonly datasetId: string;
   readonly columns: readonly DatasetColumn[];
   readonly selected?: readonly string[];
+  readonly filters?: readonly WidgetFilter[];
   readonly limit: number;
   readonly reloadNonce: number;
 };
@@ -19,6 +20,7 @@ export default function TableWidget({
   datasetId,
   columns,
   selected,
+  filters,
   limit,
   reloadNonce,
 }: TableWidgetProps) {
@@ -36,9 +38,18 @@ export default function TableWidget({
     [selected]
   );
 
+  const filterKey = useMemo(
+    () => (filters ?? []).map((f) => `${f.column}${f.op}${f.value}`).join(","),
+    [filters]
+  );
+  const activeFilters = useMemo(
+    () => (filters && filters.length > 0 ? [...filters] : undefined),
+    [filterKey]
+  );
+
   useEffect(() => {
     setPage(0);
-  }, [datasetId, wanted, limit]);
+  }, [datasetId, wanted, limit, filterKey]);
 
   useEffect(() => {
     let active = true;
@@ -49,6 +60,7 @@ export default function TableWidget({
       .queryRows({
         datasetId,
         columns: wanted,
+        filters: activeFilters,
         limit,
         offset: page * limit,
         sortColumn: sort?.column,
@@ -72,7 +84,7 @@ export default function TableWidget({
     return () => {
       active = false;
     };
-  }, [datasetId, wanted, limit, page, sort, reloadNonce]);
+  }, [datasetId, wanted, activeFilters, limit, page, sort, reloadNonce]);
 
   const pageCount = Math.max(1, Math.ceil(total / limit));
 

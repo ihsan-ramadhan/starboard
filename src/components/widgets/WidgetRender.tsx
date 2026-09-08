@@ -51,6 +51,11 @@ function valueColumns(widget: WidgetDefinition): string[] | undefined {
   return picked.length > 1 ? picked : undefined;
 }
 
+function usableFilters(widget: WidgetDefinition) {
+  const active = (widget.filters ?? []).filter((f) => f.column && f.value !== "");
+  return active.length > 0 ? active : undefined;
+}
+
 function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
   if (widget.type === "table") return null;
 
@@ -73,6 +78,7 @@ function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
     seriesColumn: multi ? undefined : widget.seriesColumn,
     limit: widget.limit ?? 10,
     orderByKey: widget.type === "line" || widget.type === "area",
+    filters: usableFilters(widget),
   };
 }
 
@@ -131,6 +137,7 @@ export default function WidgetRender({
         datasetId={widget.datasetId}
         columns={columns}
         selected={widget.tableColumns}
+        filters={usableFilters(widget)}
         limit={widget.limit ?? 25}
         reloadNonce={reloadNonce}
       />

@@ -1,7 +1,11 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use tokio_postgres::Client;
 
-use crate::types::{RowsQueryRequest, RowsQueryResult, WidgetQueryRequest, WidgetQueryResult};
+use tokio_postgres::types::ToSql;
+
+use crate::types::{
+    RowsQueryRequest, RowsQueryResult, WidgetFilter, WidgetQueryRequest, WidgetQueryResult,
+};
 
 const MAX_SERIES: i64 = 8;
 const OTHER_SERIES: &str = "Lainnya";
@@ -57,29 +61,104 @@ async fn resolve_table(
     }
 }
 
-struct ColumnGuard(HashSet<String>);
+struct ColumnGuard(HashMap<String, String>);
 
 impl ColumnGuard {
     async fn load(client: &Client, dataset_id: &str) -> Result<Self, String> {
         let rows = client
             .query(
-                r#"SELECT name FROM dataset_columns WHERE "datasetId" = $1"#,
+                r#"SELECT name, type FROM dataset_columns WHERE "datasetId" = $1"#,
                 &[&dataset_id.to_string()],
             )
             .await
             .map_err(|e| e.to_string())?;
 
-        let mut names: HashSet<String> = rows.iter().map(|r| r.get::<_, String>(0)).collect();
-        names.insert("id".to_string());
-        Ok(Self(names))
+        let mut types: HashMap<String, String> = rows
+            .iter()
+            .map(|r| (r.get::<_, String>(0), r.get::<_, String>(1)))
+            .collect();
+        types.insert("id".to_string(), "category".to_string());
+        Ok(Self(types))
     }
 
     fn check(&self, column: &str) -> Result<(), String> {
-        if self.0.contains(column) {
+        if self.0.contains_key(column) {
             Ok(())
         } else {
             Err(format!("Kolom \"{}\" tidak dikenal pada dataset ini.", column))
         }
+    }
+
+    fn type_of(&self, column: &str) -> Option<&str> {
+        self.0.get(column).map(String::as_str)
+    }
+}
+
+fn filter_conditions(
+    filters: &[WidgetFilter],
+    guard: &ColumnGuard,
+    alias: &str,
+) -> Result<Vec<String>, String> {
+    let mut conditions = Vec::new();
+
+    for (index, filter) in filters.iter().enumerate() {
+        guard.check(&filter.column)?;
+        let slot = index + 1;
+        let column = format!("{}\"{}\"", alias, filter.column);
+        let kind = guard.type_of(&filter.column).unwrap_or("category");
+        let op = filter.op.to_lowercase();
+
+        let comparison = match op.as_str() {
+            "eq" => "=",
+            "ne" => "<>",
+            "gt" => ">",
+            "gte" => ">=",
+            "lt" => "<",
+            "lte" => "<=",
+            "contains" => "",
+            _ => return Err(format!("Operator \"{}\" tidak dikenal.", filter.op)),
+        };
+
+        let ordered = matches!(op.as_str(), "gt" | "gte" | "lt" | "lte");
+
+        conditions.push(match kind {
+            "numeric" if op == "contains" => {
+                return Err("Operator \"mengandung\" tidak berlaku untuk kolom angka.".to_string())
+            }
+            "date" if op == "contains" => {
+                return Err("Operator \"mengandung\" tidak berlaku untuk kolom tanggal.".to_string())
+            }
+            "numeric" => format!("{} {} ${}::numeric", column, comparison, slot),
+            "date" => format!("{} {} ${}::date", column, comparison, slot),
+            _ if ordered => {
+                return Err(format!(
+                    "Kolom \"{}\" bertipe teks, jadi tidak bisa dibandingkan lebih besar/kecil.",
+                    filter.column
+                ))
+            }
+            _ if op == "contains" => {
+                format!("strpos(lower({}::text), lower(${}::text)) > 0", column, slot)
+            }
+            _ => format!("{}::text {} ${}", column, comparison, slot),
+        });
+    }
+
+    Ok(conditions)
+}
+
+fn filter_values(filters: &[WidgetFilter]) -> Vec<String> {
+    filters.iter().map(|f| f.value.clone()).collect()
+}
+
+fn as_params(values: &[String]) -> Vec<&(dyn ToSql + Sync)> {
+    values.iter().map(|v| v as &(dyn ToSql + Sync)).collect()
+}
+
+fn where_clause(conditions: &[String]) -> String {
+    if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
     }
 }
 
@@ -140,8 +219,20 @@ pub async fn execute_widget_query(
         guard.check(column)?;
     }
 
+    let filters = req.filters.clone().unwrap_or_default();
+    let values = filter_values(&filters);
+    let plain_conditions = filter_conditions(&filters, &guard, "")?;
+
     let Some(group_column) = req.group_by_column.clone() else {
-        return scalar_query(client, &table, &req.metric, &value_columns).await;
+        return scalar_query(
+            client,
+            &table,
+            &req.metric,
+            &value_columns,
+            &plain_conditions,
+            &values,
+        )
+        .await;
     };
     guard.check(&group_column)?;
 
@@ -150,6 +241,7 @@ pub async fn execute_widget_query(
 
     if let Some(series_column) = req.series_column.clone() {
         guard.check(&series_column)?;
+        let aliased_conditions = filter_conditions(&filters, &guard, "t.")?;
         return pivot_query(
             client,
             &table,
@@ -159,6 +251,9 @@ pub async fn execute_widget_query(
             &series_column,
             limit,
             by_key,
+            &plain_conditions,
+            &aliased_conditions,
+            &values,
         )
         .await;
     }
@@ -171,6 +266,8 @@ pub async fn execute_widget_query(
         &group_column,
         limit,
         by_key,
+        &plain_conditions,
+        &values,
     )
     .await
 }
@@ -180,14 +277,23 @@ async fn scalar_query(
     table: &str,
     metric: &str,
     value_columns: &[String],
+    conditions: &[String],
+    values: &[String],
 ) -> Result<WidgetQueryResult, String> {
+    let params = as_params(values);
+    let filter_sql = where_clause(conditions);
+
     if value_columns.len() <= 1 {
         let sql = format!(
-            r#"SELECT {} FROM "{}""#,
+            r#"SELECT {} FROM "{}" {}"#,
             aggregate(metric, value_columns.first(), ""),
-            table
+            table,
+            filter_sql
         );
-        let row = client.query_one(&sql, &[]).await.map_err(|e| e.to_string())?;
+        let row = client
+            .query_one(&sql, &params)
+            .await
+            .map_err(|e| e.to_string())?;
 
         return Ok(WidgetQueryResult {
             scalar_value: Some(decimal_at(&row, 0)),
@@ -200,8 +306,16 @@ async fn scalar_query(
         .iter()
         .map(|c| aggregate(metric, Some(c), ""))
         .collect();
-    let sql = format!(r#"SELECT {} FROM "{}""#, selects.join(", "), table);
-    let row = client.query_one(&sql, &[]).await.map_err(|e| e.to_string())?;
+    let sql = format!(
+        r#"SELECT {} FROM "{}" {}"#,
+        selects.join(", "),
+        table,
+        filter_sql
+    );
+    let row = client
+        .query_one(&sql, &params)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let rows = value_columns
         .iter()
@@ -230,6 +344,8 @@ async fn grouped_query(
     group_column: &str,
     limit: i64,
     by_key: bool,
+    conditions: &[String],
+    values: &[String],
 ) -> Result<WidgetQueryResult, String> {
     let selects: Vec<String> = if value_columns.len() <= 1 {
         vec![aggregate(metric, value_columns.first(), "")]
@@ -247,11 +363,17 @@ async fn grouped_query(
         .map(|(idx, expr)| format!("{} AS v{}", expr, idx))
         .collect();
 
+    let mut all = vec![
+        format!("\"{}\" IS NOT NULL", group_column),
+        format!("\"{}\"::text != ''", group_column),
+    ];
+    all.extend_from_slice(conditions);
+
     let sql = format!(
         r#"
         SELECT "{group}"::text AS group_key, {selects}
         FROM "{table}"
-        WHERE "{group}" IS NOT NULL AND "{group}"::text != ''
+        {filters}
         GROUP BY 1
         ORDER BY {order}
         LIMIT {limit}
@@ -259,11 +381,16 @@ async fn grouped_query(
         group = group_column,
         selects = aliased.join(", "),
         table = table,
+        filters = where_clause(&all),
         order = order,
         limit = limit,
     );
 
-    let db_rows = client.query(&sql, &[]).await.map_err(|e| e.to_string())?;
+    let params = as_params(values);
+    let db_rows = client
+        .query(&sql, &params)
+        .await
+        .map_err(|e| e.to_string())?;
     let mut rows = Vec::new();
 
     for row in &db_rows {
@@ -300,16 +427,37 @@ async fn pivot_query(
     series_column: &str,
     limit: i64,
     by_key: bool,
+    conditions: &[String],
+    aliased_conditions: &[String],
+    values: &[String],
 ) -> Result<WidgetQueryResult, String> {
     let outer_order = if by_key { "1 ASC, 2 ASC" } else { "4 DESC, 2 ASC" };
     let inner_order = if by_key { "1 ASC" } else { "2 DESC" };
+
+    let mut group_conds = vec![
+        format!("\"{}\" IS NOT NULL", group_column),
+        format!("\"{}\"::text != ''", group_column),
+    ];
+    group_conds.extend_from_slice(conditions);
+
+    let mut series_conds = vec![
+        format!("\"{}\" IS NOT NULL", series_column),
+        format!("\"{}\"::text != ''", series_column),
+    ];
+    series_conds.extend_from_slice(conditions);
+
+    let mut outer_conds = vec![
+        format!("t.\"{}\" IS NOT NULL", series_column),
+        format!("t.\"{}\"::text != ''", series_column),
+    ];
+    outer_conds.extend_from_slice(aliased_conditions);
 
     let sql = format!(
         r#"
         WITH top_groups AS (
             SELECT "{group}"::text AS group_key, {agg_plain} AS total
             FROM "{table}"
-            WHERE "{group}" IS NOT NULL AND "{group}"::text != ''
+            {group_filters}
             GROUP BY 1
             ORDER BY {inner_order}
             LIMIT {limit}
@@ -317,7 +465,7 @@ async fn pivot_query(
         top_series AS (
             SELECT "{series}"::text AS series_key
             FROM "{table}"
-            WHERE "{series}" IS NOT NULL AND "{series}"::text != ''
+            {series_filters}
             GROUP BY 1
             ORDER BY {agg_plain} DESC
             LIMIT {max_series}
@@ -333,7 +481,7 @@ async fn pivot_query(
             g.total
         FROM "{table}" t
         JOIN top_groups g ON t."{group}"::text = g.group_key
-        WHERE t."{series}" IS NOT NULL AND t."{series}"::text != ''
+        {outer_filters}
         GROUP BY 1, 2, 4
         ORDER BY {outer_order}
         "#,
@@ -342,6 +490,9 @@ async fn pivot_query(
         table = table,
         agg_plain = aggregate(metric, value_column, ""),
         agg_alias = aggregate(metric, value_column, "t."),
+        group_filters = where_clause(&group_conds),
+        series_filters = where_clause(&series_conds),
+        outer_filters = where_clause(&outer_conds),
         inner_order = inner_order,
         outer_order = outer_order,
         limit = limit,
@@ -349,7 +500,11 @@ async fn pivot_query(
         other = OTHER_SERIES,
     );
 
-    let db_rows = client.query(&sql, &[]).await.map_err(|e| e.to_string())?;
+    let params = as_params(values);
+    let db_rows = client
+        .query(&sql, &params)
+        .await
+        .map_err(|e| e.to_string())?;
     let mut rows = Vec::new();
 
     for row in &db_rows {
@@ -421,24 +576,37 @@ pub async fn execute_rows_query(
         None => String::new(),
     };
 
+    let filters = req.filters.clone().unwrap_or_default();
+    let values = filter_values(&filters);
+    let conditions = filter_conditions(&filters, &guard, "")?;
+    let filter_sql = where_clause(&conditions);
+    let params = as_params(&values);
+
     let projection: Vec<String> = columns.iter().map(|c| format!("\"{}\"", c)).collect();
     let sql = format!(
-        r#"SELECT {} FROM "{}" {} LIMIT {} OFFSET {}"#,
+        r#"SELECT {} FROM "{}" {} {} LIMIT {} OFFSET {}"#,
         projection.join(", "),
         table,
+        filter_sql,
         order,
         limit,
         offset
     );
 
-    let db_rows = client.query(&sql, &[]).await.map_err(|e| e.to_string())?;
+    let db_rows = client
+        .query(&sql, &params)
+        .await
+        .map_err(|e| e.to_string())?;
     let rows = db_rows
         .iter()
         .map(|r| serde_json::Value::Object(row_to_json(r)))
         .collect();
 
-    let count_sql = format!(r#"SELECT count(*)::bigint FROM "{}""#, table);
-    let total: i64 = match client.query_one(&count_sql, &[]).await {
+    let count_sql = format!(
+        r#"SELECT count(*)::bigint FROM "{}" {}"#,
+        table, filter_sql
+    );
+    let total: i64 = match client.query_one(&count_sql, &params).await {
         Ok(r) => r.get(0),
         Err(_) => 0,
     };

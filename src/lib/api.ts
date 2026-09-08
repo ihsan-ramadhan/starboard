@@ -5,6 +5,7 @@ import type {
   WidgetQueryResult,
   RowsQueryResult,
   WidgetDefinition,
+  WidgetFilter,
 } from "../types";
 import type { DetectedSheet } from "../components/ImportWizard";
 
@@ -74,6 +75,7 @@ export type WidgetQuery = {
   seriesColumn?: string;
   limit?: number;
   orderByKey?: boolean;
+  filters?: WidgetFilter[];
 };
 
 export type RowsQuery = {
@@ -83,6 +85,7 @@ export type RowsQuery = {
   offset?: number;
   sortColumn?: string;
   sortDir?: "asc" | "desc";
+  filters?: WidgetFilter[];
 };
 
 const WIDGET_CACHE_TTL_MS = 30_000;
@@ -98,6 +101,7 @@ function widgetDataKey(q: WidgetQuery) {
     q.seriesColumn,
     q.limit,
     q.orderByKey,
+    q.filters?.map((f) => `${f.column}${f.op}${f.value}`).join(","),
   ].join("|");
 }
 

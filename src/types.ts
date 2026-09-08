@@ -73,6 +73,31 @@ export type WidgetType =
 
 export type SeriesMode = "grouped" | "stacked" | "stacked100";
 
+export type FilterOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains";
+
+export type WidgetFilter = {
+  column: string;
+  op: FilterOp;
+  value: string;
+};
+
+export const FILTER_OP_LABEL: Record<FilterOp, string> = {
+  eq: "sama dengan",
+  ne: "tidak sama",
+  gt: "lebih dari",
+  gte: "minimal",
+  lt: "kurang dari",
+  lte: "maksimal",
+  contains: "mengandung",
+};
+
+const ORDERED_OPS: FilterOp[] = ["eq", "ne", "gt", "gte", "lt", "lte"];
+const TEXT_OPS: FilterOp[] = ["eq", "ne", "contains"];
+
+export function opsForColumn(type: DatasetColumn["type"]): FilterOp[] {
+  return type === "numeric" || type === "date" ? ORDERED_OPS : TEXT_OPS;
+}
+
 export type DateMode =
   | "yearRemaining"
   | "quarterRemaining"
@@ -114,6 +139,7 @@ export type WidgetDefinition = {
   lineColumn?: string;
   targetColumn?: string;
   showTrendline?: boolean;
+  filters?: WidgetFilter[];
   tableColumns?: string[];
   dateMode?: DateMode;
   targetDate?: string;

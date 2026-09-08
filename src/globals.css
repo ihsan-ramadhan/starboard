@@ -2539,3 +2539,68 @@ dialog.modal-native::backdrop {
 .chart-note-hide:hover {
   color: #78350f;
 }
+
+.builder-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.builder-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.builder-filter-row .builder-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.builder-filter-op {
+  flex: 0 0 47%;
+}
+
+.builder-filter-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+
+.builder-filter-remove:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: #b91c1c;
+}
+
+.builder-filter-add {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.builder-filter-add:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}

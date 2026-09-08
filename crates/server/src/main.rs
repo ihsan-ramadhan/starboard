@@ -82,6 +82,8 @@ struct WidgetPayload {
     target_column: Option<String>,
     #[serde(rename = "showTrendline", default)]
     show_trendline: Option<bool>,
+    #[serde(default)]
+    filters: Option<Vec<crate::types::WidgetFilter>>,
     #[serde(rename = "tableColumns", default)]
     table_columns: Option<Vec<String>>,
     #[serde(rename = "dateMode", default)]

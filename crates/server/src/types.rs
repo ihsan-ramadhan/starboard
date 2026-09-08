@@ -86,6 +86,13 @@ pub struct DetectedSheet {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WidgetFilter {
+    pub column: String,
+    pub op: String,
+    pub value: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WidgetQueryRequest {
     #[serde(rename = "datasetId")]
     pub dataset_id: String,
@@ -101,6 +108,7 @@ pub struct WidgetQueryRequest {
     pub limit: Option<i64>,
     #[serde(rename = "orderByKey")]
     pub order_by_key: Option<bool>,
+    pub filters: Option<Vec<WidgetFilter>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -123,6 +131,7 @@ pub struct RowsQueryRequest {
     pub sort_column: Option<String>,
     #[serde(rename = "sortDir")]
     pub sort_dir: Option<String>,
+    pub filters: Option<Vec<WidgetFilter>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -3,11 +3,18 @@ import type {
   CurrencyCode,
   DateMode,
   DatasetColumn,
+  FilterOp,
   SeriesMode,
   WidgetDefinition,
+  WidgetFilter,
   WidgetType,
 } from "../../types";
-import { CURRENCY_LABEL, DATE_MODE_LABEL } from "../../types";
+import {
+  CURRENCY_LABEL,
+  DATE_MODE_LABEL,
+  FILTER_OP_LABEL,
+  opsForColumn,
+} from "../../types";
 import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
 import BarChartIcon from "../../assets/icons/chart-bar.svg?react";
 import LineChartIcon from "../../assets/icons/chart-line.svg?react";
@@ -46,6 +53,7 @@ type Caps = {
   unit: boolean;
   table: boolean;
   date: boolean;
+  filter: boolean;
 };
 
 const NO_CAPS: Caps = {
@@ -61,16 +69,17 @@ const NO_CAPS: Caps = {
   unit: false,
   table: false,
   date: false,
+  filter: false,
 };
 
 const CAPS: Record<WidgetType, Caps> = {
-  kpi: { ...NO_CAPS, values: "one", target: true, money: true, unit: true },
-  bar: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true },
-  line: { ...NO_CAPS, values: "many", group: true, series: true, trend: true, limit: true, money: true },
-  area: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true },
-  combo: { ...NO_CAPS, values: "many", group: true, combo: true, limit: true, money: true },
-  pie: { ...NO_CAPS, values: "one", group: true, limit: true, money: true },
-  table: { ...NO_CAPS, table: true, limit: true },
+  kpi: { ...NO_CAPS, values: "one", target: true, money: true, unit: true, filter: true },
+  bar: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
+  line: { ...NO_CAPS, values: "many", group: true, series: true, trend: true, limit: true, money: true, filter: true },
+  area: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
+  combo: { ...NO_CAPS, values: "many", group: true, combo: true, limit: true, money: true, filter: true },
+  pie: { ...NO_CAPS, values: "one", group: true, limit: true, money: true, filter: true },
+  table: { ...NO_CAPS, table: true, limit: true, filter: true },
   date: { ...NO_CAPS, date: true },
 };
 
@@ -107,6 +116,7 @@ type Draft = {
   lineColumn: string;
   targetColumn: string;
   showTrendline: boolean;
+  filters: WidgetFilter[];
   tableColumns: string[];
   dateMode: DateMode;
   targetDate: string;
@@ -128,6 +138,7 @@ const BLANK: Draft = {
   lineColumn: "",
   targetColumn: "",
   showTrendline: false,
+  filters: [],
   tableColumns: [],
   dateMode: "yearRemaining",
   targetDate: "",
@@ -151,6 +162,7 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     lineColumn: widget.lineColumn ?? "",
     targetColumn: widget.targetColumn ?? "",
     showTrendline: widget.showTrendline ?? false,
+    filters: widget.filters ?? [],
     tableColumns: widget.tableColumns ?? [],
     dateMode: widget.dateMode ?? "yearRemaining",
     targetDate: widget.targetDate ?? "",
@@ -242,6 +254,38 @@ export default function WidgetBuilderSidebar({
     });
   }
 
+  function updateFilter(index: number, patch: Partial<WidgetFilter>) {
+    setDraft((current) => ({
+      ...current,
+      filters: current.filters.map((f, i) => (i === index ? { ...f, ...patch } : f)),
+    }));
+  }
+
+  function changeFilterColumn(index: number, column: string) {
+    const type = columns.find((c) => c.name === column)?.type ?? "category";
+    const allowed = opsForColumn(type);
+    const current = draft.filters[index]?.op;
+    updateFilter(index, {
+      column,
+      op: current && allowed.includes(current) ? current : allowed[0],
+      value: "",
+    });
+  }
+
+  function addFilter() {
+    setDraft((current) => ({
+      ...current,
+      filters: [...current.filters, { column: "", op: "eq", value: "" }],
+    }));
+  }
+
+  function removeFilter(index: number) {
+    setDraft((current) => ({
+      ...current,
+      filters: current.filters.filter((_, i) => i !== index),
+    }));
+  }
+
   function blocked(): string | null {
     if (!draft.title.trim()) return "Judul widget belum diisi.";
 
@@ -265,6 +309,9 @@ export default function WidgetBuilderSidebar({
     if (caps.date && draft.dateMode === "sinceColumn" && !draft.metricColumn) {
       return "Kolom tanggal belum dipilih.";
     }
+    if (draft.filters.some((f) => f.column && f.value === "")) {
+      return "Nilai filter belum diisi.";
+    }
     return null;
   }
 
@@ -275,6 +322,7 @@ export default function WidgetBuilderSidebar({
     if (problem) return;
 
     const money = caps.money && draft.isCurrency;
+    const cleanFilters = draft.filters.filter((f) => f.column && f.value !== "");
 
     const widget: WidgetDefinition = {
       id: editing?.id ?? createId(),
@@ -295,6 +343,7 @@ export default function WidgetBuilderSidebar({
       lineColumn: caps.combo ? draft.lineColumn : undefined,
       targetColumn: caps.target ? draft.targetColumn || undefined : undefined,
       showTrendline: caps.trend ? draft.showTrendline : undefined,
+      filters: caps.filter && cleanFilters.length > 0 ? cleanFilters : undefined,
       tableColumns: caps.table ? draft.tableColumns : undefined,
       dateMode: caps.date ? draft.dateMode : undefined,
       targetDate: caps.date && draft.dateMode === "untilDate" ? draft.targetDate : undefined,
@@ -642,6 +691,89 @@ export default function WidgetBuilderSidebar({
                 </label>
               )}
             </section>
+
+            {caps.filter && (
+              <section className="builder-section">
+                <span className="builder-section-title">Filter</span>
+
+                {draft.filters.length === 0 && (
+                  <p className="builder-field-desc">
+                    Tanpa filter, widget memakai seluruh baris dataset.
+                  </p>
+                )}
+
+                {draft.filters.map((filter, index) => {
+                  const column = columns.find((c) => c.name === filter.column);
+                  const allowed = opsForColumn(column?.type ?? "category");
+                  const inputType =
+                    column?.type === "date"
+                      ? "date"
+                      : column?.type === "numeric"
+                        ? "number"
+                        : "text";
+
+                  return (
+                    <div key={index} className="builder-filter">
+                      <div className="builder-filter-row">
+                        <select
+                          value={filter.column}
+                          onChange={(e) => changeFilterColumn(index, e.target.value)}
+                          className="builder-input"
+                          aria-label="Kolom filter"
+                        >
+                          <option value="">— Pilih kolom —</option>
+                          {columns.map((c) => (
+                            <option key={c.name} value={c.name}>
+                              {c.label || c.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="builder-filter-remove"
+                          onClick={() => removeFilter(index)}
+                          aria-label="Hapus filter ini"
+                          title="Hapus filter ini"
+                        >
+                          <TrashIcon width={13} height={13} />
+                        </button>
+                      </div>
+
+                      <div className="builder-filter-row">
+                        <select
+                          value={filter.op}
+                          onChange={(e) =>
+                            updateFilter(index, { op: e.target.value as FilterOp })
+                          }
+                          className="builder-input builder-filter-op"
+                          disabled={!filter.column}
+                          aria-label="Operator filter"
+                        >
+                          {allowed.map((op) => (
+                            <option key={op} value={op}>
+                              {FILTER_OP_LABEL[op]}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type={inputType}
+                          value={filter.value}
+                          onChange={(e) => updateFilter(index, { value: e.target.value })}
+                          className="builder-input"
+                          placeholder="Nilai"
+                          disabled={!filter.column}
+                          aria-label="Nilai filter"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <button type="button" className="builder-filter-add" onClick={addFilter}>
+                  + Tambah filter
+                </button>
+              </section>
+            )}
 
             {(caps.money || caps.unit) && (
               <section className="builder-section">
