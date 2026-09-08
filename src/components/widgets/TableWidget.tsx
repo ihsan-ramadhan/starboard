@@ -142,7 +142,12 @@ export default function TableWidget({
       {error ? (
         <div className="widget-empty">{error}</div>
       ) : rows === null ? (
-        <div className="widget-empty">Memuat data…</div>
+        <div className="sk-table" aria-busy="true" aria-label={`Memuat ${title}`}>
+          <span className="sk sk-row sk-row-head" />
+          {Array.from({ length: Math.min(limit, 6) }, (_, i) => (
+            <span key={i} className="sk sk-row" />
+          ))}
+        </div>
       ) : rows.length === 0 && total === 0 ? (
         <div className="widget-empty">Tidak ada baris untuk ditampilkan</div>
       ) : (

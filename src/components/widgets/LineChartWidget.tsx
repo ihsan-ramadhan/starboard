@@ -1,5 +1,4 @@
 import {
-  ResponsiveContainer,
   LineChart,
   Line,
   XAxis,
@@ -11,6 +10,7 @@ import {
 import type { CurrencyCode } from "../../types";
 import { TREND_KEY, withTrendline, type WideRow } from "../../lib/series";
 import {
+  ANIMATION_MS,
   ChartFrame,
   categoryAxisProps,
   gridProps,
@@ -56,9 +56,17 @@ export default function LineChartWidget({
     series === TREND_KEY ? "Garis tren" : labelOf(series);
 
   return (
-    <ChartFrame title={title} isEmpty={data.length === 0} note={note} onHideNote={onHideNote}>
-      <ResponsiveContainer width="100%" height="100%">
+    <ChartFrame
+      title={title}
+      isEmpty={data.length === 0}
+      note={note}
+      onHideNote={onHideNote}
+      resetKey={data}
+    >
+      {(chartWidth, chartHeight, animate) => (
         <LineChart
+          width={chartWidth}
+          height={chartHeight}
           data={plotted}
           margin={{ top: 10, right: 15, left: 0, bottom: 8 }}
         >
@@ -74,6 +82,9 @@ export default function LineChartWidget({
           {seriesKeys.map((key) => (
             <Line
               key={key}
+              isAnimationActive={animate}
+              animationDuration={ANIMATION_MS}
+              animationEasing="ease-out"
               type="monotone"
               dataKey={key}
               name={key}
@@ -86,6 +97,9 @@ export default function LineChartWidget({
           ))}
           {trendable && (
             <Line
+              isAnimationActive={animate}
+              animationDuration={ANIMATION_MS}
+              animationEasing="ease-out"
               type="linear"
               dataKey={TREND_KEY}
               name={TREND_KEY}
@@ -97,7 +111,7 @@ export default function LineChartWidget({
             />
           )}
         </LineChart>
-      </ResponsiveContainer>
+      )}
     </ChartFrame>
   );
 }

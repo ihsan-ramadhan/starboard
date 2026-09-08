@@ -1,5 +1,4 @@
 import {
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
@@ -11,6 +10,7 @@ import {
 import type { CurrencyCode, SeriesMode } from "../../types";
 import type { WideRow } from "../../lib/series";
 import {
+  ANIMATION_MS,
   ChartFrame,
   categoryAxisProps,
   gridProps,
@@ -52,9 +52,17 @@ export default function BarChartWidget({
   const multi = seriesKeys.length > 1;
 
   return (
-    <ChartFrame title={title} isEmpty={data.length === 0} note={note} onHideNote={onHideNote}>
-      <ResponsiveContainer width="100%" height="100%">
+    <ChartFrame
+      title={title}
+      isEmpty={data.length === 0}
+      note={note}
+      onHideNote={onHideNote}
+      resetKey={data}
+    >
+      {(chartWidth, chartHeight, animate) => (
         <BarChart
+          width={chartWidth}
+          height={chartHeight}
           data={data as WideRow[]}
           margin={{ top: 10, right: 10, left: 0, bottom: 8 }}
           barGap={2}
@@ -75,6 +83,9 @@ export default function BarChartWidget({
           {seriesKeys.map((key, index) => (
             <Bar
               key={key}
+              isAnimationActive={animate}
+              animationDuration={ANIMATION_MS}
+              animationEasing="ease-out"
               dataKey={key}
               name={key}
               fill={colors[key]}
@@ -89,7 +100,7 @@ export default function BarChartWidget({
             />
           ))}
         </BarChart>
-      </ResponsiveContainer>
+      )}
     </ChartFrame>
   );
 }

@@ -36,7 +36,8 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { refreshDatasets, editMode, setEditMode } = useApp();
+  const { refreshDatasets, datasetsLoaded, setWidgetCache, editMode, setEditMode } =
+    useApp();
   const admin = isAdmin(user);
   const arranging = admin && editMode;
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -177,6 +178,10 @@ export function Sidebar({
     setIsDeletingDataset(true);
     try {
       await api.deleteDataset(datasetToDelete.id);
+      setWidgetCache((prev) => {
+        const { [datasetToDelete.key]: _removed, ...rest } = prev;
+        return rest;
+      });
       await refreshDatasets();
       toast.success(`Dataset "${datasetToDelete.displayName}" berhasil dihapus.`);
       if (activeKey === datasetToDelete.key) navigate("/", { replace: true });
@@ -225,7 +230,13 @@ export function Sidebar({
         </div>
 
         <nav className="sidebar-nav" ref={listRef}>
-          {items.length === 0 ? (
+          {!datasetsLoaded ? (
+            <div className="sk-nav" aria-busy="true" aria-label="Memuat daftar dataset">
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="sk sk-nav-row" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
             <span className="nav-empty">
               {admin
                 ? "Belum ada dataset. Mulai dari Import Dataset di bawah."

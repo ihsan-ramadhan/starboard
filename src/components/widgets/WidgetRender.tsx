@@ -11,6 +11,7 @@ import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
 import { formatCount } from "../../lib/format";
 import { foldOthers, pivotSeries, scaleMismatch, seriesLabeller } from "../../lib/series";
 import KpiCard from "./KpiCard";
+import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
 import BarChartWidget from "./BarChartWidget";
@@ -29,16 +30,7 @@ const MAX_PIE_SLICES = 8;
 
 const SCALE_MISMATCH_RATIO = 200;
 
-function WidgetLoading({ title }: { readonly title: string }) {
-  return (
-    <div className="chart-wrapper">
-      <h4 className="widget-title">{title}</h4>
-      <div className="chart-body">
-        <div className="widget-empty">Memuat data…</div>
-      </div>
-    </div>
-  );
-}
+
 
 function valueColumns(widget: WidgetDefinition): string[] | undefined {
   if (widget.type === "kpi") {
@@ -155,7 +147,7 @@ function WidgetRender({
     if (mode !== "sinceColumn") {
       return <DateCard label={widget.title} mode={mode} targetDate={widget.targetDate} />;
     }
-    if (query && !result) return <WidgetLoading title={widget.title} />;
+    if (query && !result) return <WidgetSkeleton widget={widget} />;
     return (
       <DateCard
         label={widget.title}
@@ -179,7 +171,7 @@ function WidgetRender({
   }
 
   if (!result) {
-    return <WidgetLoading title={widget.title} />;
+    return <WidgetSkeleton widget={widget} />;
   }
 
   if (widget.type === "kpi") {

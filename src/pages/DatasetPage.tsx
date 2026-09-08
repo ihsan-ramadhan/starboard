@@ -23,8 +23,6 @@ import {
   type WidgetType,
 } from "../types";
 
-const RESIZE_SETTLE_MS = 32;
-
 const GRID_COLS = 12;
 
 function formatSyncTime(iso: string | null): string | null {
@@ -91,6 +89,8 @@ export default function DatasetPage() {
     datasets,
     refreshDatasets,
     datasetCache,
+    widgetCache,
+    setWidgetCache,
     fetchDatasetDetail,
     syncStatuses,
     editMode,
@@ -107,7 +107,12 @@ export default function DatasetPage() {
 
   const [loading, setLoading] = useState(!detail);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
-  const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
+  const [widgets, setWidgets] = useState<WidgetDefinition[]>(
+    () => (key ? widgetCache[key] : undefined) ?? []
+  );
+  const [widgetsLoaded, setWidgetsLoaded] = useState(
+    () => Boolean(key && widgetCache[key])
+  );
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -124,37 +129,30 @@ export default function DatasetPage() {
   const pendingSaveRef = useRef<(() => void) | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const resizeTimerRef = useRef<number | null>(null);
 
   const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
     if (resizeObserverRef.current) {
       resizeObserverRef.current.disconnect();
       resizeObserverRef.current = null;
     }
-    if (resizeTimerRef.current !== null) {
-      window.clearTimeout(resizeTimerRef.current);
-      resizeTimerRef.current = null;
-    }
-
     if (node) {
       const update = () => {
         const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
         if (width > 0) {
-          setContainerWidth(Math.floor(width));
+          const next = Math.floor(width);
+          setContainerWidth((prev) => (prev === next ? prev : next));
         }
       };
 
       requestAnimationFrame(update);
-      const ro = new ResizeObserver(() => {
-        if (resizeTimerRef.current === null) {
-          update();
-        } else {
-          window.clearTimeout(resizeTimerRef.current);
+      const ro = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry) {
+          const next = Math.floor(entry.contentRect.width);
+          if (next > 0) {
+            setContainerWidth((prev) => (prev === next ? prev : next));
+          }
         }
-        resizeTimerRef.current = window.setTimeout(() => {
-          resizeTimerRef.current = null;
-          update();
-        }, RESIZE_SETTLE_MS);
       });
       ro.observe(node);
       resizeObserverRef.current = ro;
@@ -167,7 +165,9 @@ export default function DatasetPage() {
     const datasetKey = key;
 
     let active = true;
-    setWidgets([]);
+    const cached = widgetCache[datasetKey];
+    setWidgets(cached ?? []);
+    setWidgetsLoaded(Boolean(cached));
 
     async function load() {
       let d: DatasetDetail | null = datasetCache[datasetKey] ?? null;
@@ -184,19 +184,24 @@ export default function DatasetPage() {
       }
 
       const ds = d?.dataset;
-      if (!ds) return;
+      if (!ds) {
+        if (active) setWidgetsLoaded(true);
+        return;
+      }
 
       try {
         const w = await api.getWidgets(user.role, datasetKey);
         if (!active) return;
-        setWidgets(
-          w.map((item) => ({
-            ...item,
-            datasetId: item.datasetId || ds.id,
-          }))
-        );
+        const loaded = w.map((item) => ({
+          ...item,
+          datasetId: item.datasetId || ds.id,
+        }));
+        setWidgets(loaded);
+        setWidgetCache((prev) => ({ ...prev, [datasetKey]: loaded }));
       } catch (err) {
         console.error("Failed to load widgets:", err);
+      } finally {
+        if (active) setWidgetsLoaded(true);
       }
     }
 
@@ -316,8 +321,17 @@ export default function DatasetPage() {
 
   if (loading && !detail) {
     return (
-      <main className="content">
-        <div className="hint">Memuat dataset…</div>
+      <main className="content" aria-busy="true" aria-label={`Memuat dataset ${key}`}>
+        <div className="dataset-header">
+          <div className="dataset-heading">
+            <span className="sk sk-page-title" />
+            <span className="sk sk-page-meta" />
+          </div>
+        </div>
+        <div className="sk-page-grid">
+          <span className="sk sk-page-card" />
+          <span className="sk sk-page-card" />
+        </div>
       </main>
     );
   }
@@ -340,6 +354,7 @@ export default function DatasetPage() {
 
   function persistWidgets(next: WidgetDefinition[]) {
     if (!key) return;
+    setWidgetCache((prev) => ({ ...prev, [key]: next }));
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
     }
@@ -467,7 +482,12 @@ export default function DatasetPage() {
       </div>
 
       <div className="dashboard-container">
-        {widgets.length === 0 ? (
+        {!widgetsLoaded ? (
+          <div className="sk-page-grid" aria-busy="true" aria-label="Memuat widget">
+            <span className="sk sk-page-card" />
+            <span className="sk sk-page-card" />
+          </div>
+        ) : widgets.length === 0 ? (
           <div className="empty-widgets-card">
             <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
             {admin ? (

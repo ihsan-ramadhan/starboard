@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { DateMode } from "../../types";
 import { formatCount } from "../../lib/format";
 
@@ -101,7 +102,31 @@ function read(mode: DateMode, targetDate?: string, sinceDate?: string | null): R
   };
 }
 
+function useCurrentDay() {
+  const [day, setDay] = useState(() => new Date().toDateString());
+
+  useEffect(() => {
+    const sync = () => {
+      const next = new Date().toDateString();
+      setDay((current) => (current === next ? current : next));
+    };
+
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const timer = window.setTimeout(sync, midnight.getTime() - now.getTime() + 1000);
+    document.addEventListener("visibilitychange", sync);
+
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [day]);
+
+  return day;
+}
+
 export default function DateCard({ label, mode, targetDate, sinceDate }: DateCardProps) {
+  useCurrentDay();
   const reading = read(mode, targetDate, sinceDate);
 
   return (

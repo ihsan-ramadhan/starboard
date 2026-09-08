@@ -1,5 +1,4 @@
 import {
-  ResponsiveContainer,
   ComposedChart,
   Bar,
   Line,
@@ -12,6 +11,7 @@ import {
 import type { CurrencyCode } from "../../types";
 import type { WideRow } from "../../lib/series";
 import {
+  ANIMATION_MS,
   ChartFrame,
   categoryAxisProps,
   gridProps,
@@ -50,9 +50,17 @@ export default function ComboChartWidget({
   const barKeys = seriesKeys.filter((key) => !lineKeys.includes(key));
 
   return (
-    <ChartFrame title={title} isEmpty={data.length === 0} note={note} onHideNote={onHideNote}>
-      <ResponsiveContainer width="100%" height="100%">
+    <ChartFrame
+      title={title}
+      isEmpty={data.length === 0}
+      note={note}
+      onHideNote={onHideNote}
+      resetKey={data}
+    >
+      {(chartWidth, chartHeight, animate) => (
         <ComposedChart
+          width={chartWidth}
+          height={chartHeight}
           data={data as WideRow[]}
           margin={{ top: 10, right: 15, left: 0, bottom: 8 }}
           barGap={2}
@@ -72,6 +80,9 @@ export default function ComboChartWidget({
           {barKeys.map((key) => (
             <Bar
               key={key}
+              isAnimationActive={animate}
+              animationDuration={ANIMATION_MS}
+              animationEasing="ease-out"
               dataKey={key}
               name={key}
               fill={colors[key]}
@@ -81,6 +92,9 @@ export default function ComboChartWidget({
           {lineKeys.map((key) => (
             <Line
               key={key}
+              isAnimationActive={animate}
+              animationDuration={ANIMATION_MS}
+              animationEasing="ease-out"
               type="monotone"
               dataKey={key}
               name={key}
@@ -92,7 +106,7 @@ export default function ComboChartWidget({
             />
           ))}
         </ComposedChart>
-      </ResponsiveContainer>
+      )}
     </ChartFrame>
   );
 }

@@ -1,5 +1,4 @@
 import {
-  ResponsiveContainer,
   AreaChart,
   Area,
   XAxis,
@@ -11,6 +10,7 @@ import {
 import type { CurrencyCode, SeriesMode } from "../../types";
 import type { WideRow } from "../../lib/series";
 import {
+  ANIMATION_MS,
   ChartFrame,
   categoryAxisProps,
   gridProps,
@@ -52,9 +52,17 @@ export default function AreaChartWidget({
   const expanded = mode === "stacked100" && multi;
 
   return (
-    <ChartFrame title={title} isEmpty={data.length === 0} note={note} onHideNote={onHideNote}>
-      <ResponsiveContainer width="100%" height="100%">
+    <ChartFrame
+      title={title}
+      isEmpty={data.length === 0}
+      note={note}
+      onHideNote={onHideNote}
+      resetKey={data}
+    >
+      {(chartWidth, chartHeight, animate) => (
         <AreaChart
+          width={chartWidth}
+          height={chartHeight}
           data={data as WideRow[]}
           margin={{ top: 10, right: 15, left: 0, bottom: 8 }}
           stackOffset={expanded ? "expand" : undefined}
@@ -71,6 +79,9 @@ export default function AreaChartWidget({
           {seriesKeys.map((key) => (
             <Area
               key={key}
+              isAnimationActive={animate}
+              animationDuration={ANIMATION_MS}
+              animationEasing="ease-out"
               type="monotone"
               dataKey={key}
               name={key}
@@ -83,7 +94,7 @@ export default function AreaChartWidget({
             />
           ))}
         </AreaChart>
-      </ResponsiveContainer>
+      )}
     </ChartFrame>
   );
 }

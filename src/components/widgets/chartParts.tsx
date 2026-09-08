@@ -1,16 +1,54 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
 import { formatCompactValue, formatFullValue } from "../../lib/format";
 import { AXIS_COLOR, GRID_COLOR, TOOLTIP_STYLE } from "../../lib/palette";
 
 export type SeriesLabeller = (series: string) => string;
 
+function useElementSize(ref: React.RefObject<HTMLDivElement | null>) {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const rect = node.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      setSize({ w: Math.round(rect.width), h: Math.round(rect.height) });
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const w = Math.round(entry.contentRect.width);
+      const h = Math.round(entry.contentRect.height);
+      if (w <= 0 || h <= 0) return;
+
+      setSize((current) =>
+        current.w === w && current.h === h ? current : { w, h }
+      );
+    });
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [ref]);
+
+  return size;
+}
+
+export const ANIMATION_MS = 600;
+
 export type ChartFrameProps = {
   readonly title: string;
   readonly isEmpty: boolean;
   readonly note?: string;
   readonly onHideNote?: () => void;
-  readonly children: ReactNode;
+  readonly overlay?: ReactNode;
+  readonly resetKey?: unknown;
+  readonly children: (width: number, height: number, animate: boolean) => ReactNode;
 };
 
 export function ChartFrame({
@@ -18,8 +56,36 @@ export function ChartFrame({
   isEmpty,
   note,
   onHideNote,
+  overlay,
+  resetKey,
   children,
 }: ChartFrameProps) {
+  const box = useRef<HTMLDivElement>(null);
+  const size = useElementSize(box);
+  const animatedRef = useRef(false);
+  const lastResetKey = useRef(resetKey);
+
+  if (lastResetKey.current !== resetKey) {
+    lastResetKey.current = resetKey;
+    animatedRef.current = false;
+  }
+
+  const animate = !animatedRef.current && size.w > 0 && size.h > 0;
+
+  useEffect(() => {
+    if (animate) {
+      const timer = window.setTimeout(() => {
+        animatedRef.current = true;
+      }, ANIMATION_MS);
+      return () => window.clearTimeout(timer);
+    }
+  }, [animate]);
+
+  const content =
+    size.w === 0 || size.h === 0
+      ? null
+      : children(size.w, size.h, animate);
+
   return (
     <div className="chart-wrapper">
       <h4 className="widget-title" title={title}>
@@ -35,12 +101,13 @@ export function ChartFrame({
           )}
         </p>
       )}
-      <div className="chart-body">
+      <div className="chart-body" ref={box}>
         {isEmpty ? (
           <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
         ) : (
-          children
+          content
         )}
+        {!isEmpty && overlay}
       </div>
     </div>
   );

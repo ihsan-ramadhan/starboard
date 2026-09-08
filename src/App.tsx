@@ -6,7 +6,7 @@ import {
   createContext,
   useContext,
 } from "react";
-import { Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useParams } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import ImportPage from "./pages/ImportPage";
@@ -23,6 +23,7 @@ import {
   type SessionUser,
   type DatasetRegistry,
   type DatasetDetail,
+  type WidgetDefinition,
 } from "./types";
 
 type AppContextType = {
@@ -32,6 +33,10 @@ type AppContextType = {
   datasetCache: Record<string, DatasetDetail>;
   setDatasetCache: React.Dispatch<
     React.SetStateAction<Record<string, DatasetDetail>>
+  >;
+  widgetCache: Record<string, WidgetDefinition[]>;
+  setWidgetCache: React.Dispatch<
+    React.SetStateAction<Record<string, WidgetDefinition[]>>
   >;
   fetchDatasetDetail: (
     key: string,
@@ -48,6 +53,17 @@ type AppContextType = {
 
 const REGISTRY_POLL_MS = 20_000;
 
+const WIDGET_CACHE_KEY = "starboard_widget_layout";
+
+function readWidgetCache(): Record<string, WidgetDefinition[]> {
+  try {
+    const raw = localStorage.getItem(WIDGET_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, WidgetDefinition[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
 const AppContext = createContext<AppContextType | null>(null);
 
 export function useApp() {
@@ -63,6 +79,10 @@ type ProtectedLayoutProps = {
   readonly datasetCache: Record<string, DatasetDetail>;
   readonly setDatasetCache: React.Dispatch<
     React.SetStateAction<Record<string, DatasetDetail>>
+  >;
+  readonly widgetCache: Record<string, WidgetDefinition[]>;
+  readonly setWidgetCache: React.Dispatch<
+    React.SetStateAction<Record<string, WidgetDefinition[]>>
   >;
   readonly fetchDatasetDetail: (
     key: string,
@@ -82,6 +102,8 @@ function ProtectedLayout({
   datasetsLoaded,
   datasetCache,
   setDatasetCache,
+  widgetCache,
+  setWidgetCache,
   fetchDatasetDetail,
   refreshDatasets,
   onLogout,
@@ -99,6 +121,8 @@ function ProtectedLayout({
       datasetsLoaded,
       datasetCache,
       setDatasetCache,
+      widgetCache,
+      setWidgetCache,
       fetchDatasetDetail,
       refreshDatasets,
       onLogout,
@@ -114,6 +138,8 @@ function ProtectedLayout({
       datasetsLoaded,
       datasetCache,
       setDatasetCache,
+      widgetCache,
+      setWidgetCache,
       fetchDatasetDetail,
       refreshDatasets,
       onLogout,
@@ -133,6 +159,11 @@ function ProtectedLayout({
       </div>
     </AppContext.Provider>
   );
+}
+
+function DatasetRoute() {
+  const { key } = useParams<{ key: string }>();
+  return <DatasetPage key={key} />;
 }
 
 export default function App() {
@@ -157,6 +188,9 @@ export default function App() {
   const [datasetCache, setDatasetCache] = useState<
     Record<string, DatasetDetail>
   >({});
+  const [widgetCache, setWidgetCache] = useState<
+    Record<string, WidgetDefinition[]>
+  >(readWidgetCache);
   const [checking, setChecking] = useState(true);
   const [importState, setImportState] = useState<ImportWizardState>(
     initialImportWizardState
@@ -207,6 +241,14 @@ export default function App() {
   }
 
   useEffect(() => {
+    try {
+      localStorage.setItem(WIDGET_CACHE_KEY, JSON.stringify(widgetCache));
+    } catch {
+      void 0;
+    }
+  }, [widgetCache]);
+
+  useEffect(() => {
     const role = user?.role;
     if (!role) return;
     let active = true;
@@ -243,6 +285,7 @@ export default function App() {
 
   function handleLoginSuccess(u: SessionUser) {
     setUser(u);
+    setWidgetCache({});
     loadDatasets(u.role);
   }
 
@@ -259,7 +302,9 @@ export default function App() {
     setDatasetsLoaded(false);
     setDatasetCache({});
     setImportState(initialImportWizardState);
+    setWidgetCache({});
     localStorage.removeItem("starboard_user");
+    localStorage.removeItem(WIDGET_CACHE_KEY);
   }
 
   if (checking && !user) {
@@ -288,6 +333,8 @@ export default function App() {
               datasetsLoaded={datasetsLoaded}
               datasetCache={datasetCache}
               setDatasetCache={setDatasetCache}
+              widgetCache={widgetCache}
+              setWidgetCache={setWidgetCache}
               fetchDatasetDetail={fetchDatasetDetail}
               refreshDatasets={async () => {
                 setDatasetCache({});
@@ -306,7 +353,7 @@ export default function App() {
             path="/import"
             element={isAdmin(user) ? <ImportPage /> : <Navigate to="/" replace />}
           />
-          <Route path="/d/:key" element={<DatasetPage />} />
+          <Route path="/d/:key" element={<DatasetRoute />} />
         </Route>
       ) : (
         <Route path="*" element={<Navigate to="/login" replace />} />
