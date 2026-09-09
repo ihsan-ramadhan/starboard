@@ -7,6 +7,7 @@ export type DateCardProps = {
   readonly mode: DateMode;
   readonly targetDate?: string;
   readonly sinceDate?: string | null;
+  readonly reloadNonce?: number;
 };
 
 const MS_PER_DAY = 86_400_000;
@@ -125,9 +126,19 @@ function useCurrentDay() {
   return day;
 }
 
-export default function DateCard({ label, mode, targetDate, sinceDate }: DateCardProps) {
+export default function DateCard({
+  label,
+  mode,
+  targetDate,
+  sinceDate,
+  reloadNonce = 0,
+}: DateCardProps) {
   useCurrentDay();
   const reading = read(mode, targetDate, sinceDate);
+  const targetWidth =
+    reading.ratio !== undefined
+      ? `${Math.min(Math.max(reading.ratio, 0), 1) * 100}%`
+      : "0%";
 
   return (
     <div className="kpi-wrapper">
@@ -140,8 +151,9 @@ export default function DateCard({ label, mode, targetDate, sinceDate }: DateCar
       {reading.ratio !== undefined && (
         <div className="kpi-meter" aria-hidden="true">
           <span
+            key={reloadNonce}
             className="kpi-meter-fill"
-            style={{ width: `${Math.min(Math.max(reading.ratio, 0), 1) * 100}%` }}
+            style={{ width: targetWidth }}
           />
         </div>
       )}

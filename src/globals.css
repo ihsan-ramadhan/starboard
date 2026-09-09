@@ -164,7 +164,6 @@ a {
   opacity: 1;
   max-width: 180px;
   overflow: hidden;
-  transition: opacity 0.15s cubic-bezier(0.2, 0, 0, 1);
   display: inline-block;
   vertical-align: middle;
 }
@@ -205,7 +204,6 @@ a {
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
-  transition: opacity 0.15s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar.collapsed .brand {
@@ -231,7 +229,7 @@ a {
   background: transparent;
   color: var(--fg-dim);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, transform 0.24s cubic-bezier(0.2, 0, 0, 1), margin 0.24s cubic-bezier(0.2, 0, 0, 1);
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .sidebar-toggle:hover {
@@ -265,7 +263,7 @@ a {
   color: var(--fg-dim);
   white-space: nowrap;
   overflow: hidden;
-  transition: background 0.12s ease, color 0.12s ease, padding 0.24s cubic-bezier(0.2, 0, 0, 1), gap 0.24s cubic-bezier(0.2, 0, 0, 1);
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .sidebar.collapsed .nav-link {
@@ -443,7 +441,6 @@ a {
   flex-direction: column;
   gap: 8px;
   overflow: hidden;
-  transition: padding 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar.collapsed .sidebar-foot {
@@ -459,7 +456,6 @@ a {
   max-width: 100%;
   overflow: hidden;
   height: 32px;
-  transition: justify-content 0.24s cubic-bezier(0.2, 0, 0, 1), gap 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar.collapsed .sidebar-user {
@@ -476,7 +472,6 @@ a {
   background: var(--accent);
   color: #fff;
   white-space: nowrap;
-  transition: padding 0.24s cubic-bezier(0.2, 0, 0, 1), font-size 0.24s cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* role is an unconstrained String (departments.code); the base rule pins
@@ -2282,12 +2277,20 @@ dialog.modal-native::backdrop {
   overflow: hidden;
 }
 
+@keyframes kpi-meter-grow {
+  from {
+    width: 0%;
+  }
+}
+
 .kpi-meter-fill {
   display: block;
   height: 100%;
   border-radius: 3px;
   background: var(--accent);
+  animation: kpi-meter-grow 0.8s cubic-bezier(0.2, 0, 0, 1);
   transition: width 0.3s ease;
+  will-change: width;
 }
 
 .kpi-meter-fill.is-reached {
@@ -2655,6 +2658,7 @@ dialog.modal-native::backdrop {
   }
 
   .kpi-meter-fill {
+    animation: none;
     transition: none;
   }
 }

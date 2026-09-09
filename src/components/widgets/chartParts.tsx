@@ -1,45 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
-import { formatCompactValue, formatFullValue } from "../../lib/format";
-import { AXIS_COLOR, GRID_COLOR, TOOLTIP_STYLE } from "../../lib/palette";
+import { formatCompactValue } from "../../lib/format";
+import type { EChartsOption } from "echarts";
 
 export type SeriesLabeller = (series: string) => string;
-
-function useElementSize(ref: React.RefObject<HTMLDivElement | null>) {
-  const [size, setSize] = useState({ w: 0, h: 0 });
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-
-    const rect = node.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      setSize({ w: Math.round(rect.width), h: Math.round(rect.height) });
-    }
-
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const w = Math.round(entry.contentRect.width);
-      const h = Math.round(entry.contentRect.height);
-      if (w <= 0 || h <= 0) return;
-
-      setSize((current) =>
-        current.w === w && current.h === h ? current : { w, h }
-      );
-    });
-
-    observer.observe(node);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [ref]);
-
-  return size;
-}
-
-export const ANIMATION_MS = 600;
 
 export type ChartFrameProps = {
   readonly title: string;
@@ -47,8 +11,7 @@ export type ChartFrameProps = {
   readonly note?: string;
   readonly onHideNote?: () => void;
   readonly overlay?: ReactNode;
-  readonly resetKey?: unknown;
-  readonly children: (width: number, height: number, animate: boolean) => ReactNode;
+  readonly children: ReactNode;
 };
 
 export function ChartFrame({
@@ -57,35 +20,8 @@ export function ChartFrame({
   note,
   onHideNote,
   overlay,
-  resetKey,
   children,
 }: ChartFrameProps) {
-  const box = useRef<HTMLDivElement>(null);
-  const size = useElementSize(box);
-  const animatedRef = useRef(false);
-  const lastResetKey = useRef(resetKey);
-
-  if (lastResetKey.current !== resetKey) {
-    lastResetKey.current = resetKey;
-    animatedRef.current = false;
-  }
-
-  const animate = !animatedRef.current && size.w > 0 && size.h > 0;
-
-  useEffect(() => {
-    if (animate) {
-      const timer = window.setTimeout(() => {
-        animatedRef.current = true;
-      }, ANIMATION_MS);
-      return () => window.clearTimeout(timer);
-    }
-  }, [animate]);
-
-  const content =
-    size.w === 0 || size.h === 0
-      ? null
-      : children(size.w, size.h, animate);
-
   return (
     <div className="chart-wrapper">
       <h4 className="widget-title" title={title}>
@@ -101,11 +37,11 @@ export function ChartFrame({
           )}
         </p>
       )}
-      <div className="chart-body" ref={box}>
+      <div className="chart-body">
         {isEmpty ? (
           <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
         ) : (
-          content
+          children
         )}
         {!isEmpty && overlay}
       </div>
@@ -113,66 +49,72 @@ export function ChartFrame({
   );
 }
 
-export const axisTick = { fontSize: 11, fill: AXIS_COLOR };
-
-export const gridProps = {
-  strokeDasharray: "3 3",
-  vertical: false,
-  stroke: GRID_COLOR,
-} as const;
-
-const MAX_TICK_CHARS = 12;
-
-function truncateTick(value: unknown): string {
-  const text = String(value ?? "");
-  if (text.length <= MAX_TICK_CHARS) return text;
-  return `${text.slice(0, MAX_TICK_CHARS - 1).trimEnd()}…`;
-}
-
-export const categoryAxisProps = {
-  dataKey: "groupKey",
-  tick: axisTick,
-  interval: "preserveStartEnd",
-  angle: -35,
-  textAnchor: "end",
-  height: 62,
-  tickFormatter: truncateTick,
-} as const;
-
-export function valueAxisWidth(currency?: CurrencyCode) {
-  return currency ? 86 : 65;
-}
-
-export function valueTick(currency?: CurrencyCode) {
-  return (value: number) => formatCompactValue(value, currency);
-}
-
-export function percentTick(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
-
-export function tooltipProps(
-  labelOf: SeriesLabeller,
+export function baseEChartOption(
+  hasLegend: boolean,
   currency?: CurrencyCode,
-  unit?: string
-) {
+  isPercent = false
+): EChartsOption {
   return {
-    contentStyle: TOOLTIP_STYLE,
-    labelFormatter: (label: unknown) => String(label ?? ""),
-    formatter: (value: unknown, name: unknown) => [
-      formatFullValue(Number(value), currency, unit),
-      labelOf(String(name)),
-    ],
-  };
-}
-
-export function legendProps(labelOf: SeriesLabeller) {
-  return {
-    verticalAlign: "bottom" as const,
-    height: 30,
-    wrapperStyle: { fontSize: "11px" },
-    formatter: (value: string) => (
-      <span style={{ color: "#475569", fontSize: "11px" }}>{labelOf(value)}</span>
-    ),
+    animation: true,
+    animationDuration: 800,
+    animationEasing: "cubicOut",
+    animationDurationUpdate: 400,
+    animationEasingUpdate: "cubicOut",
+    grid: {
+      top: 14,
+      right: 14,
+      bottom: hasLegend ? 32 : 12,
+      left: 8,
+      containLabel: true,
+    },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#ffffff",
+      borderColor: "#e2e8f0",
+      borderWidth: 1,
+      padding: [8, 12],
+      textStyle: { color: "#0f172a", fontSize: 12 },
+      extraCssText: "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+      axisPointer: {
+        type: "shadow",
+        shadowStyle: { color: "rgba(148, 163, 184, 0.12)" },
+      },
+    },
+    xAxis: {
+      type: "category",
+      axisLine: { lineStyle: { color: "#e2e8f0" } },
+      axisTick: { show: false },
+      axisLabel: {
+        color: "#64748b",
+        fontSize: 11,
+        rotate: 30,
+        interval: "auto",
+        overflow: "truncate",
+        width: 80,
+      },
+    },
+    yAxis: {
+      type: "value",
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: {
+        lineStyle: { color: "#f1f5f9", type: "dashed" },
+      },
+      axisLabel: {
+        color: "#64748b",
+        fontSize: 11,
+        formatter: (val: number) =>
+          isPercent ? `${Math.round(val * 100)}%` : formatCompactValue(val, currency),
+      },
+    },
+    legend: hasLegend
+      ? {
+          bottom: 2,
+          icon: "circle",
+          itemWidth: 8,
+          itemHeight: 8,
+          textStyle: { color: "#475569", fontSize: 11 },
+        }
+      : undefined,
   };
 }

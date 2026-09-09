@@ -30,6 +30,8 @@ const MAX_PIE_SLICES = 8;
 
 const SCALE_MISMATCH_RATIO = 200;
 
+const EMPTY_PIVOT = pivotSeries([], true);
+
 
 
 function valueColumns(widget: WidgetDefinition): string[] | undefined {
@@ -128,6 +130,43 @@ function WidgetRender({
     [columnLabel]
   );
 
+  const isSeriesChart =
+    widget.type === "bar" ||
+    widget.type === "area" ||
+    widget.type === "combo" ||
+    widget.type === "line";
+
+  const pivot = useMemo(
+    () =>
+      result && isSeriesChart
+        ? pivotSeries(result.rows, widget.type !== "line")
+        : null,
+    [result, isSeriesChart, widget.type]
+  );
+
+  const seriesColors = useMemo(
+    () => buildColorMap(pivot?.seriesKeys ?? []),
+    [pivot]
+  );
+
+  const slices = useMemo(
+    () =>
+      result && widget.type === "pie"
+        ? foldOthers(result.rows as ChartDataPoint[], MAX_PIE_SLICES)
+        : null,
+    [result, widget.type]
+  );
+
+  const sliceColors = useMemo(
+    () => buildColorMap((slices ?? []).map((s) => s.groupKey)),
+    [slices]
+  );
+
+  const lineKeys = useMemo(
+    () => (widget.lineColumn ? [widget.lineColumn] : []),
+    [widget.lineColumn]
+  );
+
   if (widget.type === "table") {
     return (
       <TableWidget
@@ -145,7 +184,14 @@ function WidgetRender({
   if (widget.type === "date") {
     const mode = widget.dateMode ?? "yearRemaining";
     if (mode !== "sinceColumn") {
-      return <DateCard label={widget.title} mode={mode} targetDate={widget.targetDate} />;
+      return (
+        <DateCard
+          label={widget.title}
+          mode={mode}
+          targetDate={widget.targetDate}
+          reloadNonce={reloadNonce}
+        />
+      );
     }
     if (query && !result) return <WidgetSkeleton widget={widget} />;
     return (
@@ -153,6 +199,7 @@ function WidgetRender({
         label={widget.title}
         mode="sinceColumn"
         sinceDate={result?.scalarText ?? null}
+        reloadNonce={reloadNonce}
       />
     );
   }
@@ -190,26 +237,27 @@ function WidgetRender({
         targetLabel={widget.targetColumn ? columnLabel(widget.targetColumn) : undefined}
         unit={widget.unit}
         currency={currency}
+        reloadNonce={reloadNonce}
       />
     );
   }
 
   if (widget.type === "pie") {
-    const slices = foldOthers(result.rows as ChartDataPoint[], MAX_PIE_SLICES);
     return (
       <PieChartWidget
         title={widget.title}
-        data={slices}
-        colors={buildColorMap(slices.map((s) => s.groupKey))}
+        data={slices ?? []}
+        colors={sliceColors}
         unit={widget.unit}
         currency={currency}
+        reloadNonce={reloadNonce}
       />
     );
   }
 
   const stacking = widget.seriesMode ?? "grouped";
-  const { seriesKeys, data } = pivotSeries(result.rows, widget.type !== "line");
-  const colors = buildColorMap(seriesKeys);
+  const { seriesKeys, data } = pivot ?? EMPTY_PIVOT;
+  const colors = seriesColors;
 
   const mismatch =
     warningHidden || stacking === "stacked100"
@@ -233,6 +281,7 @@ function WidgetRender({
         mode={stacking}
         unit={widget.unit}
         currency={currency}
+        reloadNonce={reloadNonce}
         note={note}
         onHideNote={hideWarning}
       />
@@ -250,6 +299,7 @@ function WidgetRender({
         mode={stacking}
         unit={widget.unit}
         currency={currency}
+        reloadNonce={reloadNonce}
         note={note}
         onHideNote={hideWarning}
       />
@@ -257,7 +307,6 @@ function WidgetRender({
   }
 
   if (widget.type === "combo") {
-    const lineKeys = widget.lineColumn ? [widget.lineColumn] : [];
     return (
       <ComboChartWidget
         title={widget.title}
@@ -268,6 +317,7 @@ function WidgetRender({
         labelOf={labelOf}
         unit={widget.unit}
         currency={currency}
+        reloadNonce={reloadNonce}
         note={note}
         onHideNote={hideWarning}
       />
@@ -284,6 +334,7 @@ function WidgetRender({
       showTrendline={widget.showTrendline}
       unit={widget.unit}
       currency={currency}
+      reloadNonce={reloadNonce}
       note={note}
       onHideNote={hideWarning}
     />

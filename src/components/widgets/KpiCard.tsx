@@ -8,6 +8,7 @@ export type KpiCardProps = {
   readonly targetLabel?: string;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
+  readonly reloadNonce?: number;
 };
 
 export default function KpiCard({
@@ -17,12 +18,14 @@ export default function KpiCard({
   targetLabel = "Target",
   unit,
   currency,
+  reloadNonce = 0,
 }: KpiCardProps) {
   const hasTarget =
     typeof value === "number" && typeof target === "number" && target !== 0;
   const ratio = hasTarget ? (value as number) / (target as number) : 0;
   const gap = hasTarget ? (value as number) - (target as number) : 0;
   const reached = gap >= 0;
+  const targetWidth = `${Math.min(Math.max(ratio, 0), 1) * 100}%`;
 
   return (
     <div className="kpi-wrapper">
@@ -43,8 +46,9 @@ export default function KpiCard({
             aria-label={`Pencapaian terhadap ${targetLabel}`}
           >
             <span
+              key={reloadNonce}
               className={`kpi-meter-fill${reached ? " is-reached" : ""}`}
-              style={{ width: `${Math.min(Math.max(ratio, 0), 1) * 100}%` }}
+              style={{ width: targetWidth }}
             />
           </div>
           <div className="kpi-target-row">

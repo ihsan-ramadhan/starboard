@@ -1,26 +1,14 @@
-import {
-  ComposedChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  CartesianGrid,
-} from "recharts";
+import { useMemo } from "react";
 import type { CurrencyCode } from "../../types";
 import type { WideRow } from "../../lib/series";
 import {
-  ANIMATION_MS,
   ChartFrame,
-  categoryAxisProps,
-  gridProps,
-  legendProps,
-  tooltipProps,
-  valueTick,
-  valueAxisWidth,
+  baseEChartOption,
   type SeriesLabeller,
 } from "./chartParts";
+import { EChart } from "./EChart";
+import { formatFullValue } from "../../lib/format";
+import type { EChartsOption } from "echarts";
 
 export type ComboChartWidgetProps = {
   readonly title: string;
@@ -31,6 +19,7 @@ export type ComboChartWidgetProps = {
   readonly labelOf: SeriesLabeller;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
+  readonly reloadNonce?: number;
   readonly note?: string;
   readonly onHideNote?: () => void;
 };
@@ -44,10 +33,74 @@ export default function ComboChartWidget({
   labelOf,
   unit,
   currency,
+  reloadNonce,
   note,
   onHideNote,
 }: ComboChartWidgetProps) {
   const barKeys = seriesKeys.filter((key) => !lineKeys.includes(key));
+
+  const option = useMemo<EChartsOption>(() => {
+    const base = baseEChartOption(true, currency);
+    const categories = data.map((d) => String(d.groupKey ?? ""));
+
+    const barSeries = barKeys.map((key, index) => ({
+      name: key,
+      type: "bar" as const,
+      animationDuration: 750,
+      animationEasing: "cubicOut" as const,
+      animationDelay: (idx: number) => idx * 25 + index * 40,
+      itemStyle: {
+        color: colors[key],
+        borderRadius: [3, 3, 0, 0] as [number, number, number, number],
+      },
+      data: data.map((d) => (d[key] !== null ? Number(d[key]) : null)),
+    }));
+
+    const lineSeries = lineKeys.map((key, index) => ({
+      name: key,
+      type: "line" as const,
+      smooth: true,
+      symbol: "circle",
+      symbolSize: 6,
+      animationDuration: 850,
+      animationEasing: "cubicOut" as const,
+      animationDelay: index * 80 + 150,
+      itemStyle: { color: colors[key] },
+      lineStyle: { width: 2, color: colors[key] },
+      data: data.map((d) => (d[key] !== null ? Number(d[key]) : null)),
+      connectNulls: true,
+    }));
+
+    return {
+      ...base,
+      xAxis: {
+        ...base.xAxis,
+        data: categories,
+      },
+      legend: {
+        ...base.legend,
+        formatter: (name: string) => labelOf(name),
+      },
+      tooltip: {
+        ...base.tooltip,
+        formatter: (params: any) => {
+          if (!Array.isArray(params)) return "";
+          const header = `<div style="font-weight:600;margin-bottom:4px">${params[0]?.axisValueLabel || ""}</div>`;
+          const lines = params.map((p: any) => {
+            const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
+            return (
+              `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
+              `<span>${marker}${labelOf(p.seriesName)}</span>` +
+              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${formatFullValue(p.value, currency, unit)}</span>` +
+              `</div>`
+            );
+          });
+          return header + lines.join("");
+        },
+      },
+      series: [...barSeries, ...lineSeries],
+    };
+  }, [data, seriesKeys, lineKeys, colors, labelOf, unit, currency]);
 
   return (
     <ChartFrame
@@ -55,58 +108,8 @@ export default function ComboChartWidget({
       isEmpty={data.length === 0}
       note={note}
       onHideNote={onHideNote}
-      resetKey={data}
     >
-      {(chartWidth, chartHeight, animate) => (
-        <ComposedChart
-          width={chartWidth}
-          height={chartHeight}
-          data={data as WideRow[]}
-          margin={{ top: 10, right: 15, left: 0, bottom: 8 }}
-          barGap={2}
-        >
-          <CartesianGrid {...gridProps} />
-          <XAxis {...categoryAxisProps} />
-          <YAxis
-            tick={{ fontSize: 11, fill: "#64748b" }}
-            tickFormatter={valueTick(currency)}
-            width={valueAxisWidth(currency)}
-          />
-          <Tooltip
-            cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
-            {...tooltipProps(labelOf, currency, unit)}
-          />
-          <Legend {...legendProps(labelOf)} />
-          {barKeys.map((key) => (
-            <Bar
-              key={key}
-              isAnimationActive={animate}
-              animationDuration={ANIMATION_MS}
-              animationEasing="ease-out"
-              dataKey={key}
-              name={key}
-              fill={colors[key]}
-              radius={[4, 4, 0, 0]}
-            />
-          ))}
-          {lineKeys.map((key) => (
-            <Line
-              key={key}
-              isAnimationActive={animate}
-              animationDuration={ANIMATION_MS}
-              animationEasing="ease-out"
-              type="monotone"
-              dataKey={key}
-              name={key}
-              stroke={colors[key]}
-              strokeWidth={2}
-              dot={{ r: 3, strokeWidth: 0, fill: colors[key] }}
-              activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 2 }}
-              connectNulls
-            />
-          ))}
-        </ComposedChart>
-      )}
+      <EChart option={option} reloadNonce={reloadNonce} />
     </ChartFrame>
   );
 }

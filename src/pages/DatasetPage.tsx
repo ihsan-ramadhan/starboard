@@ -136,15 +136,12 @@ export default function DatasetPage() {
       resizeObserverRef.current = null;
     }
     if (node) {
-      const update = () => {
-        const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
-        if (width > 0) {
-          const next = Math.floor(width);
-          setContainerWidth((prev) => (prev === next ? prev : next));
-        }
-      };
+      const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
+      if (width > 0) {
+        const next = Math.floor(width);
+        setContainerWidth((prev) => (prev === next ? prev : next));
+      }
 
-      requestAnimationFrame(update);
       const ro = new ResizeObserver((entries) => {
         const entry = entries[0];
         if (entry) {
@@ -196,7 +193,10 @@ export default function DatasetPage() {
           ...item,
           datasetId: item.datasetId || ds.id,
         }));
-        setWidgets(loaded);
+        setWidgets((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(loaded)) return prev;
+          return loaded;
+        });
         setWidgetCache((prev) => ({ ...prev, [datasetKey]: loaded }));
       } catch (err) {
         console.error("Failed to load widgets:", err);
@@ -528,7 +528,7 @@ export default function DatasetPage() {
                 dragConfig={{
                   enabled: editMode,
                   handle: ".widget-card",
-                  cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
+                  cancel: "button, a, input, select, canvas",
                 }}
                 resizeConfig={{ enabled: editMode }}
                 onLayoutChange={handleLayoutChange}

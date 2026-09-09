@@ -1,25 +1,14 @@
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  CartesianGrid,
-} from "recharts";
+import { useMemo } from "react";
 import type { CurrencyCode } from "../../types";
 import { TREND_KEY, withTrendline, type WideRow } from "../../lib/series";
 import {
-  ANIMATION_MS,
   ChartFrame,
-  categoryAxisProps,
-  gridProps,
-  legendProps,
-  tooltipProps,
-  valueTick,
-  valueAxisWidth,
+  baseEChartOption,
   type SeriesLabeller,
 } from "./chartParts";
+import { EChart } from "./EChart";
+import { formatFullValue } from "../../lib/format";
+import type { EChartsOption } from "echarts";
 
 export type LineChartWidgetProps = {
   readonly title: string;
@@ -30,6 +19,7 @@ export type LineChartWidgetProps = {
   readonly showTrendline?: boolean;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
+  readonly reloadNonce?: number;
   readonly note?: string;
   readonly onHideNote?: () => void;
 };
@@ -43,17 +33,93 @@ export default function LineChartWidget({
   showTrendline,
   unit,
   currency,
+  reloadNonce,
   note,
   onHideNote,
 }: LineChartWidgetProps) {
   const multi = seriesKeys.length > 1;
   const trendable = showTrendline && seriesKeys.length === 1;
-  const plotted = trendable
-    ? withTrendline(data, seriesKeys[0])
-    : (data as WideRow[]);
+  const plotted = useMemo(
+    () => (trendable ? withTrendline(data, seriesKeys[0]) : (data as WideRow[])),
+    [trendable, data, seriesKeys]
+  );
 
   const withTrendLabel: SeriesLabeller = (series) =>
     series === TREND_KEY ? "Garis tren" : labelOf(series);
+
+  const option = useMemo<EChartsOption>(() => {
+    const hasTrend =
+      Boolean(trendable) && plotted.some((d) => d[TREND_KEY] != null);
+    const hasLegend = Boolean(multi || hasTrend);
+    const base = baseEChartOption(hasLegend, currency);
+    const categories = plotted.map((d) => String(d.groupKey ?? ""));
+
+    const series: any[] = seriesKeys.map((key, index) => ({
+      name: key,
+      type: "line" as const,
+      smooth: true,
+      symbol: "circle",
+      symbolSize: 6,
+      animationDuration: 850,
+      animationEasing: "cubicOut" as const,
+      animationDelay: index * 80,
+      itemStyle: { color: colors[key] },
+      lineStyle: { width: 2, color: colors[key] },
+      data: plotted.map((d) => (d[key] !== null ? Number(d[key]) : null)),
+      connectNulls: true,
+    }));
+
+    if (hasTrend) {
+      series.push({
+        name: TREND_KEY,
+        type: "line" as const,
+        smooth: false,
+        symbol: "none",
+        symbolSize: 0,
+        animationDuration: 600,
+        animationDelay: 300,
+        itemStyle: { color: "#94a3b8" },
+        lineStyle: { width: 2, color: "#94a3b8", type: "dashed" },
+        data: plotted.map((d) =>
+          d[TREND_KEY] == null ? null : Number(d[TREND_KEY])
+        ),
+        connectNulls: true,
+      });
+    }
+
+    return {
+      ...base,
+      xAxis: {
+        ...base.xAxis,
+        data: categories,
+      },
+      legend: hasLegend
+        ? {
+            ...base.legend,
+            formatter: (name: string) => withTrendLabel(name),
+          }
+        : undefined,
+      tooltip: {
+        ...base.tooltip,
+        axisPointer: { type: "line" },
+        formatter: (params: any) => {
+          if (!Array.isArray(params)) return "";
+          const header = `<div style="font-weight:600;margin-bottom:4px">${params[0]?.axisValueLabel || ""}</div>`;
+          const lines = params.map((p: any) => {
+            const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
+            return (
+              `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
+              `<span>${marker}${withTrendLabel(p.seriesName)}</span>` +
+              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${formatFullValue(p.value, currency, unit)}</span>` +
+              `</div>`
+            );
+          });
+          return header + lines.join("");
+        },
+      },
+      series,
+    };
+  }, [plotted, seriesKeys, colors, labelOf, showTrendline, unit, currency, multi, trendable]);
 
   return (
     <ChartFrame
@@ -61,57 +127,8 @@ export default function LineChartWidget({
       isEmpty={data.length === 0}
       note={note}
       onHideNote={onHideNote}
-      resetKey={data}
     >
-      {(chartWidth, chartHeight, animate) => (
-        <LineChart
-          width={chartWidth}
-          height={chartHeight}
-          data={plotted}
-          margin={{ top: 10, right: 15, left: 0, bottom: 8 }}
-        >
-          <CartesianGrid {...gridProps} />
-          <XAxis {...categoryAxisProps} />
-          <YAxis
-            tick={{ fontSize: 11, fill: "#64748b" }}
-            tickFormatter={valueTick(currency)}
-            width={valueAxisWidth(currency)}
-          />
-          <Tooltip {...tooltipProps(withTrendLabel, currency, unit)} />
-          {(multi || trendable) && <Legend {...legendProps(withTrendLabel)} />}
-          {seriesKeys.map((key) => (
-            <Line
-              key={key}
-              isAnimationActive={animate}
-              animationDuration={ANIMATION_MS}
-              animationEasing="ease-out"
-              type="monotone"
-              dataKey={key}
-              name={key}
-              stroke={colors[key]}
-              strokeWidth={2}
-              dot={{ r: 3, strokeWidth: 0, fill: colors[key] }}
-              activeDot={{ r: 5, stroke: "#ffffff", strokeWidth: 2 }}
-              connectNulls
-            />
-          ))}
-          {trendable && (
-            <Line
-              isAnimationActive={animate}
-              animationDuration={ANIMATION_MS}
-              animationEasing="ease-out"
-              type="linear"
-              dataKey={TREND_KEY}
-              name={TREND_KEY}
-              stroke="#94a3b8"
-              strokeWidth={2}
-              strokeDasharray="5 4"
-              dot={false}
-              activeDot={false}
-            />
-          )}
-        </LineChart>
-      )}
+      <EChart option={option} reloadNonce={reloadNonce} />
     </ChartFrame>
   );
 }
