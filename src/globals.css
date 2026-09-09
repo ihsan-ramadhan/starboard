@@ -328,8 +328,30 @@ a {
 .nav-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-height: 40px;
+  padding-right: 6px;
+  border-radius: 6px;
+  touch-action: none;
+  user-select: none;
+  transition: background 0.12s ease;
+}
+
+.nav-row:hover {
+  background: var(--border-light);
+}
+
+.nav-row.is-active {
+  background: var(--bg);
+}
+
+.nav-row.is-dragging {
+  opacity: 0.65;
+}
+
+.sidebar-nav.is-dragging,
+.sidebar-nav.is-dragging * {
+  cursor: grabbing;
 }
 
 .nav-row-link {
@@ -337,28 +359,21 @@ a {
   min-width: 0;
 }
 
-.nav-grip {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: var(--border-light);
-  color: var(--fg-subtle);
-  cursor: grab;
-  touch-action: none;
-  transition: color 0.12s ease;
+.nav-row-link:hover,
+.nav-row-link.active {
+  background: transparent;
 }
 
-.nav-grip:hover {
-  color: var(--fg);
+.nav-row .nav-rename-btn,
+.nav-row .nav-del-btn {
+  opacity: 0;
 }
 
-.nav-grip:active {
-  cursor: grabbing;
+.nav-row:hover .nav-rename-btn,
+.nav-row:hover .nav-del-btn,
+.nav-row .nav-rename-btn:focus-visible,
+.nav-row .nav-del-btn:focus-visible {
+  opacity: 1;
 }
 
 .nav-rename {
@@ -400,7 +415,7 @@ a {
   background: transparent;
   color: var(--fg-subtle);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
 .nav-rename-btn:hover {
@@ -420,7 +435,7 @@ a {
   background: transparent;
   color: var(--fg-subtle);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
 .nav-del-btn:hover {
@@ -428,7 +443,6 @@ a {
   color: #b91c1c;
 }
 
-.sidebar.collapsed .nav-grip,
 .sidebar.collapsed .nav-rename-btn,
 .sidebar.collapsed .nav-del-btn {
   display: none;
@@ -1449,6 +1463,30 @@ a {
   display: flex;
   gap: 4px;
   z-index: 2;
+}
+
+.widget-toolbar .icon-btn {
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease,
+    border-color 0.12s ease, color 0.12s ease;
+}
+
+.widget-card:hover .widget-toolbar .icon-btn,
+.widget-toolbar .icon-btn:focus-visible {
+  opacity: 1;
+}
+
+.keyboard-only {
+  pointer-events: none;
+}
+
+.widget-card:hover .widget-toolbar .keyboard-only {
+  opacity: 0;
+}
+
+.widget-toolbar .keyboard-only:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .widget-card.wrap {

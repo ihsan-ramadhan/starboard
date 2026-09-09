@@ -5,7 +5,6 @@ import { useApp } from "../App";
 import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
-import GripIcon from "../assets/icons/grip.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
@@ -14,6 +13,9 @@ import { isAdmin, type SessionUser } from "../types";
 type DatasetTab = { id: string; key: string; displayName: string };
 
 const COLLAPSE_KEY = "starboard_sidebar_collapsed";
+
+const LONG_PRESS_MS = 150;
+const MOVE_TOLERANCE = 6;
 
 function initials(name: string) {
   return name
@@ -53,6 +55,10 @@ export function Sidebar({
   const itemsRef = useRef(items);
   const listRef = useRef<HTMLElement>(null);
   const draggingRef = useRef<string | null>(null);
+  const pressRef = useRef<{ x: number; y: number; timer: number } | null>(null);
+  const suppressClickRef = useRef(false);
+  const movedRef = useRef(false);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const dragStartOrderRef = useRef("");
 
   useEffect(() => {
@@ -127,18 +133,47 @@ export function Sidebar({
     }
   }
 
-  function startDrag(e: React.PointerEvent<HTMLButtonElement>, key: string) {
-    e.preventDefault();
+  function arm(pointerId: number, key: string) {
     try {
-      e.currentTarget.setPointerCapture(e.pointerId);
+      listRef.current?.setPointerCapture(pointerId);
     } catch {
       void 0;
     }
     draggingRef.current = key;
     dragStartOrderRef.current = itemsRef.current.map((i) => i.key).join("|");
+    movedRef.current = false;
+    setDraggingKey(key);
   }
 
-  function dragOver(e: React.PointerEvent<HTMLButtonElement>) {
+  function cancelPress() {
+    if (!pressRef.current) return;
+    window.clearTimeout(pressRef.current.timer);
+    pressRef.current = null;
+  }
+
+  function pressStart(e: React.PointerEvent<HTMLDivElement>, key: string) {
+    if (e.button !== 0 || draggingRef.current) return;
+    suppressClickRef.current = false;
+    const pointerId = e.pointerId;
+
+    if ((e.target as HTMLElement).closest("button, input")) return;
+
+    const timer = window.setTimeout(() => {
+      pressRef.current = null;
+      arm(pointerId, key);
+    }, LONG_PRESS_MS);
+    pressRef.current = { x: e.clientX, y: e.clientY, timer };
+  }
+
+  function pressMove(e: React.PointerEvent<HTMLElement>) {
+    const press = pressRef.current;
+    if (press) {
+      const moved =
+        Math.abs(e.clientX - press.x) > MOVE_TOLERANCE ||
+        Math.abs(e.clientY - press.y) > MOVE_TOLERANCE;
+      if (moved) cancelPress();
+      return;
+    }
     const key = draggingRef.current;
     if (!key || !listRef.current) return;
     const rows = [...listRef.current.querySelectorAll<HTMLElement>("[data-key]")];
@@ -149,25 +184,30 @@ export function Sidebar({
     if (over < 0) return;
     const next = withMoved(itemsRef.current, key, over);
     if (next === itemsRef.current) return;
+    movedRef.current = true;
     itemsRef.current = next;
     setItems(next);
   }
 
-  function endDrag(e: React.PointerEvent<HTMLButtonElement>) {
+  function pressEnd(e: React.PointerEvent<HTMLElement>) {
+    cancelPress();
     if (!draggingRef.current) return;
     try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+      listRef.current?.releasePointerCapture(e.pointerId);
     } catch {
       void 0;
     }
     draggingRef.current = null;
+    setDraggingKey(null);
+    suppressClickRef.current = movedRef.current;
     if (itemsRef.current.map((i) => i.key).join("|") === dragStartOrderRef.current) {
       return;
     }
     saveOrder(itemsRef.current);
   }
 
-  function nudge(e: React.KeyboardEvent<HTMLButtonElement>, key: string) {
+  function nudge(e: React.KeyboardEvent<HTMLElement>, key: string) {
+    if (!e.altKey) return;
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
     e.preventDefault();
     const from = itemsRef.current.findIndex((i) => i.key === key);
@@ -234,7 +274,13 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="sidebar-nav" ref={listRef}>
+        <nav
+          className={`sidebar-nav${draggingKey ? " is-dragging" : ""}`}
+          ref={listRef}
+          onPointerMove={pressMove}
+          onPointerUp={pressEnd}
+          onPointerCancel={pressEnd}
+        >
           {!datasetsLoaded ? (
             <div className="sk-nav" aria-busy="true" aria-label="Memuat daftar dataset">
               {[0, 1, 2].map((i) => (
@@ -250,20 +296,20 @@ export function Sidebar({
           ) : (
             items.map((d) =>
               arranging ? (
-                <div key={d.key} data-key={d.key} className="nav-row">
-                  <button
-                    type="button"
-                    className="nav-grip"
-                    aria-label={`Pindahkan ${d.displayName}`}
-                    title="Seret, atau tekan panah atas dan bawah"
-                    onPointerDown={(e) => startDrag(e, d.key)}
-                    onPointerMove={dragOver}
-                    onPointerUp={endDrag}
-                    onPointerCancel={endDrag}
-                    onKeyDown={(e) => nudge(e, d.key)}
-                  >
-                    <GripIcon width={14} height={14} />
-                  </button>
+                <div
+                  key={d.key}
+                  data-key={d.key}
+                  className={`nav-row${activeKey === d.key ? " is-active" : ""}${
+                    draggingKey === d.key ? " is-dragging" : ""
+                  }`}
+                  onPointerDown={(e) => pressStart(e, d.key)}
+                  onClickCapture={(e) => {
+                    if (!suppressClickRef.current) return;
+                    suppressClickRef.current = false;
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
                   {renamingKey === d.key ? (
                     <input
                       className="nav-rename"
@@ -288,8 +334,10 @@ export function Sidebar({
                       <Link
                         to={`/d/${d.key}`}
                         className={`nav-link nav-row-link${activeKey === d.key ? " active" : ""}`}
+                        draggable={false}
                         aria-current={activeKey === d.key ? "page" : undefined}
-                        title={d.displayName}
+                        onKeyDown={(e) => nudge(e, d.key)}
+                        title={`${d.displayName} — tekan lama untuk memindahkan, atau Alt + panah atas/bawah`}
                       >
                         <span className="nav-initial">{initials(d.displayName)}</span>
                         <span className="nav-label sidebar-hideable">{d.displayName}</span>

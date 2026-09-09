@@ -9,8 +9,8 @@ import { api, clearWidgetDataCache } from "../lib/api";
 import { fileNameOf, isDesktop, machineName, pickExcelPath } from "../lib/desktop";
 import { formatCount } from "../lib/format";
 import { useMachineName, type SyncStatus } from "../lib/excelSync";
-import PencilIcon from "../assets/icons/pencil.svg?react";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
+import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
@@ -549,9 +549,8 @@ export default function DatasetPage() {
                           <div className="widget-toolbar">
                             <button
                               type="button"
-                              className="icon-btn"
+                              className="icon-btn keyboard-only"
                               aria-label={`Edit widget ${widget.title}`}
-                              title="Edit visual di sidebar"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openEditWidget(widget);
