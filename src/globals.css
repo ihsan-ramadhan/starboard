@@ -2648,6 +2648,10 @@ dialog.modal-native::backdrop {
 }
 
 .chart-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 6px 0 0;
   padding: 5px 8px;
   border-radius: var(--radius-sm);
@@ -2655,13 +2659,6 @@ dialog.modal-native::backdrop {
   color: #92400e;
   font-size: 11px;
   line-height: 1.4;
-}
-
-.chart-note {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
 .chart-note-hide {

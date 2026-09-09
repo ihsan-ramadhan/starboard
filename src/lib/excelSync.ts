@@ -13,6 +13,8 @@ import { isAdmin, type DatasetRegistry, type SessionUser } from "../types";
 
 const POLL_INTERVAL_MS = 20_000;
 
+type SyncOutcome = "skipped" | "imported" | "aborted";
+
 export type SyncStatus = {
   state: "watching" | "importing" | "error";
   error?: string;
@@ -89,10 +91,9 @@ export function useExcelSync(
         const cur = prev[key];
         const merged: SyncStatus = { ...status, syncedAt: syncedAt ?? cur?.syncedAt };
         if (
-          cur &&
-          cur.state === merged.state &&
-          cur.error === merged.error &&
-          cur.syncedAt === merged.syncedAt
+          cur?.state === merged.state &&
+          cur?.error === merged.error &&
+          cur?.syncedAt === merged.syncedAt
         ) {
           return prev;
         }
@@ -100,71 +101,86 @@ export function useExcelSync(
       });
     }
 
+    async function importOne(
+      ds: DatasetRegistry,
+      path: string,
+      revision: string
+    ): Promise<SyncOutcome> {
+      setStatus(ds.key, { state: "importing" });
+      let attempted = revision;
+      try {
+        const file = await readSourceFile(path);
+        attempted = file.revision;
+        if (!active) return "aborted";
+
+        const res = await api.syncDataset(dept, ds.key, {
+          fileBytes: file.bytes,
+          sourceMtime: file.revision,
+        });
+        if (!active) return "aborted";
+
+        importedRef.current[ds.key] = file.revision;
+        setStatus(ds.key, { state: "watching" }, Date.now());
+        if (res.skipped) return "skipped";
+
+        toast.success(
+          `${ds.displayName} diperbarui dari ${fileNameOf(path)} (${formatCount(res.totalImported)} baris).`
+        );
+        return "imported";
+      } catch (err) {
+        rejectedRef.current[ds.key] = attempted;
+        setStatus(ds.key, { state: "error", error: messageOf(err) });
+        return "skipped";
+      }
+    }
+
+    async function syncOne(
+      ds: DatasetRegistry,
+      host: string
+    ): Promise<SyncOutcome> {
+      const path = ds.sourcePath;
+      if (!ds.syncEnabled || !path || ds.watchedBy !== host) {
+        forget(ds.key);
+        return "skipped";
+      }
+
+      let revision: string;
+      try {
+        revision = await sourceFileRevision(path);
+      } catch (err) {
+        setStatus(ds.key, { state: "error", error: messageOf(err) });
+        return "skipped";
+      }
+      if (!active) return "aborted";
+
+      if (revision === rejectedRef.current[ds.key]) return "skipped";
+
+      if (
+        revision === ds.lastSyncedMtime ||
+        revision === importedRef.current[ds.key]
+      ) {
+        setStatus(ds.key, { state: "watching" });
+        return "skipped";
+      }
+
+      return importOne(ds, path, revision);
+    }
+
     async function tick() {
       if (runningRef.current) return;
       runningRef.current = true;
       try {
         machine ??= await machineName().catch(() => null);
-        if (!active || !machine) return;
+        const host = machine;
+        if (!active || !host) return;
 
         let anyImported = false;
 
         for (const ds of datasetsRef.current) {
           if (!active) return;
-          const path = ds.sourcePath;
-          if (!ds.syncEnabled || !path) {
-            forget(ds.key);
-            continue;
-          }
-
-          if (ds.watchedBy !== machine) {
-            forget(ds.key);
-            continue;
-          }
-
-          let revision: string;
-          try {
-            revision = await sourceFileRevision(path);
-          } catch (err) {
-            setStatus(ds.key, { state: "error", error: messageOf(err) });
-            continue;
-          }
-          if (!active) return;
-
-          if (revision === rejectedRef.current[ds.key]) continue;
-
-          if (
-            revision === ds.lastSyncedMtime ||
-            revision === importedRef.current[ds.key]
-          ) {
-            setStatus(ds.key, { state: "watching" });
-            continue;
-          }
-
-          setStatus(ds.key, { state: "importing" });
-          let attempted = revision;
-          try {
-            const file = await readSourceFile(path);
-            attempted = file.revision;
-            if (!active) return;
-            const res = await api.syncDataset(dept, ds.key, {
-              fileBytes: file.bytes,
-              sourceMtime: file.revision,
-            });
-            if (!active) return;
-            importedRef.current[ds.key] = file.revision;
-            setStatus(ds.key, { state: "watching" }, Date.now());
-
-            if (!res.skipped) {
-              anyImported = true;
-              toast.success(
-                `${ds.displayName} diperbarui dari ${fileNameOf(path)} (${formatCount(res.totalImported)} baris).`
-              );
-            }
-          } catch (err) {
-            rejectedRef.current[ds.key] = attempted;
-            setStatus(ds.key, { state: "error", error: messageOf(err) });
-          }
+          const outcome = await syncOne(ds, host);
+          if (outcome === "aborted") return;
+          if (outcome === "imported") anyImported = true;
         }
 
         if (anyImported && active) await onSyncedRef.current();

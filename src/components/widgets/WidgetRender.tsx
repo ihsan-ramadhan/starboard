@@ -10,10 +10,14 @@ import {
 import { api, peekWidgetData, type WidgetQuery } from "../../lib/api";
 import type {
   ChartDataPoint,
+  CurrencyCode,
   DatasetColumn,
+  SeriesMode,
   WidgetDefinition,
   WidgetQueryResult,
 } from "../../types";
+import type { WideRow } from "../../lib/series";
+import type { SeriesLabeller } from "./chartParts";
 import { buildColorMap } from "../../lib/palette";
 import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
 import { formatCount } from "../../lib/format";
@@ -84,6 +88,121 @@ function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
     orderByKey: widget.type === "line" || widget.type === "area",
     filters: usableFilters(widget),
   };
+}
+
+type DateWidgetProps = {
+  readonly widget: WidgetDefinition;
+  readonly pending: boolean;
+  readonly sinceDate: string | null;
+  readonly reloadNonce: number;
+};
+
+function DateWidgetView({
+  widget,
+  pending,
+  sinceDate,
+  reloadNonce,
+}: DateWidgetProps) {
+  const mode = widget.dateMode ?? "yearRemaining";
+  if (mode !== "sinceColumn") {
+    return (
+      <DateCard
+        label={widget.title}
+        mode={mode}
+        targetDate={widget.targetDate}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+  if (pending) return <WidgetSkeleton widget={widget} />;
+  return (
+    <DateCard
+      label={widget.title}
+      mode="sinceColumn"
+      sinceDate={sinceDate}
+      reloadNonce={reloadNonce}
+    />
+  );
+}
+
+type KpiWidgetProps = {
+  readonly widget: WidgetDefinition;
+  readonly result: WidgetQueryResult;
+  readonly columnLabel: SeriesLabeller;
+  readonly currency?: CurrencyCode;
+  readonly reloadNonce: number;
+};
+
+function KpiWidgetView({
+  widget,
+  result,
+  columnLabel,
+  currency,
+  reloadNonce,
+}: KpiWidgetProps) {
+  const targetColumn = widget.targetColumn;
+  const valueOf = (column?: string) =>
+    result.rows.find((r) => r.series === column)?.value ?? null;
+
+  return (
+    <KpiCard
+      label={widget.title}
+      value={targetColumn ? valueOf(widget.metricColumn) : result.scalarValue ?? null}
+      target={targetColumn ? valueOf(targetColumn) : null}
+      targetLabel={targetColumn ? columnLabel(targetColumn) : undefined}
+      unit={widget.unit}
+      currency={currency}
+      reloadNonce={reloadNonce}
+    />
+  );
+}
+
+type SeriesChartProps = {
+  readonly widget: WidgetDefinition;
+  readonly data: readonly WideRow[];
+  readonly seriesKeys: readonly string[];
+  readonly lineKeys: readonly string[];
+  readonly colors: Record<string, string>;
+  readonly labelOf: SeriesLabeller;
+  readonly stacking: SeriesMode;
+  readonly currency?: CurrencyCode;
+  readonly reloadNonce: number;
+  readonly note?: string;
+  readonly onHideNote: () => void;
+};
+
+function SeriesChart({
+  widget,
+  data,
+  seriesKeys,
+  lineKeys,
+  colors,
+  labelOf,
+  stacking,
+  currency,
+  reloadNonce,
+  note,
+  onHideNote,
+}: SeriesChartProps) {
+  const shared = {
+    title: widget.title,
+    data,
+    seriesKeys,
+    colors,
+    labelOf,
+    unit: widget.unit,
+    currency,
+    reloadNonce,
+    note,
+    onHideNote,
+  };
+
+  if (widget.type === "bar") return <BarChartWidget {...shared} mode={stacking} />;
+  if (widget.type === "area") return <AreaChartWidget {...shared} mode={stacking} />;
+  if (widget.type === "combo") {
+    return <ComboChartWidget {...shared} lineKeys={lineKeys} />;
+  }
+  return <LineChartWidget {...shared} showTrendline={widget.showTrendline} />;
 }
 
 function WidgetRender({
@@ -195,22 +314,10 @@ function WidgetRender({
   }
 
   if (widget.type === "date") {
-    const mode = widget.dateMode ?? "yearRemaining";
-    if (mode !== "sinceColumn") {
-      return (
-        <DateCard
-          label={widget.title}
-          mode={mode}
-          targetDate={widget.targetDate}
-          reloadNonce={reloadNonce}
-        />
-      );
-    }
-    if (query && !result) return <WidgetSkeleton widget={widget} />;
     return (
-      <DateCard
-        label={widget.title}
-        mode="sinceColumn"
+      <DateWidgetView
+        widget={widget}
+        pending={Boolean(query) && !result}
         sinceDate={result?.scalarText ?? null}
         reloadNonce={reloadNonce}
       />
@@ -235,20 +342,11 @@ function WidgetRender({
   }
 
   if (widget.type === "kpi") {
-    const target = widget.targetColumn
-      ? result.rows.find((r) => r.series === widget.targetColumn)?.value ?? null
-      : null;
-    const actual = widget.targetColumn
-      ? result.rows.find((r) => r.series === widget.metricColumn)?.value ?? null
-      : result.scalarValue ?? null;
-
     return (
-      <KpiCard
-        label={widget.title}
-        value={actual}
-        target={target}
-        targetLabel={widget.targetColumn ? columnLabel(widget.targetColumn) : undefined}
-        unit={widget.unit}
+      <KpiWidgetView
+        widget={widget}
+        result={result}
+        columnLabel={columnLabel}
         currency={currency}
         reloadNonce={reloadNonce}
       />
@@ -283,69 +381,15 @@ function WidgetRender({
       )}× lebih kecil dari ${labelOf(mismatch.large)}. Tampilkan di chart terpisah.`
     : undefined;
 
-  if (widget.type === "bar") {
-    return suspend(
-      <BarChartWidget
-        title={widget.title}
-        data={data}
-        seriesKeys={seriesKeys}
-        colors={colors}
-        labelOf={labelOf}
-        mode={stacking}
-        unit={widget.unit}
-        currency={currency}
-        reloadNonce={reloadNonce}
-        note={note}
-        onHideNote={hideWarning}
-      />
-    );
-  }
-
-  if (widget.type === "area") {
-    return suspend(
-      <AreaChartWidget
-        title={widget.title}
-        data={data}
-        seriesKeys={seriesKeys}
-        colors={colors}
-        labelOf={labelOf}
-        mode={stacking}
-        unit={widget.unit}
-        currency={currency}
-        reloadNonce={reloadNonce}
-        note={note}
-        onHideNote={hideWarning}
-      />
-    );
-  }
-
-  if (widget.type === "combo") {
-    return suspend(
-      <ComboChartWidget
-        title={widget.title}
-        data={data}
-        seriesKeys={seriesKeys}
-        lineKeys={lineKeys}
-        colors={colors}
-        labelOf={labelOf}
-        unit={widget.unit}
-        currency={currency}
-        reloadNonce={reloadNonce}
-        note={note}
-        onHideNote={hideWarning}
-      />
-    );
-  }
-
   return suspend(
-    <LineChartWidget
-      title={widget.title}
+    <SeriesChart
+      widget={widget}
       data={data}
       seriesKeys={seriesKeys}
+      lineKeys={lineKeys}
       colors={colors}
       labelOf={labelOf}
-      showTrendline={widget.showTrendline}
-      unit={widget.unit}
+      stacking={stacking}
       currency={currency}
       reloadNonce={reloadNonce}
       note={note}

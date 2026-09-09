@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
 import type { DatasetColumn, WidgetFilter } from "../../types";
@@ -34,7 +34,7 @@ export default function TableWidget({
   const [error, setError] = useState<string | null>(null);
 
   const wanted = useMemo(
-    () => (selected && selected.length > 0 ? [...selected] : undefined),
+    () => (selected?.length ? [...selected] : undefined),
     [selected]
   );
 
@@ -43,7 +43,7 @@ export default function TableWidget({
     [filters]
   );
   const activeFilters = useMemo(
-    () => (filters && filters.length > 0 ? [...filters] : undefined),
+    () => (filters?.length ? [...filters] : undefined),
     [filterKey]
   );
 
@@ -133,24 +133,29 @@ export default function TableWidget({
   const firstRow = total === 0 ? 0 : page * limit + 1;
   const lastRow = page * limit + (rows?.length ?? 0);
 
+  let notice: ReactNode = null;
+  if (error) {
+    notice = <div className="widget-empty">{error}</div>;
+  } else if (rows === null) {
+    notice = (
+      <div className="sk-table" aria-busy="true" aria-label={`Memuat ${title}`}>
+        <span className="sk sk-row sk-row-head" />
+        {Array.from({ length: Math.min(limit, 6) }, (_, i) => (
+          <span key={i} className="sk sk-row" />
+        ))}
+      </div>
+    );
+  } else if (rows.length === 0 && total === 0) {
+    notice = <div className="widget-empty">Tidak ada baris untuk ditampilkan</div>;
+  }
+
   return (
     <div className="chart-wrapper">
       <h4 className="widget-title" title={title}>
         {title}
       </h4>
 
-      {error ? (
-        <div className="widget-empty">{error}</div>
-      ) : rows === null ? (
-        <div className="sk-table" aria-busy="true" aria-label={`Memuat ${title}`}>
-          <span className="sk sk-row sk-row-head" />
-          {Array.from({ length: Math.min(limit, 6) }, (_, i) => (
-            <span key={i} className="sk sk-row" />
-          ))}
-        </div>
-      ) : rows.length === 0 && total === 0 ? (
-        <div className="widget-empty">Tidak ada baris untuk ditampilkan</div>
-      ) : (
+      {notice ?? (
         <>
           <div className={`table-scroll${loading ? " is-loading" : ""}`}>
             <table className="data-table">
@@ -159,17 +164,14 @@ export default function TableWidget({
                   {shown.map((name) => {
                     const numeric = typeOf(name) === "numeric";
                     const active = sort?.column === name;
+                    const ascending = active && sort?.dir === "asc";
+                    let ariaSort: "ascending" | "descending" | "none" = "none";
+                    if (active) ariaSort = ascending ? "ascending" : "descending";
                     return (
                       <th
                         key={name}
                         className={numeric ? "cell-num" : undefined}
-                        aria-sort={
-                          active
-                            ? sort?.dir === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : "none"
-                        }
+                        aria-sort={ariaSort}
                       >
                         <button
                           type="button"
@@ -179,7 +181,7 @@ export default function TableWidget({
                         >
                           <span>{labelOf(name)}</span>
                           <span className="th-sort-arrow">
-                            {active ? (sort?.dir === "asc" ? "▲" : "▼") : ""}
+                            {active && (ascending ? "▲" : "▼")}
                           </span>
                         </button>
                       </th>
@@ -188,7 +190,7 @@ export default function TableWidget({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => (
+                {(rows ?? []).map((row, index) => (
                   <tr key={index}>
                     {shown.map((name) => (
                       <td

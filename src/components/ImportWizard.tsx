@@ -90,6 +90,16 @@ export type ImportWizardProps = {
   readonly onImportSuccess?: () => void;
 };
 
+function matchSheets(
+  sheets: DetectedSheet[] | null,
+  query: string
+): DetectedSheet[] {
+  if (!sheets) return [];
+  const q = query.trim().toLowerCase();
+  if (!q) return sheets;
+  return sheets.filter((s) => s.sheetName.toLowerCase().includes(q));
+}
+
 export default function ImportWizard({
   wizardState,
   setWizardState,
@@ -120,12 +130,10 @@ export default function ImportWizard({
     ? sheets.filter((s) => selected[s.sheetName]).length
     : 0;
 
-  const filteredSheets = useMemo(() => {
-    if (!sheets) return [];
-    if (!searchQuery.trim()) return sheets;
-    const q = searchQuery.toLowerCase();
-    return sheets.filter((s) => s.sheetName.toLowerCase().includes(q));
-  }, [sheets, searchQuery]);
+  const filteredSheets = useMemo(
+    () => matchSheets(sheets, searchQuery),
+    [sheets, searchQuery]
+  );
 
   const activeSheet = useMemo(() => {
     if (!sheets || sheets.length === 0) return null;

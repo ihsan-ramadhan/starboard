@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useApp } from "../App";
@@ -25,6 +25,113 @@ function initials(name: string) {
     .map((w) => w[0])
     .join("")
     .toUpperCase();
+}
+
+type NavItemProps = {
+  readonly item: DatasetTab;
+  readonly arranging: boolean;
+  readonly active: boolean;
+  readonly dragging: boolean;
+  readonly renaming: boolean;
+  readonly onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  readonly onClickCapture: (e: React.MouseEvent<HTMLDivElement>) => void;
+  readonly onNudge: (e: React.KeyboardEvent<HTMLElement>) => void;
+  readonly onStartRename: () => void;
+  readonly onFinishRename: (value: string) => void;
+  readonly onDelete: () => void;
+};
+
+function NavItem({
+  item,
+  arranging,
+  active,
+  dragging,
+  renaming,
+  onPointerDown,
+  onClickCapture,
+  onNudge,
+  onStartRename,
+  onFinishRename,
+  onDelete,
+}: NavItemProps) {
+  if (!arranging) {
+    return (
+      <Link
+        data-key={item.key}
+        to={`/d/${item.key}`}
+        className={`nav-link${active ? " active" : ""}`}
+        aria-current={active ? "page" : undefined}
+        aria-label={item.displayName}
+        title={item.displayName}
+      >
+        <span className="nav-initial">{initials(item.displayName)}</span>
+        <span className="nav-label sidebar-hideable">{item.displayName}</span>
+      </Link>
+    );
+  }
+
+  const rowClass = `nav-row${active ? " is-active" : ""}${
+    dragging ? " is-dragging" : ""
+  }`;
+
+  return (
+    <div
+      data-key={item.key}
+      className={rowClass}
+      onPointerDown={onPointerDown}
+      onClickCapture={onClickCapture}
+    >
+      {renaming ? (
+        <input
+          className="nav-rename"
+          defaultValue={item.displayName}
+          maxLength={60}
+          autoFocus
+          aria-label={`Nama menu untuk ${item.displayName}`}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.currentTarget.value = item.displayName;
+              e.currentTarget.blur();
+            }
+          }}
+          onBlur={(e) => onFinishRename(e.target.value)}
+        />
+      ) : (
+        <>
+          <Link
+            to={`/d/${item.key}`}
+            className={`nav-link nav-row-link${active ? " active" : ""}`}
+            draggable={false}
+            aria-current={active ? "page" : undefined}
+            onKeyDown={onNudge}
+            title={`${item.displayName} — tekan lama untuk memindahkan, atau Alt + panah atas/bawah`}
+          >
+            <span className="nav-initial">{initials(item.displayName)}</span>
+            <span className="nav-label sidebar-hideable">{item.displayName}</span>
+          </Link>
+          <button
+            type="button"
+            className="nav-rename-btn"
+            aria-label={`Ganti nama ${item.displayName}`}
+            title="Ganti nama menu"
+            onClick={onStartRename}
+          >
+            <PencilIcon width={13} height={13} />
+          </button>
+          <button
+            type="button"
+            className="nav-del-btn"
+            aria-label={`Hapus dataset ${item.displayName}`}
+            title="Hapus dataset"
+            onClick={onDelete}
+          >
+            <TrashIcon width={13} height={13} />
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function Sidebar({
@@ -254,6 +361,25 @@ export function Sidebar({
     }
   }
 
+  let navNotice: ReactNode = null;
+  if (!datasetsLoaded) {
+    navNotice = (
+      <div className="sk-nav" aria-busy="true" aria-label="Memuat daftar dataset">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="sk sk-nav-row" />
+        ))}
+      </div>
+    );
+  } else if (items.length === 0) {
+    navNotice = (
+      <span className="nav-empty">
+        {admin
+          ? "Belum ada dataset. Mulai dari Import Dataset di bawah."
+          : `Admin ${user.role} belum mengimpor dataset.`}
+      </span>
+    );
+  }
+
   return (
     <>
       <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
@@ -281,104 +407,31 @@ export function Sidebar({
           onPointerUp={pressEnd}
           onPointerCancel={pressEnd}
         >
-          {!datasetsLoaded ? (
-            <div className="sk-nav" aria-busy="true" aria-label="Memuat daftar dataset">
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="sk sk-nav-row" />
-              ))}
-            </div>
-          ) : items.length === 0 ? (
-            <span className="nav-empty">
-              {admin
-                ? "Belum ada dataset. Mulai dari Import Dataset di bawah."
-                : `Admin ${user.role} belum mengimpor dataset.`}
-            </span>
-          ) : (
-            items.map((d) =>
-              arranging ? (
-                <div
-                  key={d.key}
-                  data-key={d.key}
-                  className={`nav-row${activeKey === d.key ? " is-active" : ""}${
-                    draggingKey === d.key ? " is-dragging" : ""
-                  }`}
-                  onPointerDown={(e) => pressStart(e, d.key)}
-                  onClickCapture={(e) => {
-                    if (!suppressClickRef.current) return;
-                    suppressClickRef.current = false;
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  {renamingKey === d.key ? (
-                    <input
-                      className="nav-rename"
-                      defaultValue={d.displayName}
-                      maxLength={60}
-                      autoFocus
-                      aria-label={`Nama menu untuk ${d.displayName}`}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                        if (e.key === "Escape") {
-                          e.currentTarget.value = d.displayName;
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      onBlur={(e) => {
-                        setRenamingKey(null);
-                        saveName(d.key, e.target.value);
-                      }}
-                    />
-                  ) : (
-                    <>
-                      <Link
-                        to={`/d/${d.key}`}
-                        className={`nav-link nav-row-link${activeKey === d.key ? " active" : ""}`}
-                        draggable={false}
-                        aria-current={activeKey === d.key ? "page" : undefined}
-                        onKeyDown={(e) => nudge(e, d.key)}
-                        title={`${d.displayName} — tekan lama untuk memindahkan, atau Alt + panah atas/bawah`}
-                      >
-                        <span className="nav-initial">{initials(d.displayName)}</span>
-                        <span className="nav-label sidebar-hideable">{d.displayName}</span>
-                      </Link>
-                      <button
-                        type="button"
-                        className="nav-rename-btn"
-                        aria-label={`Ganti nama ${d.displayName}`}
-                        title="Ganti nama menu"
-                        onClick={() => setRenamingKey(d.key)}
-                      >
-                        <PencilIcon width={13} height={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="nav-del-btn"
-                        aria-label={`Hapus dataset ${d.displayName}`}
-                        title="Hapus dataset"
-                        onClick={() => setDatasetToDelete(d)}
-                      >
-                        <TrashIcon width={13} height={13} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <Link
-                  key={d.key}
-                  data-key={d.key}
-                  to={`/d/${d.key}`}
-                  className={`nav-link${activeKey === d.key ? " active" : ""}`}
-                  aria-current={activeKey === d.key ? "page" : undefined}
-                  aria-label={d.displayName}
-                  title={d.displayName}
-                >
-                  <span className="nav-initial">{initials(d.displayName)}</span>
-                  <span className="nav-label sidebar-hideable">{d.displayName}</span>
-                </Link>
-              )
-            )
-          )}
+          {navNotice ??
+            items.map((d) => (
+              <NavItem
+                key={d.key}
+                item={d}
+                arranging={arranging}
+                active={activeKey === d.key}
+                dragging={draggingKey === d.key}
+                renaming={renamingKey === d.key}
+                onPointerDown={(e) => pressStart(e, d.key)}
+                onClickCapture={(e) => {
+                  if (!suppressClickRef.current) return;
+                  suppressClickRef.current = false;
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onNudge={(e) => nudge(e, d.key)}
+                onStartRename={() => setRenamingKey(d.key)}
+                onFinishRename={(value) => {
+                  setRenamingKey(null);
+                  saveName(d.key, value);
+                }}
+                onDelete={() => setDatasetToDelete(d)}
+              />
+            ))}
 
           {admin && (arranging || items.length === 0) && (
             <Link

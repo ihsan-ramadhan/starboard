@@ -5,7 +5,7 @@ import type { EChartsOption } from "echarts";
 
 export type SeriesLabeller = (series: string) => string;
 
-export function escapeHtml(value: unknown): string {
+export function escapeHtml(value: string | number | null | undefined): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

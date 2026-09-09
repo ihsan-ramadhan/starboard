@@ -104,6 +104,8 @@ const SERIES_MODE_LABEL: Record<SeriesMode, string> = {
   stacked100: "Bertumpuk 100%",
 };
 
+type DraftFilter = WidgetFilter & { readonly id: string };
+
 type Draft = {
   type: WidgetType;
   title: string;
@@ -116,7 +118,7 @@ type Draft = {
   lineColumn: string;
   targetColumn: string;
   showTrendline: boolean;
-  filters: WidgetFilter[];
+  filters: DraftFilter[];
   tableColumns: string[];
   dateMode: DateMode;
   targetDate: string;
@@ -163,7 +165,7 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     lineColumn: widget.lineColumn ?? "",
     targetColumn: widget.targetColumn ?? "",
     showTrendline: widget.showTrendline ?? false,
-    filters: widget.filters ?? [],
+    filters: (widget.filters ?? []).map((f) => ({ ...f, id: createId() })),
     tableColumns: widget.tableColumns ?? [],
     dateMode: widget.dateMode ?? "yearRemaining",
     targetDate: widget.targetDate ?? "",
@@ -177,10 +179,22 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
   };
 }
 
+function limitFor(type: WidgetType, current: number): number {
+  if (type === "table") return nearestPageSize(current);
+  return current > 100 ? 10 : current;
+}
+
 function nearestPageSize(value: number): number {
-  return TABLE_PAGE_SIZES.reduce((best, size) =>
-    Math.abs(size - value) < Math.abs(best - value) ? size : best
+  return TABLE_PAGE_SIZES.reduce(
+    (best, size) => (Math.abs(size - value) < Math.abs(best - value) ? size : best),
+    TABLE_PAGE_SIZES[0]
   );
+}
+
+function filterInputType(type: DatasetColumn["type"] | undefined): string {
+  if (type === "date") return "date";
+  if (type === "numeric") return "number";
+  return "text";
 }
 
 function toggle(list: string[], value: string): string[] {
@@ -191,6 +205,134 @@ function toggle(list: string[], value: string): string[] {
 
 function createId(): string {
   return `w_${crypto.randomUUID()}`;
+}
+
+type BuildContext = {
+  readonly draft: Draft;
+  readonly caps: Caps;
+  readonly isCount: boolean;
+  readonly picked: string[];
+  readonly multiValue: boolean;
+};
+
+type ValidationRule = {
+  readonly fails: (ctx: BuildContext) => boolean;
+  readonly message: string;
+};
+
+const VALIDATION_RULES: readonly ValidationRule[] = [
+  {
+    fails: ({ draft }) => !draft.title.trim(),
+    message: "Judul widget belum diisi.",
+  },
+  {
+    fails: ({ draft, caps, isCount }) =>
+      caps.values === "one" && !isCount && !draft.metricColumn,
+    message: "Kolom nilai belum dipilih.",
+  },
+  {
+    fails: ({ caps, isCount, picked }) =>
+      caps.values === "many" && !isCount && picked.length === 0,
+    message: "Pilih minimal satu kolom nilai.",
+  },
+  {
+    fails: ({ draft, caps }) => caps.group && !draft.groupByColumn,
+    message: "Sumbu / kategori belum dipilih.",
+  },
+  {
+    fails: ({ caps, picked }) => caps.combo && picked.length < 2,
+    message: "Combo chart butuh minimal dua kolom nilai.",
+  },
+  {
+    fails: ({ draft, caps, picked }) =>
+      caps.combo && !picked.includes(draft.lineColumn),
+    message: "Pilih kolom yang tampil sebagai garis.",
+  },
+  {
+    fails: ({ draft, caps }) => caps.table && draft.tableColumns.length === 0,
+    message: "Pilih minimal satu kolom tabel.",
+  },
+  {
+    fails: ({ draft, caps }) =>
+      caps.date && draft.dateMode === "untilDate" && !draft.targetDate,
+    message: "Tanggal target belum diisi.",
+  },
+  {
+    fails: ({ draft, caps }) =>
+      caps.date && draft.dateMode === "sinceColumn" && !draft.metricColumn,
+    message: "Kolom tanggal belum dipilih.",
+  },
+  {
+    fails: ({ draft }) => draft.filters.some((f) => f.column && f.value === ""),
+    message: "Nilai filter belum diisi.",
+  },
+];
+
+function metricFields(
+  ctx: BuildContext
+): Pick<WidgetDefinition, "metric" | "metricColumn" | "metricColumns"> {
+  const { draft, caps, isCount, picked } = ctx;
+  const sinceColumn = caps.date && draft.dateMode === "sinceColumn";
+  const usesMetricColumn = (caps.values === "one" && !isCount) || sinceColumn;
+  return {
+    metric: sinceColumn ? "MAX" : draft.metric,
+    metricColumn: usesMetricColumn ? draft.metricColumn : undefined,
+    metricColumns:
+      caps.values === "many" && !isCount && picked.length > 0 ? picked : undefined,
+  };
+}
+
+function axisFields(
+  ctx: BuildContext
+): Pick<
+  WidgetDefinition,
+  | "groupByColumn"
+  | "seriesColumn"
+  | "seriesMode"
+  | "lineColumn"
+  | "targetColumn"
+  | "showTrendline"
+> {
+  const { draft, caps, isCount, multiValue } = ctx;
+  const series = caps.series && !multiValue;
+  const target = caps.target && !isCount;
+  return {
+    groupByColumn: caps.group ? draft.groupByColumn : undefined,
+    seriesColumn: series ? draft.seriesColumn || undefined : undefined,
+    seriesMode: caps.stack ? draft.seriesMode : undefined,
+    lineColumn: caps.combo ? draft.lineColumn : undefined,
+    targetColumn: target ? draft.targetColumn || undefined : undefined,
+    showTrendline: caps.trend ? draft.showTrendline : undefined,
+  };
+}
+
+function contentFields(
+  ctx: BuildContext,
+  filters: WidgetFilter[]
+): Pick<
+  WidgetDefinition,
+  | "filters"
+  | "tableColumns"
+  | "dateMode"
+  | "targetDate"
+  | "limit"
+  | "isCurrency"
+  | "currency"
+  | "unit"
+> {
+  const { draft, caps } = ctx;
+  const money = caps.money && draft.isCurrency;
+  const untilDate = caps.date && draft.dateMode === "untilDate";
+  return {
+    filters: caps.filter && filters.length > 0 ? filters : undefined,
+    tableColumns: caps.table ? draft.tableColumns : undefined,
+    dateMode: caps.date ? draft.dateMode : undefined,
+    targetDate: untilDate ? draft.targetDate : undefined,
+    limit: caps.limit ? draft.limit : undefined,
+    isCurrency: money,
+    currency: money ? draft.currency : undefined,
+    unit: caps.unit && !money ? draft.unit.trim() || undefined : undefined,
+  };
 }
 
 export default function WidgetBuilderSidebar({
@@ -245,12 +387,7 @@ export default function WidgetBuilderSidebar({
         targetColumn: nextCaps.target ? current.targetColumn : "",
         lineColumn: nextCaps.combo ? current.lineColumn : "",
         showTrendline: nextCaps.trend ? current.showTrendline : false,
-        limit:
-          next === "table"
-            ? nearestPageSize(current.limit)
-            : current.limit > 100
-              ? 10
-              : current.limit,
+        limit: limitFor(next, current.limit),
       };
     });
   }
@@ -276,7 +413,10 @@ export default function WidgetBuilderSidebar({
   function addFilter() {
     setDraft((current) => ({
       ...current,
-      filters: [...current.filters, { column: "", op: "eq", value: "" }],
+      filters: [
+        ...current.filters,
+        { id: createId(), column: "", op: "eq", value: "" },
+      ],
     }));
   }
 
@@ -287,78 +427,29 @@ export default function WidgetBuilderSidebar({
     }));
   }
 
-  function blocked(): string | null {
-    if (!draft.title.trim()) return "Judul widget belum diisi.";
+  const buildContext: BuildContext = { draft, caps, isCount, picked, multiValue };
 
-    if (caps.values === "one" && !isCount && !draft.metricColumn) {
-      return "Kolom nilai belum dipilih.";
-    }
-    if (caps.values === "many" && !isCount && picked.length === 0) {
-      return "Pilih minimal satu kolom nilai.";
-    }
-    if (caps.group && !draft.groupByColumn) return "Sumbu / kategori belum dipilih.";
-    if (caps.combo && picked.length < 2) {
-      return "Combo chart butuh minimal dua kolom nilai.";
-    }
-    if (caps.combo && !picked.includes(draft.lineColumn)) {
-      return "Pilih kolom yang tampil sebagai garis.";
-    }
-    if (caps.table && draft.tableColumns.length === 0) {
-      return "Pilih minimal satu kolom tabel.";
-    }
-    if (caps.date && draft.dateMode === "untilDate" && !draft.targetDate) {
-      return "Tanggal target belum diisi.";
-    }
-    if (caps.date && draft.dateMode === "sinceColumn" && !draft.metricColumn) {
-      return "Kolom tanggal belum dipilih.";
-    }
-    if (draft.filters.some((f) => f.column && f.value === "")) {
-      return "Nilai filter belum diisi.";
-    }
-    return null;
-  }
-
-  const problem = blocked();
+  const problem =
+    VALIDATION_RULES.find((rule) => rule.fails(buildContext))?.message ?? null;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (problem) return;
 
-    const money = caps.money && draft.isCurrency;
-    const cleanFilters = draft.filters.filter((f) => f.column && f.value !== "");
+    const cleanFilters: WidgetFilter[] = draft.filters
+      .filter((f) => f.column && f.value !== "")
+      .map(({ column, op, value }) => ({ column, op, value }));
 
-    const widget: WidgetDefinition = {
+    onSave({
       id: editing?.id ?? createId(),
       type: draft.type,
       title: draft.title.trim(),
       datasetId: editing?.datasetId ?? datasetId,
-      metric: caps.date && draft.dateMode === "sinceColumn" ? "MAX" : draft.metric,
-      metricColumn:
-        caps.values === "one" && !isCount
-          ? draft.metricColumn
-          : caps.date && draft.dateMode === "sinceColumn"
-            ? draft.metricColumn
-            : undefined,
-      metricColumns: caps.values === "many" && !isCount && picked.length > 0 ? picked : undefined,
-      groupByColumn: caps.group ? draft.groupByColumn : undefined,
-      seriesColumn: caps.series && !multiValue ? draft.seriesColumn || undefined : undefined,
-      seriesMode: caps.stack ? draft.seriesMode : undefined,
-      lineColumn: caps.combo ? draft.lineColumn : undefined,
-      targetColumn:
-        caps.target && !isCount ? draft.targetColumn || undefined : undefined,
-      showTrendline: caps.trend ? draft.showTrendline : undefined,
-      filters: caps.filter && cleanFilters.length > 0 ? cleanFilters : undefined,
-      tableColumns: caps.table ? draft.tableColumns : undefined,
-      dateMode: caps.date ? draft.dateMode : undefined,
-      targetDate: caps.date && draft.dateMode === "untilDate" ? draft.targetDate : undefined,
-      limit: caps.limit ? draft.limit : undefined,
-      isCurrency: money,
-      currency: money ? draft.currency : undefined,
-      unit: caps.unit && !money ? draft.unit.trim() || undefined : undefined,
+      ...metricFields(buildContext),
+      ...axisFields(buildContext),
+      ...contentFields(buildContext, cleanFilters),
       layout: editing?.layout,
-    };
-
-    onSave(widget);
+    });
   }
 
   return (
@@ -715,15 +806,10 @@ export default function WidgetBuilderSidebar({
                 {draft.filters.map((filter, index) => {
                   const column = columns.find((c) => c.name === filter.column);
                   const allowed = opsForColumn(column?.type ?? "category");
-                  const inputType =
-                    column?.type === "date"
-                      ? "date"
-                      : column?.type === "numeric"
-                        ? "number"
-                        : "text";
+                  const inputType = filterInputType(column?.type);
 
                   return (
-                    <div key={index} className="builder-filter">
+                    <div key={filter.id} className="builder-filter">
                       <div className="builder-filter-row">
                         <select
                           value={filter.column}

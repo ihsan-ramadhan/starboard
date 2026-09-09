@@ -37,14 +37,7 @@ export default function KpiCard({
 
       {hasTarget && (
         <div className="kpi-target">
-          <div
-            className="kpi-meter"
-            role="meter"
-            aria-valuenow={Math.round(ratio * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={`Pencapaian terhadap ${targetLabel}`}
-          >
+          <div className="kpi-meter" aria-hidden="true">
             <span
               key={reloadNonce}
               className={`kpi-meter-fill${reached ? " is-reached" : ""}`}

@@ -117,12 +117,12 @@ function ProtectedLayout({
   setEditMode,
 }: ProtectedLayoutProps) {
   const syncStatuses = useExcelSync(datasets, user, refreshDatasets);
-  const [fullscreen, setFullscreenState] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
-  const setFullscreen = useCallback(
+  const changeFullscreen = useCallback(
     (next: boolean) => {
       setWindowFullscreen(next).catch(() => {});
-      setFullscreenState(next);
+      setFullscreen(next);
       if (next) setEditMode(false);
     },
     [setEditMode]
@@ -132,11 +132,11 @@ function ProtectedLayout({
     if (!fullscreen) return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setFullscreen(false);
+      if (e.key === "Escape") changeFullscreen(false);
     }
 
     function handleNativeExit() {
-      if (!document.fullscreenElement) setFullscreen(false);
+      if (!document.fullscreenElement) changeFullscreen(false);
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -145,7 +145,7 @@ function ProtectedLayout({
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("fullscreenchange", handleNativeExit);
     };
-  }, [fullscreen, setFullscreen]);
+  }, [fullscreen, changeFullscreen]);
 
   const contextValue = useMemo(
     () => ({
@@ -165,7 +165,7 @@ function ProtectedLayout({
       editMode,
       setEditMode,
       fullscreen,
-      setFullscreen,
+      setFullscreen: changeFullscreen,
     }),
     [
       user,
@@ -184,7 +184,7 @@ function ProtectedLayout({
       editMode,
       setEditMode,
       fullscreen,
-      setFullscreen,
+      changeFullscreen,
     ]
   );
 

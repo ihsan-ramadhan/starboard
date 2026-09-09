@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { useParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "react-grid-layout";
@@ -83,6 +89,28 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
     default:
       return { ...base, w: 6, h: 5 };
   }
+}
+
+function applyLayout(
+  widgets: WidgetDefinition[],
+  layout: Layout
+): WidgetDefinition[] | null {
+  if (widgets.length === 0) return null;
+
+  const pos = new Map(layout.map((l) => [l.i, l]));
+  let changed = false;
+
+  const next = widgets.map((w) => {
+    const p = pos.get(w.id);
+    const cur = w.layout;
+    const same =
+      cur && cur.x === p?.x && cur.y === p?.y && cur.w === p?.w && cur.h === p?.h;
+    if (!p || same) return w;
+    changed = true;
+    return { ...w, layout: { x: p.x, y: p.y, w: p.w, h: p.h } };
+  });
+
+  return changed ? next : null;
 }
 
 export default function DatasetPage() {
@@ -423,27 +451,10 @@ export default function DatasetPage() {
 
   function handleLayoutChange(layout: Layout) {
     setWidgets((prev) => {
-      if (prev.length === 0) return prev;
-      const pos = new Map(layout.map((l) => [l.i, l]));
-      const next = prev.map((w) => {
-        const p = pos.get(w.id);
-        if (!p) return w;
-        const cur = w.layout;
-        if (cur && cur.x === p.x && cur.y === p.y && cur.w === p.w && cur.h === p.h) {
-          return w;
-        }
-        return { ...w, layout: { x: p.x, y: p.y, w: p.w, h: p.h } };
-      });
-      const changed = next.some((w, i) => {
-        const a = w.layout;
-        const b = prev[i].layout;
-        return a !== b && (!a || !b || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h);
-      });
-      if (changed) {
-        persistWidgets(next);
-        return next;
-      }
-      return prev;
+      const next = applyLayout(prev, layout);
+      if (!next) return prev;
+      persistWidgets(next);
+      return next;
     });
   }
 
@@ -456,6 +467,43 @@ export default function DatasetPage() {
   }
 
   const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
+
+  let dashboardNotice: ReactNode = null;
+  if (!widgetsLoaded) {
+    dashboardNotice = (
+      <div className="sk-page-grid" aria-busy="true" aria-label="Memuat widget">
+        <span className="sk sk-page-card" />
+        <span className="sk sk-page-card" />
+      </div>
+    );
+  } else if (widgets.length === 0) {
+    dashboardNotice = (
+      <div className="empty-widgets-card">
+        <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
+        {admin ? (
+          <>
+            <p className="empty-widgets-desc">
+              Pilih tipe visual di panel kanan untuk menambahkan widget pertama.
+            </p>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setEditMode(true);
+                openCreateWidget();
+              }}
+            >
+              + Tambah Widget Pertama
+            </button>
+          </>
+        ) : (
+          <p className="empty-widgets-desc">
+            Admin {user.role} belum menyusun dashboard untuk dataset ini.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="dataset-page-layout">
@@ -518,37 +566,7 @@ export default function DatasetPage() {
       </div>
 
       <div className="dashboard-container">
-        {!widgetsLoaded ? (
-          <div className="sk-page-grid" aria-busy="true" aria-label="Memuat widget">
-            <span className="sk sk-page-card" />
-            <span className="sk sk-page-card" />
-          </div>
-        ) : widgets.length === 0 ? (
-          <div className="empty-widgets-card">
-            <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
-            {admin ? (
-              <>
-                <p className="empty-widgets-desc">
-                  Pilih tipe visual di panel kanan untuk menambahkan widget pertama.
-                </p>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => {
-                    setEditMode(true);
-                    openCreateWidget();
-                  }}
-                >
-                  + Tambah Widget Pertama
-                </button>
-              </>
-            ) : (
-              <p className="empty-widgets-desc">
-                Admin {user.role} belum menyusun dashboard untuk dataset ini.
-              </p>
-            )}
-          </div>
-        ) : (
+        {dashboardNotice ?? (
           <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
             {containerWidth > 0 && (
               <GridLayout
@@ -579,8 +597,20 @@ export default function DatasetPage() {
                     <div key={widget.id}>
                       <div
                         className={`widget-card wrap${isSelected ? " is-selected" : ""}`}
+                        role={editMode ? "button" : undefined}
+                        tabIndex={editMode ? 0 : undefined}
+                        aria-label={
+                          editMode ? `Atur widget ${widget.title}` : undefined
+                        }
                         onClick={() => {
                           if (editMode) {
+                            openEditWidget(widget);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (!editMode || e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
                             openEditWidget(widget);
                           }
                         }}
@@ -671,6 +701,80 @@ type SyncLineProps = {
   readonly onClaim: () => void;
 };
 
+type SyncAction = "enable" | "claim" | "pause";
+
+const SYNC_ACTION_LABEL: Record<SyncAction, string> = {
+  enable: "Aktifkan",
+  claim: "Awasi dari laptop ini",
+  pause: "Jeda",
+};
+
+type SyncView = {
+  readonly tone: string;
+  readonly text: string;
+  readonly action: SyncAction | null;
+};
+
+type SyncViewInput = {
+  readonly name: string;
+  readonly when: string | null;
+  readonly enabled: boolean;
+  readonly watchedBy: string | null;
+  readonly mine: boolean;
+  readonly status: SyncStatus | undefined;
+};
+
+function syncView({
+  name,
+  when,
+  enabled,
+  watchedBy,
+  mine,
+  status,
+}: SyncViewInput): SyncView {
+  if (!enabled) {
+    return { tone: "paused", text: `Sync dijeda untuk ${name}`, action: "enable" };
+  }
+  if (!isDesktop()) {
+    return {
+      tone: "paused",
+      text: `${name} diikuti dari aplikasi desktop`,
+      action: null,
+    };
+  }
+  if (!watchedBy) {
+    return {
+      tone: "paused",
+      text: `${name} belum diawasi laptop mana pun`,
+      action: "claim",
+    };
+  }
+  if (!mine) {
+    return {
+      tone: "live",
+      text: when
+        ? `Diikuti dari ${watchedBy} · diperbarui ${when}`
+        : `Diikuti dari ${watchedBy}`,
+      action: "claim",
+    };
+  }
+  if (status?.state === "importing") {
+    return { tone: "busy", text: `Membaca perubahan ${name}…`, action: null };
+  }
+  if (status?.state === "error") {
+    return {
+      tone: "error",
+      text: status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`,
+      action: "pause",
+    };
+  }
+  return {
+    tone: "live",
+    text: when ? `Mengikuti ${name} · diperbarui ${when}` : `Mengikuti ${name}`,
+    action: "pause",
+  };
+}
+
 function SyncLine({
   sourcePath,
   enabled,
@@ -683,70 +787,43 @@ function SyncLine({
   onToggle,
   onClaim,
 }: SyncLineProps) {
-  const name = fileNameOf(sourcePath);
-  const when = formatSyncTime(lastSyncedAt);
-  const mine = !!machine && watchedBy === machine;
-  let tone = "paused";
-  let text: string;
-  let action: { label: string; run: () => void } | null = null;
-
-  if (!enabled) {
-    text = `Sync dijeda untuk ${name}`;
-    if (canEdit) action = { label: "Aktifkan", run: onToggle };
-  } else if (!isDesktop()) {
-    text = `${name} diikuti dari aplikasi desktop`;
-  } else if (!watchedBy) {
-    text = `${name} belum diawasi laptop mana pun`;
-    if (canEdit) action = { label: "Awasi dari laptop ini", run: onClaim };
-  } else if (!mine) {
-
-    tone = "live";
-    text = when
-      ? `Diikuti dari ${watchedBy} · diperbarui ${when}`
-      : `Diikuti dari ${watchedBy}`;
-    if (canEdit) action = { label: "Awasi dari laptop ini", run: onClaim };
-  } else if (status?.state === "importing") {
-    tone = "busy";
-    text = `Membaca perubahan ${name}…`;
-  } else if (status?.state === "error") {
-    tone = "error";
-    text = status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`;
-    if (canEdit) action = { label: "Jeda", run: onToggle };
-  } else {
-    tone = "live";
-    text = when ? `Mengikuti ${name} · diperbarui ${when}` : `Mengikuti ${name}`;
-    if (canEdit) action = { label: "Jeda", run: onToggle };
-  }
+  const view = syncView({
+    name: fileNameOf(sourcePath),
+    when: formatSyncTime(lastSyncedAt),
+    enabled,
+    watchedBy,
+    mine: !!machine && watchedBy === machine,
+    status,
+  });
+  const action = canEdit ? view.action : null;
 
   return (
-    <p className={`dataset-sync tone-${tone}`}>
+    <p className={`dataset-sync tone-${view.tone}`}>
       <span className="dataset-sync-dot" aria-hidden="true" />
       <span className="dataset-sync-text" title={status?.error ?? sourcePath}>
-        {text}
+        {view.text}
       </span>
       {action && (
         <button
           type="button"
           className="dataset-sync-toggle"
-          onClick={action.run}
+          onClick={action === "claim" ? onClaim : onToggle}
           disabled={busy}
         >
-          {action.label}
+          {SYNC_ACTION_LABEL[action]}
         </button>
       )}
     </p>
   );
 }
 
-function DatasetDescription({
-  value,
-  canEdit,
-  onSave,
-}: {
-  value: string | null;
-  canEdit: boolean;
-  onSave: (next: string) => Promise<void>;
-}) {
+type DatasetDescriptionProps = {
+  readonly value: string | null;
+  readonly canEdit: boolean;
+  readonly onSave: (next: string) => Promise<void>;
+};
+
+function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps) {
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 

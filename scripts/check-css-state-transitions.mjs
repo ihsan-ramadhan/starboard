@@ -72,7 +72,7 @@ for (const rule of rules) {
   const changed = new Set(declarations(rule.body).keys());
   for (const sel of rule.selector.split(",")) {
     if (!sel.includes(STATE)) continue;
-    const target = sel.replace(/\.sidebar\.collapsed/g, "").trim();
+    const target = sel.replaceAll(".sidebar.collapsed", "").trim();
     const key = target ? target.split(/\s+/).pop() : ".sidebar";
     for (const base of bases.get(key) ?? []) {
       const value = declarations(base.body).get("transition");

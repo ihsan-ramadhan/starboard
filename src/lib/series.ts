@@ -123,8 +123,8 @@ export function scaleMismatch(
     return { key, peak };
   });
 
-  const large = peaks.reduce((a, b) => (b.peak > a.peak ? b : a));
-  const small = peaks.reduce((a, b) => (b.peak < a.peak ? b : a));
+  const large = peaks.reduce((a, b) => (b.peak > a.peak ? b : a), peaks[0]);
+  const small = peaks.reduce((a, b) => (b.peak < a.peak ? b : a), peaks[0]);
   if (small.peak === 0 || large.peak === 0) return null;
 
   const ratio = large.peak / small.peak;
