@@ -311,6 +311,10 @@ export default function ImportWizard({
         watchedBy: sourcePath ? await machineName() : undefined,
       });
 
+      if (!res.primaryKey) {
+        throw new Error("Tidak ada sheet yang berhasil diimpor.");
+      }
+
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
       toast.success(

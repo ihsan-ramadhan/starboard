@@ -5,6 +5,15 @@ import type { EChartsOption } from "echarts";
 
 export type SeriesLabeller = (series: string) => string;
 
+export function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export type ChartFrameProps = {
   readonly title: string;
   readonly isEmpty: boolean;

@@ -424,6 +424,21 @@ pub async fn execute_import(
             col_defs.push(format!("\"{}\" {}", col.slug, pg_type));
         }
 
+        let existed: bool = tx
+            .query_one("SELECT to_regclass($1) IS NOT NULL", &[&table_name])
+            .await
+            .map_err(|e| format!("Table lookup error: {}", e))?
+            .get(0);
+
+        let previous_rows: i64 = if existed {
+            tx.query_one(&format!("SELECT count(*) FROM \"{}\"", table_name), &[])
+                .await
+                .map_err(|e| format!("Row count error: {}", e))?
+                .get(0)
+        } else {
+            0
+        };
+
         tx.execute(&format!("DROP TABLE IF EXISTS \"{}\"", table_name), &[])
             .await
             .map_err(|e| format!("Drop table error: {}", e))?;
@@ -563,6 +578,13 @@ pub async fn execute_import(
 
         unify_category_spellings(&mut rows_data, &import_cols);
 
+        if rows_data.is_empty() && previous_rows > 0 {
+            return Err(format!(
+                "Sheet \"{}\" terbaca tanpa satu pun baris data, padahal tabel sebelumnya berisi {} baris. Impor dibatalkan agar data lama tidak terhapus.",
+                sheet_name, previous_rows
+            ));
+        }
+
         if !rows_data.is_empty() {
             let chunk_size = 250;
             for chunk in rows_data.chunks(chunk_size) {
@@ -595,6 +617,12 @@ pub async fn execute_import(
         }
 
         total_imported += rows_data.len();
+    }
+
+    if primary_key.is_empty() {
+        return Err(
+            "Tidak ada sheet yang bisa diimpor. Periksa pilihan sheet dan kolomnya.".to_string(),
+        );
     }
 
     tx.commit().await.map_err(|e| format!("Commit error: {}", e))?;

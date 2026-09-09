@@ -53,6 +53,7 @@ export function Sidebar({
   const itemsRef = useRef(items);
   const listRef = useRef<HTMLElement>(null);
   const draggingRef = useRef<string | null>(null);
+  const dragStartOrderRef = useRef("");
 
   useEffect(() => {
     itemsRef.current = items;
@@ -134,6 +135,7 @@ export function Sidebar({
       void 0;
     }
     draggingRef.current = key;
+    dragStartOrderRef.current = itemsRef.current.map((i) => i.key).join("|");
   }
 
   function dragOver(e: React.PointerEvent<HTMLButtonElement>) {
@@ -159,6 +161,9 @@ export function Sidebar({
       void 0;
     }
     draggingRef.current = null;
+    if (itemsRef.current.map((i) => i.key).join("|") === dragStartOrderRef.current) {
+      return;
+    }
     saveOrder(itemsRef.current);
   }
 

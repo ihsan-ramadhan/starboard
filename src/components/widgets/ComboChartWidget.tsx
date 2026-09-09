@@ -5,6 +5,7 @@ import {
   ChartFrame,
   baseEChartOption,
   type SeriesLabeller,
+  escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
@@ -85,13 +86,13 @@ export default function ComboChartWidget({
         ...base.tooltip,
         formatter: (params: any) => {
           if (!Array.isArray(params)) return "";
-          const header = `<div style="font-weight:600;margin-bottom:4px">${params[0]?.axisValueLabel || ""}</div>`;
+          const header = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(params[0]?.axisValueLabel)}</div>`;
           const lines = params.map((p: any) => {
             const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
-              `<span>${marker}${labelOf(p.seriesName)}</span>` +
-              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${formatFullValue(p.value, currency, unit)}</span>` +
+              `<span>${marker}${escapeHtml(labelOf(p.seriesName))}</span>` +
+              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))}</span>` +
               `</div>`
             );
           });

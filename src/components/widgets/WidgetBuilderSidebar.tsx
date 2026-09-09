@@ -300,7 +300,9 @@ export default function WidgetBuilderSidebar({
     if (caps.combo && picked.length < 2) {
       return "Combo chart butuh minimal dua kolom nilai.";
     }
-    if (caps.combo && !draft.lineColumn) return "Pilih kolom yang tampil sebagai garis.";
+    if (caps.combo && !picked.includes(draft.lineColumn)) {
+      return "Pilih kolom yang tampil sebagai garis.";
+    }
     if (caps.table && draft.tableColumns.length === 0) {
       return "Pilih minimal satu kolom tabel.";
     }
@@ -342,7 +344,8 @@ export default function WidgetBuilderSidebar({
       seriesColumn: caps.series && !multiValue ? draft.seriesColumn || undefined : undefined,
       seriesMode: caps.stack ? draft.seriesMode : undefined,
       lineColumn: caps.combo ? draft.lineColumn : undefined,
-      targetColumn: caps.target ? draft.targetColumn || undefined : undefined,
+      targetColumn:
+        caps.target && !isCount ? draft.targetColumn || undefined : undefined,
       showTrendline: caps.trend ? draft.showTrendline : undefined,
       filters: caps.filter && cleanFilters.length > 0 ? cleanFilters : undefined,
       tableColumns: caps.table ? draft.tableColumns : undefined,
@@ -478,7 +481,13 @@ export default function WidgetBuilderSidebar({
                           <input
                             type="checkbox"
                             checked={picked.includes(c.name)}
-                            onChange={() => set("metricColumns", toggle(picked, c.name))}
+                            onChange={() => {
+                              const next = toggle(picked, c.name);
+                              set("metricColumns", next);
+                              if (draft.lineColumn && !next.includes(draft.lineColumn)) {
+                                set("lineColumn", "");
+                              }
+                            }}
                           />
                           <span>{c.label || c.name}</span>
                         </label>

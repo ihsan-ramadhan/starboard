@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { ChartDataPoint, CurrencyCode } from "../../types";
 import { formatFullValue } from "../../lib/format";
-import { ChartFrame } from "./chartParts";
+import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
 import type { EChartsOption } from "echarts";
 
@@ -43,8 +43,8 @@ export default function PieChartWidget({
           const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
           return (
             `<div>` +
-            `<div style="font-weight:600;margin-bottom:2px">${marker}${p.name}</div>` +
-            `<div style="font-variant-numeric:tabular-nums">${formatFullValue(p.value, currency, unit)} (${p.percent}%)</div>` +
+            `<div style="font-weight:600;margin-bottom:2px">${marker}${escapeHtml(p.name)}</div>` +
+            `<div style="font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))} (${p.percent}%)</div>` +
             `</div>`
           );
         },

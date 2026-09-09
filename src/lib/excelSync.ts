@@ -142,8 +142,10 @@ export function useExcelSync(
           }
 
           setStatus(ds.key, { state: "importing" });
+          let attempted = revision;
           try {
             const file = await readSourceFile(path);
+            attempted = file.revision;
             if (!active) return;
             const res = await api.syncDataset(dept, ds.key, {
               fileBytes: file.bytes,
@@ -160,7 +162,7 @@ export function useExcelSync(
               );
             }
           } catch (err) {
-            rejectedRef.current[ds.key] = revision;
+            rejectedRef.current[ds.key] = attempted;
             setStatus(ds.key, { state: "error", error: messageOf(err) });
           }
         }

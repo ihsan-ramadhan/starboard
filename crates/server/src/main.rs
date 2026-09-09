@@ -313,14 +313,31 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
                 ADD CONSTRAINT "dashboard_widgets_userId_fkey"
                 FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE SET NULL;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username));
-            CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON users (lower(email));
-
             COMMIT;
             "#,
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    for (label, sql) in [
+        (
+            "users (lower(username))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username))",
+        ),
+        (
+            "users (lower(email))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON users (lower(email))",
+        ),
+    ] {
+        if let Err(e) = client.batch_execute(sql).await {
+            eprintln!("[WARN] Gagal membuat indeks unik {}: {}", label, e);
+            eprintln!(
+                "[WARN] Biasanya ada dua baris yang hanya berbeda huruf besar-kecil. Server tetap jalan tanpa indeks ini; bereskan datanya lalu restart."
+            );
+        }
+    }
+
+    Ok(())
 }
 
 const REGISTRY_COLUMNS: &str = r#"id, dept, key, "tableName", "displayName", "createdAt"::text,

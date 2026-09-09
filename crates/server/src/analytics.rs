@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio_postgres::Client;
 
 use tokio_postgres::types::ToSql;
@@ -223,7 +223,8 @@ pub async fn execute_widget_query(
             _ => req.metric_column.clone().into_iter().collect(),
         }
     };
-    value_columns.dedup();
+    let mut seen = HashSet::new();
+    value_columns.retain(|c| seen.insert(c.clone()));
     for column in &value_columns {
         guard.check(column)?;
     }
@@ -370,7 +371,11 @@ async fn grouped_query(
             .collect()
     };
 
-    let order = if by_key { "1 ASC" } else { "2 DESC" };
+    let order = if by_key {
+        format!("MIN(\"{}\") ASC", group_column)
+    } else {
+        "2 DESC".to_string()
+    };
     let aliased: Vec<String> = selects
         .iter()
         .enumerate()
@@ -446,8 +451,16 @@ async fn pivot_query(
     values: &[String],
     guard: &ColumnGuard,
 ) -> Result<WidgetQueryResult, String> {
-    let outer_order = if by_key { "1 ASC, 2 ASC" } else { "4 DESC, 2 ASC" };
-    let inner_order = if by_key { "1 ASC" } else { "2 DESC" };
+    let outer_order = if by_key {
+        format!("MIN(t.\"{}\") ASC, 2 ASC", group_column)
+    } else {
+        "4 DESC, 2 ASC".to_string()
+    };
+    let inner_order = if by_key {
+        format!("MIN(\"{}\") ASC", group_column)
+    } else {
+        "2 DESC".to_string()
+    };
 
     let mut group_conds = vec![
         format!("\"{}\" IS NOT NULL", group_column),
@@ -551,7 +564,9 @@ pub async fn execute_rows_query(
             SELECT dc.name
             FROM dataset_columns dc
             JOIN information_schema.columns isc
-              ON isc.column_name = dc.name AND isc.table_name = $2
+              ON isc.column_name = dc.name
+             AND isc.table_name = $2
+             AND isc.table_schema = current_schema()
             WHERE dc."datasetId" = $1
             ORDER BY isc.ordinal_position ASC
             "#,
@@ -571,7 +586,8 @@ pub async fn execute_rows_query(
         }
         _ => all_columns.clone(),
     };
-    columns.dedup();
+    let mut seen = HashSet::new();
+    columns.retain(|c| seen.insert(c.clone()));
     if columns.is_empty() {
         return Err("Tidak ada kolom yang bisa ditampilkan.".to_string());
     }

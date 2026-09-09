@@ -105,6 +105,7 @@ function WidgetRender({
 
     const cached = peekWidgetData(query);
     if (cached) {
+      setError(null);
       setResult(cached);
       return;
     }
