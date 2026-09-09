@@ -152,10 +152,14 @@ export const api = {
     });
   },
 
-  renameDataset(dept: string, key: string, displayName: string) {
+  updateDataset(
+    dept: string,
+    key: string,
+    patch: { displayName?: string; description?: string }
+  ) {
     return request<boolean>(`/api/datasets/${encodeURIComponent(key)}`, {
       method: "PUT",
-      body: JSON.stringify({ dept, displayName }),
+      body: JSON.stringify({ dept, ...patch }),
     });
   },
 

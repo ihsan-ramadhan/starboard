@@ -1295,7 +1295,10 @@ a {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 24px;
   margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .dataset-heading {
@@ -1553,6 +1556,18 @@ a {
   min-width: 0;
   overflow-y: auto;
   padding: 20px 24px;
+}
+
+.app-shell.is-fullscreen .dataset-page-layout > .content {
+  padding: 14px 18px;
+}
+
+.app-shell.is-fullscreen .dataset-sync {
+  display: none;
+}
+
+.app-shell.is-fullscreen .dataset-header {
+  margin-bottom: 14px;
 }
 
 /* Power BI style builder sidebar */
@@ -1891,14 +1906,74 @@ select.builder-input {
 .dataset-title {
   font-size: 24px;
   font-weight: 700;
+  line-height: 1.2;
   margin: 0 0 4px;
 }
 
-.dataset-meta {
+.dataset-desc {
+  max-width: 68ch;
+  margin: 0 0 6px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
   color: var(--fg-dim);
-  font-size: 13px;
-  margin: 0;
 }
+
+button.dataset-desc,
+.dataset-desc-add {
+  display: block;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: text;
+}
+
+button.dataset-desc:hover,
+.dataset-desc-add:hover {
+  border-color: var(--border);
+}
+
+button.dataset-desc:focus-visible,
+.dataset-desc-add:focus-visible,
+.dataset-desc-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dataset-desc-add {
+  margin-bottom: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-subtle);
+  cursor: pointer;
+}
+
+.dataset-desc-add:hover {
+  color: var(--accent);
+}
+
+.dataset-desc-input {
+  display: block;
+  width: min(68ch, 100%);
+  padding: 2px 6px;
+  margin: 0 0 6px -6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg);
+}
+
+.dataset-desc-input:focus {
+  outline: none;
+}
+
 
 .dataset-sync {
   display: flex;

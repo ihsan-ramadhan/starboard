@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useCallback,
   createContext,
   useContext,
 } from "react";
@@ -17,6 +18,7 @@ import {
   initialImportWizardState,
 } from "./components/ImportWizard";
 import { api, restoreAuthToken, setAuthToken } from "./lib/api";
+import { setWindowFullscreen } from "./lib/desktop";
 import { useExcelSync, type SyncStatuses } from "./lib/excelSync";
 import {
   isAdmin,
@@ -49,6 +51,8 @@ type AppContextType = {
   syncStatuses: SyncStatuses;
   editMode: boolean;
   setEditMode: React.Dispatch<React.SetStateAction<boolean>>;
+  fullscreen: boolean;
+  setFullscreen: (next: boolean) => void;
 };
 
 const REGISTRY_POLL_MS = 20_000;
@@ -113,6 +117,35 @@ function ProtectedLayout({
   setEditMode,
 }: ProtectedLayoutProps) {
   const syncStatuses = useExcelSync(datasets, user, refreshDatasets);
+  const [fullscreen, setFullscreenState] = useState(false);
+
+  const setFullscreen = useCallback(
+    (next: boolean) => {
+      setWindowFullscreen(next).catch(() => {});
+      setFullscreenState(next);
+      if (next) setEditMode(false);
+    },
+    [setEditMode]
+  );
+
+  useEffect(() => {
+    if (!fullscreen) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+
+    function handleNativeExit() {
+      if (!document.fullscreenElement) setFullscreen(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("fullscreenchange", handleNativeExit);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("fullscreenchange", handleNativeExit);
+    };
+  }, [fullscreen, setFullscreen]);
 
   const contextValue = useMemo(
     () => ({
@@ -131,6 +164,8 @@ function ProtectedLayout({
       syncStatuses,
       editMode,
       setEditMode,
+      fullscreen,
+      setFullscreen,
     }),
     [
       user,
@@ -148,13 +183,17 @@ function ProtectedLayout({
       syncStatuses,
       editMode,
       setEditMode,
+      fullscreen,
+      setFullscreen,
     ]
   );
 
   return (
     <AppContext.Provider value={contextValue}>
-      <div className="app-shell">
-        <Sidebar user={user} datasets={datasets} onLogout={onLogout} />
+      <div className={`app-shell${fullscreen ? " is-fullscreen" : ""}`}>
+        {!fullscreen && (
+          <Sidebar user={user} datasets={datasets} onLogout={onLogout} />
+        )}
         <Outlet />
       </div>
     </AppContext.Provider>

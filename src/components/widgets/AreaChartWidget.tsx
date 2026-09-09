@@ -43,7 +43,7 @@ export default function AreaChartWidget({
   const isPercent = mode === "stacked100" && multi;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent);
+    const base = baseEChartOption(multi, currency, isPercent, { boundaryGap: false });
     const categories = data.map((d) => String(d.groupKey ?? ""));
 
     const rowSums = isPercent

@@ -26,6 +26,7 @@ export type DatasetRegistry = {
   key: string;
   tableName: string;
   displayName: string;
+  description: string | null;
   createdAt: string;
   columns?: DatasetColumn[];
   sourcePath: string | null;

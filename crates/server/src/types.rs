@@ -22,6 +22,7 @@ pub struct DatasetRegistry {
     pub table_name: String,
     #[serde(rename = "displayName")]
     pub display_name: String,
+    pub description: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
     #[serde(rename = "sourcePath")]

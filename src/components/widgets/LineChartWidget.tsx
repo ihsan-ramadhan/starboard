@@ -52,7 +52,7 @@ export default function LineChartWidget({
     const hasTrend =
       Boolean(trendable) && plotted.some((d) => d[TREND_KEY] != null);
     const hasLegend = Boolean(multi || hasTrend);
-    const base = baseEChartOption(hasLegend, currency);
+    const base = baseEChartOption(hasLegend, currency, false, { boundaryGap: false });
     const categories = plotted.map((d) => String(d.groupKey ?? ""));
 
     const series: any[] = seriesKeys.map((key, index) => ({

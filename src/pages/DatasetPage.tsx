@@ -7,11 +7,12 @@ import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api, clearWidgetDataCache } from "../lib/api";
 import { fileNameOf, isDesktop, machineName, pickExcelPath } from "../lib/desktop";
-import { formatCount } from "../lib/format";
 import { useMachineName, type SyncStatus } from "../lib/excelSync";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
+import ExpandIcon from "../assets/icons/expand.svg?react";
+import ShrinkIcon from "../assets/icons/shrink.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
@@ -24,6 +25,7 @@ import {
 } from "../types";
 
 const GRID_COLS = 12;
+const DESCRIPTION_MAX = 160;
 
 function formatSyncTime(iso: string | null): string | null {
   if (!iso) return null;
@@ -95,6 +97,8 @@ export default function DatasetPage() {
     syncStatuses,
     editMode,
     setEditMode,
+    fullscreen,
+    setFullscreen,
   } = useApp();
   const admin = isAdmin(user);
   const machine = useMachineName();
@@ -302,6 +306,18 @@ export default function DatasetPage() {
     }
   }
 
+  async function handleSaveDescription(next: string) {
+    if (!key) return;
+    try {
+      await api.updateDataset(user.role, key, { description: next });
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+    } catch (err) {
+      toast.error("Gagal menyimpan deskripsi: " + String(err));
+    }
+  }
+
   async function handleToggleSync() {
     if (!key || togglingSync) return;
 
@@ -350,7 +366,7 @@ export default function DatasetPage() {
     );
   }
 
-  const { dataset, columns, totalRows } = detail;
+  const { dataset, columns } = detail;
 
   function persistWidgets(next: WidgetDefinition[]) {
     if (!key) return;
@@ -447,11 +463,11 @@ export default function DatasetPage() {
         <div className="dataset-header">
         <div className="dataset-heading">
           <h1 className="dataset-title">{dataset.displayName}</h1>
-          <p className="dataset-meta">
-            Tabel database: <code>{dataset.tableName}</code> · Total baris:{" "}
-            <strong>{formatCount(totalRows)}</strong> · Terdeteksi{" "}
-            <strong>{columns.length} kolom</strong>
-          </p>
+          <DatasetDescription
+            value={(registry ?? dataset).description}
+            canEdit={admin && editMode}
+            onSave={handleSaveDescription}
+          />
           {(registry ?? dataset).sourcePath && (
             <SyncLine
               sourcePath={(registry ?? dataset).sourcePath as string}
@@ -477,6 +493,26 @@ export default function DatasetPage() {
             title="Muat ulang data"
           >
             <RefreshIcon width={15} height={15} />
+          </button>
+          <button
+            type="button"
+            className="btn-ghost btn-icon"
+            onClick={() => setFullscreen(!fullscreen)}
+            aria-pressed={fullscreen}
+            aria-label={
+              fullscreen ? "Keluar dari layar penuh" : "Tampilkan layar penuh"
+            }
+            title={
+              fullscreen
+                ? "Keluar dari layar penuh (Esc)"
+                : "Layar penuh, tanpa sidebar"
+            }
+          >
+            {fullscreen ? (
+              <ShrinkIcon width={15} height={15} />
+            ) : (
+              <ExpandIcon width={15} height={15} />
+            )}
           </button>
         </div>
       </div>
@@ -699,5 +735,82 @@ function SyncLine({
         </button>
       )}
     </p>
+  );
+}
+
+function DatasetDescription({
+  value,
+  canEdit,
+  onSave,
+}: {
+  value: string | null;
+  canEdit: boolean;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  useEffect(() => {
+    if (!canEdit) setEditing(false);
+  }, [canEdit]);
+
+  function commit(raw: string) {
+    setEditing(false);
+    const next = raw.trim();
+    if (next === (value ?? "")) return;
+    void onSave(next);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="dataset-desc-input"
+        defaultValue={value ?? ""}
+        maxLength={DESCRIPTION_MAX}
+        placeholder="Jelaskan isi dashboard ini dalam satu kalimat"
+        aria-label="Deskripsi dashboard"
+        autoFocus
+        onBlur={(e) => commit(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            e.currentTarget.value = value ?? "";
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  if (!value) {
+    if (!canEdit) return null;
+    return (
+      <button
+        type="button"
+        className="dataset-desc-add"
+        onClick={() => setEditing(true)}
+      >
+        + Tambah deskripsi
+      </button>
+    );
+  }
+
+  if (!canEdit) return <p className="dataset-desc">{value}</p>;
+
+  return (
+    <button
+      type="button"
+      className="dataset-desc"
+      onClick={() => setEditing(true)}
+      title="Klik untuk mengubah deskripsi"
+    >
+      {value}
+    </button>
   );
 }

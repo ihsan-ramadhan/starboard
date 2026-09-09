@@ -61,7 +61,8 @@ export function ChartFrame({
 export function baseEChartOption(
   hasLegend: boolean,
   currency?: CurrencyCode,
-  isPercent = false
+  isPercent = false,
+  opts: { boundaryGap?: boolean } = {}
 ): EChartsOption {
   return {
     animation: true,
@@ -91,6 +92,7 @@ export function baseEChartOption(
     },
     xAxis: {
       type: "category",
+      boundaryGap: opts.boundaryGap ?? true,
       axisLine: { lineStyle: { color: "#e2e8f0" } },
       axisTick: { show: false },
       axisLabel: {

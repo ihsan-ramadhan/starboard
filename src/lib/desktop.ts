@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 
 export type SourceFile = {
@@ -65,4 +66,16 @@ export function onFileDrop(handlers: FileDropHandlers) {
 export function fileNameOf(path: string) {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;
+}
+
+export async function setWindowFullscreen(on: boolean) {
+  if (isDesktop()) {
+    await getCurrentWindow().setFullscreen(on);
+    return;
+  }
+  if (on) {
+    await document.documentElement.requestFullscreen();
+  } else if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  }
 }

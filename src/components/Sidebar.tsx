@@ -123,7 +123,7 @@ export function Sidebar({
       return;
     }
     try {
-      await api.renameDataset(user.role, key, name);
+      await api.updateDataset(user.role, key, { displayName: name });
       await refreshDatasets();
     } catch (err: unknown) {
       toast.error("Gagal mengganti nama menu: " + String(err));

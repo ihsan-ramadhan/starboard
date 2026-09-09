@@ -145,7 +145,8 @@ struct SyncRequest {
 struct RenameRequest {
     dept: String,
     #[serde(rename = "displayName")]
-    display_name: String,
+    display_name: Option<String>,
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -304,6 +305,7 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE users ALTER COLUMN "accessLevel" SET NOT NULL;
 
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "createdBy" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "description" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sortOrder" integer;
             ALTER TABLE dashboard_widgets ADD COLUMN IF NOT EXISTS "userId" text;
 
@@ -343,7 +345,7 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
 const REGISTRY_COLUMNS: &str = r#"id, dept, key, "tableName", "displayName", "createdAt"::text,
     "sourcePath", "syncEnabled",
     to_char("lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    "lastSyncedMtime", "watchedBy", "sortOrder""#;
+    "lastSyncedMtime", "watchedBy", "sortOrder", "description""#;
 
 fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
     DatasetRegistry {
@@ -359,6 +361,7 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         last_synced_mtime: r.get(9),
         watched_by: r.get(10),
         sort_order: r.get(11),
+        description: r.get(12),
     }
 }
 
@@ -631,14 +634,33 @@ async fn rename_dataset_handler(
         ));
     }
 
-    let name = payload.display_name.trim();
-    if name.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Nama menu tidak boleh kosong.".to_string()));
+    let name = payload.display_name.as_deref().map(str::trim);
+    if let Some(n) = name {
+        if n.is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "Nama menu tidak boleh kosong.".to_string()));
+        }
+        if n.chars().count() > 60 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Nama menu maksimal 60 karakter.".to_string(),
+            ));
+        }
     }
-    if name.chars().count() > 60 {
+
+    let description = payload.description.as_deref().map(str::trim);
+    if let Some(d) = description {
+        if d.chars().count() > 160 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Deskripsi maksimal 160 karakter.".to_string(),
+            ));
+        }
+    }
+
+    if name.is_none() && description.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Nama menu maksimal 60 karakter.".to_string(),
+            "Tidak ada perubahan yang dikirim.".to_string(),
         ));
     }
 
@@ -648,13 +670,30 @@ async fn rename_dataset_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
-    let affected = client
-        .execute(
-            r#"UPDATE dataset_registry SET "displayName" = $3 WHERE dept = $1 AND key = $2"#,
-            &[&payload.dept, &key, &name],
-        )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Rename error: {}", e)))?;
+    let mut affected = 0;
+
+    if let Some(n) = name {
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET "displayName" = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, &n],
+            )
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Rename error: {}", e)))?;
+    }
+
+    if let Some(d) = description {
+        let value: Option<&str> = if d.is_empty() { None } else { Some(d) };
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET "description" = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, &value],
+            )
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Deskripsi error: {}", e))
+            })?;
+    }
 
     if affected == 0 {
         return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
