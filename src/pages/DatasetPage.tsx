@@ -527,10 +527,14 @@ export default function DatasetPage() {
                 }}
                 dragConfig={{
                   enabled: editMode,
+                  bounded: true,
                   handle: ".widget-card",
                   cancel: "button, a, input, select, canvas",
                 }}
-                resizeConfig={{ enabled: editMode }}
+                resizeConfig={{
+                  enabled: editMode,
+                  handles: ["s", "e", "se"],
+                }}
                 onLayoutChange={handleLayoutChange}
               >
                 {widgets.map((widget) => {
