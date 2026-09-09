@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ChartDataPoint, CurrencyCode } from "../../types";
 import { formatFullValue } from "../../lib/format";
 import { ChartFrame, escapeHtml } from "./chartParts";
@@ -22,7 +22,16 @@ export default function PieChartWidget({
   currency,
   reloadNonce,
 }: PieChartWidgetProps) {
-  const total = data.reduce((sum, entry) => sum + (Number(entry.value) || 0), 0);
+  const [selected, setSelected] = useState<Record<string, boolean> | null>(null);
+
+  useEffect(() => {
+    setSelected(null);
+  }, [data]);
+
+  const shown = selected
+    ? data.filter((entry) => selected[entry.groupKey] !== false)
+    : data;
+  const total = shown.reduce((sum, entry) => sum + (Number(entry.value) || 0), 0);
 
   const option = useMemo<EChartsOption>(
     () => ({
@@ -99,7 +108,11 @@ export default function PieChartWidget({
         </div>
       }
     >
-      <EChart option={option} reloadNonce={reloadNonce} />
+      <EChart
+        option={option}
+        reloadNonce={reloadNonce}
+        onLegendSelect={setSelected}
+      />
     </ChartFrame>
   );
 }

@@ -26,6 +26,7 @@ const RESIZE_ANIMATION_MS = 200;
 export type EChartProps = {
   readonly option: EChartsOption;
   readonly reloadNonce?: number;
+  readonly onLegendSelect?: (selected: Record<string, boolean>) => void;
   readonly className?: string;
   readonly style?: React.CSSProperties;
 };
@@ -33,6 +34,7 @@ export type EChartProps = {
 export function EChart({
   option,
   reloadNonce = 0,
+  onLegendSelect,
   className,
   style,
 }: EChartProps) {
@@ -42,6 +44,11 @@ export function EChart({
   const settled = useRef(false);
   const lastNonce = useRef(reloadNonce);
   const replayPending = useRef(false);
+  const legendHandler = useRef(onLegendSelect);
+
+  useEffect(() => {
+    legendHandler.current = onLegendSelect;
+  }, [onLegendSelect]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -50,6 +57,11 @@ export function EChart({
     const chart = init(node, undefined, { renderer: "canvas" });
     chartRef.current = chart;
     chart.setOption(initialOption.current);
+
+    chart.on("legendselectchanged", (params) => {
+      const selected = (params as { selected?: Record<string, boolean> }).selected;
+      if (selected) legendHandler.current?.(selected);
+    });
 
     let prevWidth = Math.round(node.clientWidth);
     let prevHeight = Math.round(node.clientHeight);
