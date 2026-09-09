@@ -1,10 +1,30 @@
 import { useEffect, useRef } from "react";
-import * as echarts from "echarts";
+import { init, use, type EChartsType } from "echarts/core";
+import { BarChart, LineChart, PieChart } from "echarts/charts";
+import {
+  AxisPointerComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+import type { EChartsOption } from "echarts";
+
+use([
+  BarChart,
+  LineChart,
+  PieChart,
+  AxisPointerComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  CanvasRenderer,
+]);
 
 const RESIZE_ANIMATION_MS = 200;
 
 export type EChartProps = {
-  readonly option: echarts.EChartsOption;
+  readonly option: EChartsOption;
   readonly reloadNonce?: number;
   readonly className?: string;
   readonly style?: React.CSSProperties;
@@ -17,7 +37,7 @@ export function EChart({
   style,
 }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useRef<EChartsType | null>(null);
   const initialOption = useRef(option);
   const settled = useRef(false);
   const lastNonce = useRef(reloadNonce);
@@ -27,7 +47,7 @@ export function EChart({
     const node = containerRef.current;
     if (!node) return;
 
-    const chart = echarts.init(node, undefined, { renderer: "canvas" });
+    const chart = init(node, undefined, { renderer: "canvas" });
     chartRef.current = chart;
     chart.setOption(initialOption.current);
 

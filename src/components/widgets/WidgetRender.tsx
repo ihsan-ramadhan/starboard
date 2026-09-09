@@ -1,4 +1,12 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { api, peekWidgetData, type WidgetQuery } from "../../lib/api";
 import type {
   ChartDataPoint,
@@ -14,11 +22,11 @@ import KpiCard from "./KpiCard";
 import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
-import BarChartWidget from "./BarChartWidget";
-import LineChartWidget from "./LineChartWidget";
-import AreaChartWidget from "./AreaChartWidget";
-import ComboChartWidget from "./ComboChartWidget";
-import PieChartWidget from "./PieChartWidget";
+const BarChartWidget = lazy(() => import("./BarChartWidget"));
+const LineChartWidget = lazy(() => import("./LineChartWidget"));
+const AreaChartWidget = lazy(() => import("./AreaChartWidget"));
+const ComboChartWidget = lazy(() => import("./ComboChartWidget"));
+const PieChartWidget = lazy(() => import("./PieChartWidget"));
 
 export type WidgetRenderProps = {
   readonly widget: WidgetDefinition;
@@ -167,6 +175,10 @@ function WidgetRender({
     [widget.lineColumn]
   );
 
+  const suspend = (node: ReactNode) => (
+    <Suspense fallback={<WidgetSkeleton widget={widget} />}>{node}</Suspense>
+  );
+
   if (widget.type === "table") {
     return (
       <TableWidget
@@ -243,7 +255,7 @@ function WidgetRender({
   }
 
   if (widget.type === "pie") {
-    return (
+    return suspend(
       <PieChartWidget
         title={widget.title}
         data={slices ?? []}
@@ -271,7 +283,7 @@ function WidgetRender({
     : undefined;
 
   if (widget.type === "bar") {
-    return (
+    return suspend(
       <BarChartWidget
         title={widget.title}
         data={data}
@@ -289,7 +301,7 @@ function WidgetRender({
   }
 
   if (widget.type === "area") {
-    return (
+    return suspend(
       <AreaChartWidget
         title={widget.title}
         data={data}
@@ -307,7 +319,7 @@ function WidgetRender({
   }
 
   if (widget.type === "combo") {
-    return (
+    return suspend(
       <ComboChartWidget
         title={widget.title}
         data={data}
@@ -324,7 +336,7 @@ function WidgetRender({
     );
   }
 
-  return (
+  return suspend(
     <LineChartWidget
       title={widget.title}
       data={data}
