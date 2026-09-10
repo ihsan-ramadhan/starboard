@@ -9,7 +9,7 @@ import {
   machineName,
   onFileDrop,
   pickExcelPath,
-  readSourceFile,
+  readStableSource,
 } from "../lib/desktop";
 import { formatCount } from "../lib/format";
 import FilePlusIcon from "../assets/icons/file-plus.svg?react";
@@ -35,7 +35,7 @@ export type DetectedSheet = {
 
 export type ImportWizardState = {
   fileName: string;
-  fileBytes: number[] | null;
+  fileBytes: ArrayBuffer | null;
   sourcePath: string | null;
   sourceRevision: string | null;
   displayName: string;
@@ -155,7 +155,7 @@ export default function ImportWizard({
   }, [sheets, activeSheetName, filteredSheets]);
 
   async function analyze(
-    bytes: number[],
+    bytes: ArrayBuffer,
     name: string,
     source: { path: string; revision: string } | null
   ) {
@@ -164,7 +164,8 @@ export default function ImportWizard({
     const cleaned = cleanInitialName(name);
 
     try {
-      const result = await api.analyzeExcel(bytes, cleaned);
+      const uploadId = await api.uploadFile(bytes);
+      const result = await api.analyzeExcel(uploadId, cleaned);
 
       const { selected: initSel, selectedCols: initCols } =
         initialSelection(result);
@@ -191,7 +192,7 @@ export default function ImportWizard({
 
   async function processFile(selectedFile: File) {
     const buffer = await selectedFile.arrayBuffer();
-    await analyze(Array.from(new Uint8Array(buffer)), selectedFile.name, null);
+    await analyze(buffer, selectedFile.name, null);
   }
 
   async function loadFromPath(path: string) {
@@ -201,7 +202,12 @@ export default function ImportWizard({
     }
     try {
       setAnalyzing(true);
-      const source = await readSourceFile(path);
+      const source = await readStableSource(path);
+      if (!source) {
+        setAnalyzing(false);
+        setError("File sedang ditulis aplikasi lain. Coba lagi sebentar.");
+        return;
+      }
       await analyze(source.bytes, fileNameOf(path), {
         path,
         revision: source.revision,
@@ -314,7 +320,7 @@ export default function ImportWizard({
 
       const res = await api.importExcel({
         dept: user.role,
-        fileBytes,
+        uploadId: await api.uploadFile(fileBytes),
         displayName: displayName.trim() || cleanInitialName(fileName),
         baseKey: displayName.trim() || cleanInitialName(fileName),
         selectedSheets: valid,

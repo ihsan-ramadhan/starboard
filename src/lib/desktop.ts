@@ -3,11 +3,6 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 
-export type SourceFile = {
-  bytes: number[];
-  revision: string;
-};
-
 export function isDesktop() {
   return isTauri();
 }
@@ -21,8 +16,18 @@ export async function pickExcelPath(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
-export function readSourceFile(path: string) {
-  return invoke<SourceFile>("read_source_file", { path });
+export function readSourceBytes(path: string) {
+  return invoke<ArrayBuffer>("read_source_bytes", { path });
+}
+
+export async function readStableSource(
+  path: string
+): Promise<{ bytes: ArrayBuffer; revision: string } | null> {
+  const before = await sourceFileRevision(path);
+  const bytes = await readSourceBytes(path);
+  const after = await sourceFileRevision(path);
+  if (before !== after) return null;
+  return { bytes, revision: after };
 }
 
 export function sourceFileRevision(path: string) {

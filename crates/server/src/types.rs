@@ -38,6 +38,16 @@ pub struct DatasetRegistry {
     pub watched_by: Option<String>,
     #[serde(rename = "sortOrder")]
     pub sort_order: Option<i32>,
+    #[serde(rename = "sourceName")]
+    pub source_name: Option<String>,
+    #[serde(rename = "sourceSize")]
+    pub source_size: Option<i64>,
+    #[serde(rename = "myPath")]
+    pub my_path: Option<String>,
+    #[serde(rename = "watcherCount")]
+    pub watcher_count: i32,
+    #[serde(rename = "lastSeenAt")]
+    pub last_seen_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

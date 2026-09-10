@@ -19,7 +19,7 @@ import {
 } from "./components/ImportWizard";
 import { api, restoreAuthToken, setAuthToken } from "./lib/api";
 import { setWindowFullscreen } from "./lib/desktop";
-import { useExcelSync, type SyncStatuses } from "./lib/excelSync";
+import { useExcelSync, useMachineName, type SyncStatuses } from "./lib/excelSync";
 import {
   isAdmin,
   type SessionUser,
@@ -237,6 +237,9 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
 
   const datasetsSigRef = useRef("");
+  const machine = useMachineName();
+  const machineRef = useRef<string | null>(null);
+  machineRef.current = machine;
 
   function applyDatasets(list: DatasetRegistry[]) {
     const signature = JSON.stringify(list);
@@ -248,7 +251,7 @@ export default function App() {
 
   async function loadDatasets(role: string) {
     try {
-      const data = await api.getDatasets(role);
+      const data = await api.getDatasets(role, machineRef.current);
       applyDatasets(data);
     } catch (err: any) {
       if (err?.message?.includes("Unauthorized") || err?.message?.includes("401")) {
@@ -270,7 +273,7 @@ export default function App() {
       return datasetCache[key];
     }
     try {
-      const res = await api.getDatasetDetail(user.role, key);
+      const res = await api.getDatasetDetail(user.role, key, machineRef.current);
       setDatasetCache((prev) => ({ ...prev, [key]: res }));
       return res;
     } catch (err) {
@@ -278,6 +281,12 @@ export default function App() {
       return null;
     }
   }
+
+  useEffect(() => {
+    const role = user?.role;
+    if (!role || !machine) return;
+    loadDatasets(role);
+  }, [machine]);
 
   useEffect(() => {
     try {
@@ -293,7 +302,7 @@ export default function App() {
     let active = true;
     const id = window.setInterval(async () => {
       try {
-        const list = await api.getDatasets(role);
+        const list = await api.getDatasets(role, machineRef.current);
         if (!active) return;
         if (applyDatasets(list)) setDatasetCache({});
       } catch {

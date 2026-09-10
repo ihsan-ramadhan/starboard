@@ -14,6 +14,15 @@ let authToken: string | null = null;
 
 const AUTH_STORAGE_KEY = "starboard_token";
 
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export function setAuthToken(token: string | null) {
   authToken = token;
   if (token) {
@@ -49,10 +58,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     );
   }
   if (!res.ok) {
-    const message = await readErrorMessage(res);
-    throw new Error(message);
+    throw new ApiError(await readErrorMessage(res), res.status);
   }
   return res.json() as Promise<T>;
+}
+
+async function upload(bytes: ArrayBuffer): Promise<string> {
+  if (!API_BASE) {
+    throw new Error("VITE_API_BASE belum diset di file .env");
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/octet-stream",
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/uploads`, {
+      method: "POST",
+      headers,
+      body: bytes,
+    });
+  } catch {
+    throw new Error(
+      "Tidak dapat terhubung ke server. Pastikan aplikasi Starboard Server berjalan."
+    );
+  }
+  if (!res.ok) throw new ApiError(await readErrorMessage(res), res.status);
+  const parsed = (await res.json()) as { uploadId: string };
+  return parsed.uploadId;
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -119,6 +154,10 @@ export function clearWidgetDataCache() {
   widgetDataCache.clear();
 }
 
+function machineParam(machine?: string | null) {
+  return machine ? `&machine=${encodeURIComponent(machine)}` : "";
+}
+
 export const api = {
   login(identifier: string, password: string) {
     return request<{ user: SessionUser; token: string }>("/api/auth/login", {
@@ -133,12 +172,27 @@ export const api = {
     });
   },
 
-  getDatasets(dept: string) {
-    return request<DatasetRegistry[]>(`/api/datasets?dept=${encodeURIComponent(dept)}`);
+  getDatasets(dept: string, machine?: string | null) {
+    return request<DatasetRegistry[]>(
+      `/api/datasets?dept=${encodeURIComponent(dept)}${machineParam(machine)}`
+    );
   },
 
-  getDatasetDetail(dept: string, key: string) {
-    return request<DatasetDetail>(`/api/datasets/${encodeURIComponent(key)}?dept=${encodeURIComponent(dept)}`);
+  getDatasetDetail(dept: string, key: string, machine?: string | null) {
+    return request<DatasetDetail>(
+      `/api/datasets/${encodeURIComponent(key)}?dept=${encodeURIComponent(dept)}${machineParam(machine)}`
+    );
+  },
+
+  uploadFile(bytes: ArrayBuffer) {
+    return upload(bytes);
+  },
+
+  heartbeat(dept: string, machine: string) {
+    return request<boolean>("/api/sync/heartbeat", {
+      method: "POST",
+      body: JSON.stringify({ dept, machine }),
+    });
   },
 
   getWidgets(dept: string, key: string) {
@@ -176,16 +230,16 @@ export const api = {
     });
   },
 
-  analyzeExcel(fileBytes: number[], datasetKey: string) {
+  analyzeExcel(uploadId: string, datasetKey: string) {
     return request<DetectedSheet[]>("/api/excel/analyze", {
       method: "POST",
-      body: JSON.stringify({ fileBytes, datasetKey }),
+      body: JSON.stringify({ uploadId, datasetKey }),
     });
   },
 
   async importExcel(payload: {
     dept: string;
-    fileBytes: number[];
+    uploadId: string;
     displayName: string;
     baseKey: string;
     selectedSheets: string[];
@@ -209,7 +263,7 @@ export const api = {
   async syncDataset(
     dept: string,
     key: string,
-    payload: { fileBytes: number[]; sourceMtime: string }
+    payload: { uploadId: string; sourceMtime: string }
   ) {
     const res = await request<{
       primaryKey: string;
@@ -228,14 +282,19 @@ export const api = {
     dept: string,
     key: string,
     enabled: boolean,
-    sourcePath?: string,
-    watchedBy?: string
+    source?: {
+      sourcePath: string;
+      watchedBy: string;
+      fileName: string;
+      fileSize: number;
+      force?: boolean;
+    }
   ) {
     return request<boolean>(
       `/api/datasets/${encodeURIComponent(key)}/sync`,
       {
         method: "PUT",
-        body: JSON.stringify({ dept, enabled, sourcePath, watchedBy }),
+        body: JSON.stringify({ dept, enabled, ...source }),
       }
     );
   },

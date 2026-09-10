@@ -36,6 +36,11 @@ export type DatasetRegistry = {
 
   watchedBy: string | null;
   sortOrder: number | null;
+  sourceName: string | null;
+  sourceSize: number | null;
+  myPath: string | null;
+  watcherCount: number;
+  lastSeenAt: string | null;
 };
 
 export type ChartDataPoint = {

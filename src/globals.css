@@ -10,6 +10,7 @@
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --danger: #dc2626;
+  --warning: #d97706;
   --danger-bg: #fef2f2;
   --danger-border: #fecaca;
   --success: #16a34a;
@@ -2006,6 +2007,14 @@ button.dataset-desc:focus-visible,
 .dataset-sync.tone-busy .dataset-sync-dot {
   background: var(--accent);
   animation: sync-pulse 1.2s ease-in-out infinite;
+}
+
+.dataset-sync.tone-warn {
+  color: #92400e;
+}
+
+.dataset-sync.tone-warn .dataset-sync-dot {
+  background: var(--warning);
 }
 
 .dataset-sync.tone-error {

@@ -11,8 +11,14 @@ import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "reac
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
-import { api, clearWidgetDataCache } from "../lib/api";
-import { fileNameOf, isDesktop, machineName, pickExcelPath } from "../lib/desktop";
+import { api, ApiError, clearWidgetDataCache } from "../lib/api";
+import {
+  fileNameOf,
+  isDesktop,
+  machineName,
+  pickExcelPath,
+  readStableSource,
+} from "../lib/desktop";
 import { useMachineName, type SyncStatus } from "../lib/excelSync";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
@@ -149,6 +155,11 @@ export default function DatasetPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [togglingSync, setTogglingSync] = useState(false);
+  const [claimConflict, setClaimConflict] = useState<{
+    path: string;
+    size: number;
+    message: string;
+  } | null>(null);
 
   const syncStatus = key ? syncStatuses[key] : undefined;
 
@@ -317,13 +328,42 @@ export default function DatasetPage() {
     }
   }
 
+  async function claimWatch(path: string, size: number, force: boolean) {
+    if (!key) return;
+    try {
+      await api.setSyncEnabled(user.role, key, true, {
+        sourcePath: path,
+        watchedBy: await machineName(),
+        fileName: fileNameOf(path),
+        fileSize: size,
+        force,
+      });
+      setClaimConflict(null);
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+      toast.success("Dataset ini sekarang juga diawasi dari laptop ini.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setClaimConflict({ path, size, message: err.message });
+        return;
+      }
+      toast.error("Gagal mengambil alih pengawasan: " + String(err));
+    }
+  }
+
   async function handleClaimWatch() {
     if (!key || togglingSync) return;
     setTogglingSync(true);
     try {
       const path = await pickExcelPath();
       if (!path) return;
-      await api.setSyncEnabled(user.role, key, true, path, await machineName());
+      const source = await readStableSource(path);
+      if (!source) {
+        toast.error("File sedang ditulis aplikasi lain. Coba lagi sebentar.");
+        return;
+      }
+      await claimWatch(path, source.bytes.byteLength, false);
       await refreshDatasets();
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
@@ -522,8 +562,9 @@ export default function DatasetPage() {
               sourcePath={(registry ?? dataset).sourcePath as string}
               enabled={(registry ?? dataset).syncEnabled}
               lastSyncedAt={(registry ?? dataset).lastSyncedAt}
-              watchedBy={(registry ?? dataset).watchedBy}
-              machine={machine}
+              myPath={(registry ?? dataset).myPath}
+              watcherCount={(registry ?? dataset).watcherCount}
+              lastSeenAt={(registry ?? dataset).lastSeenAt}
               status={syncStatus}
               canEdit={admin}
               busy={togglingSync}
@@ -647,6 +688,21 @@ export default function DatasetPage() {
       </div>
 
       <ConfirmModal
+        isOpen={claimConflict !== null}
+        title="File sepertinya berbeda"
+        message={claimConflict?.message ?? ""}
+        confirmLabel="Tetap pakai file ini"
+        cancelLabel="Batal"
+        isDestructive={true}
+        onConfirm={() => {
+          if (claimConflict) {
+            claimWatch(claimConflict.path, claimConflict.size, true);
+          }
+        }}
+        onCancel={() => setClaimConflict(null)}
+      />
+
+      <ConfirmModal
         isOpen={widgetToDelete !== null}
         title="Hapus Widget"
         message={`Widget "${widgetToDelete?.title ?? ""}" akan dihapus dari dashboard. Tindakan ini tidak dapat dibatalkan.`}
@@ -681,8 +737,9 @@ type SyncLineProps = {
   readonly sourcePath: string;
   readonly enabled: boolean;
   readonly lastSyncedAt: string | null;
-  readonly watchedBy: string | null;
-  readonly machine: string | null;
+  readonly myPath: string | null;
+  readonly watcherCount: number;
+  readonly lastSeenAt: string | null;
   readonly status: SyncStatus | undefined;
   readonly canEdit: boolean;
   readonly busy: boolean;
@@ -698,6 +755,23 @@ const SYNC_ACTION_LABEL: Record<SyncAction, string> = {
   pause: "Jeda",
 };
 
+const SEEN_FRESH_MS = 5 * 60_000;
+const SEEN_STALE_MS = 2 * 60 * 60_000;
+
+function ageOf(iso: string | null): number | null {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  return Number.isNaN(at) ? null : Date.now() - at;
+}
+
+function watcherTone(lastSeenAt: string | null): "live" | "warn" | "error" {
+  const age = ageOf(lastSeenAt);
+  if (age === null) return "error";
+  if (age < SEEN_FRESH_MS) return "live";
+  if (age < SEEN_STALE_MS) return "warn";
+  return "error";
+}
+
 type SyncView = {
   readonly tone: string;
   readonly text: string;
@@ -708,8 +782,9 @@ type SyncViewInput = {
   readonly name: string;
   readonly when: string | null;
   readonly enabled: boolean;
-  readonly watchedBy: string | null;
   readonly mine: boolean;
+  readonly others: number;
+  readonly lastSeenAt: string | null;
   readonly status: SyncStatus | undefined;
 };
 
@@ -717,8 +792,9 @@ function syncView({
   name,
   when,
   enabled,
-  watchedBy,
   mine,
+  others,
+  lastSeenAt,
   status,
 }: SyncViewInput): SyncView {
   if (!enabled) {
@@ -731,36 +807,53 @@ function syncView({
       action: null,
     };
   }
-  if (!watchedBy) {
+  if (!mine && others === 0) {
     return {
-      tone: "paused",
+      tone: "warn",
       text: `${name} belum diawasi laptop mana pun`,
       action: "claim",
     };
   }
-  if (!mine) {
-    return {
-      tone: "live",
-      text: when
-        ? `Diikuti dari ${watchedBy} · diperbarui ${when}`
-        : `Diikuti dari ${watchedBy}`,
-      action: "claim",
-    };
+  if (mine && status?.state === "importing") {
+    return { tone: "busy", text: `Membaca perubahan ${name}…`, action: "pause" };
   }
-  if (status?.state === "importing") {
-    return { tone: "busy", text: `Membaca perubahan ${name}…`, action: null };
-  }
-  if (status?.state === "error") {
+  if (mine && status?.state === "error") {
     return {
       tone: "error",
       text: status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`,
       action: "pause",
     };
   }
+  if (mine) {
+    const shared = others > 0 ? ` · ${others} laptop lain juga` : "";
+    return {
+      tone: "live",
+      text: when
+        ? `Mengikuti ${name} · diperbarui ${when}${shared}`
+        : `Mengikuti ${name}${shared}`,
+      action: "pause",
+    };
+  }
+
+  const tone = watcherTone(lastSeenAt);
+  const laptops = `${others} laptop lain`;
+  if (tone === "live") {
+    return {
+      tone,
+      text: when
+        ? `Diikuti dari ${laptops} · diperbarui ${when}`
+        : `Diikuti dari ${laptops}`,
+      action: "claim",
+    };
+  }
+
+  const seen = formatSyncTime(lastSeenAt);
   return {
-    tone: "live",
-    text: when ? `Mengikuti ${name} · diperbarui ${when}` : `Mengikuti ${name}`,
-    action: "pause",
+    tone,
+    text: seen
+      ? `Tidak ada laptop yang memeriksa sejak ${seen} · awasi dari sini agar sync jalan`
+      : `${laptops} terdaftar, tapi tidak ada yang memeriksa`,
+    action: "claim",
   };
 }
 
@@ -768,20 +861,23 @@ function SyncLine({
   sourcePath,
   enabled,
   lastSyncedAt,
-  watchedBy,
-  machine,
+  myPath,
+  watcherCount,
+  lastSeenAt,
   status,
   canEdit,
   busy,
   onToggle,
   onClaim,
 }: SyncLineProps) {
+  const mine = myPath !== null;
   const view = syncView({
-    name: fileNameOf(sourcePath),
+    name: fileNameOf(myPath ?? sourcePath),
     when: formatSyncTime(lastSyncedAt),
     enabled,
-    watchedBy,
-    mine: !!machine && watchedBy === machine,
+    mine,
+    others: mine ? watcherCount - 1 : watcherCount,
+    lastSeenAt,
     status,
   });
   const action = canEdit ? view.action : null;
@@ -789,7 +885,7 @@ function SyncLine({
   return (
     <p className={`dataset-sync tone-${view.tone}`}>
       <span className="dataset-sync-dot" aria-hidden="true" />
-      <span className="dataset-sync-text" title={status?.error ?? sourcePath}>
+      <span className="dataset-sync-text" title={status?.error ?? myPath ?? sourcePath}>
         {view.text}
       </span>
       {action && (
