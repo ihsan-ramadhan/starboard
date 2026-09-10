@@ -3,7 +3,9 @@ import type {
   DatasetRegistry,
   DatasetDetail,
   WidgetQueryResult,
+  RowsQueryResult,
   WidgetDefinition,
+  WidgetFilter,
 } from "../types";
 import type { DetectedSheet } from "../components/ImportWizard";
 
@@ -68,16 +70,24 @@ export type WidgetQuery = {
   datasetId: string;
   metric: string;
   metricColumn?: string;
+  metricColumns?: string[];
   groupByColumn?: string;
+  seriesColumn?: string;
   limit?: number;
   orderByKey?: boolean;
+  filters?: WidgetFilter[];
 };
 
-// A widget's rows only change when its dataset is re-imported, but data may
-// change elsewhere too. A short TTL balances fast remounts (paint cached
-// numbers instead of flashing a loader) with eventually-fresh data: any query
-// older than WIDGET_CACHE_TTL is re-fetched. Import always clears it so the
-// dashboard reflects the new rows immediately.
+export type RowsQuery = {
+  datasetId: string;
+  columns?: string[];
+  limit?: number;
+  offset?: number;
+  sortColumn?: string;
+  sortDir?: "asc" | "desc";
+  filters?: WidgetFilter[];
+};
+
 const WIDGET_CACHE_TTL_MS = 30_000;
 const widgetDataCache = new Map<string, { at: number; value: WidgetQueryResult }>();
 
@@ -86,15 +96,15 @@ function widgetDataKey(q: WidgetQuery) {
     q.datasetId,
     q.metric,
     q.metricColumn,
+    q.metricColumns?.join(","),
     q.groupByColumn,
+    q.seriesColumn,
     q.limit,
     q.orderByKey,
+    q.filters?.map((f) => `${f.column}${f.op}${f.value}`).join(","),
   ].join("|");
 }
 
-// Synchronous read, so a remounting widget can paint its old numbers on the
-// first frame instead of flashing a loading state. Never returns a stale
-// entry once its TTL has passed.
 export function peekWidgetData(q: WidgetQuery) {
   const entry = widgetDataCache.get(widgetDataKey(q));
   if (!entry) return undefined;
@@ -105,8 +115,6 @@ export function peekWidgetData(q: WidgetQuery) {
   return entry.value;
 }
 
-// Exported so the refresh button can drop every cached result at once. Import
-// calls it too, which is why it does not take a dataset argument.
 export function clearWidgetDataCache() {
   widgetDataCache.clear();
 }
@@ -144,6 +152,24 @@ export const api = {
     });
   },
 
+  updateDataset(
+    dept: string,
+    key: string,
+    patch: { displayName?: string; description?: string }
+  ) {
+    return request<boolean>(`/api/datasets/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ dept, ...patch }),
+    });
+  },
+
+  reorderDatasets(dept: string, keys: string[]) {
+    return request<boolean>("/api/datasets", {
+      method: "PUT",
+      body: JSON.stringify({ dept, keys }),
+    });
+  },
+
   deleteDataset(datasetId: string) {
     return request<boolean>(`/api/datasets/${encodeURIComponent(datasetId)}`, {
       method: "DELETE",
@@ -164,6 +190,9 @@ export const api = {
     baseKey: string;
     selectedSheets: string[];
     selectedColumns: Record<string, string[]>;
+    sourcePath?: string;
+    sourceMtime?: string;
+    watchedBy?: string;
   }) {
     const res = await request<{ primaryKey: string; totalImported: number }>(
       "/api/excel/import",
@@ -172,10 +201,43 @@ export const api = {
         body: JSON.stringify(payload),
       }
     );
-    // Invalidating here rather than at the call site means no caller can
-    // forget and leave widgets showing pre-import numbers.
+
     clearWidgetDataCache();
     return res;
+  },
+
+  async syncDataset(
+    dept: string,
+    key: string,
+    payload: { fileBytes: number[]; sourceMtime: string }
+  ) {
+    const res = await request<{
+      primaryKey: string;
+      totalImported: number;
+      skipped: boolean;
+    }>(`/api/datasets/${encodeURIComponent(key)}/sync`, {
+      method: "POST",
+      body: JSON.stringify({ dept, ...payload }),
+    });
+
+    if (!res.skipped) clearWidgetDataCache();
+    return res;
+  },
+
+  setSyncEnabled(
+    dept: string,
+    key: string,
+    enabled: boolean,
+    sourcePath?: string,
+    watchedBy?: string
+  ) {
+    return request<boolean>(
+      `/api/datasets/${encodeURIComponent(key)}/sync`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ dept, enabled, sourcePath, watchedBy }),
+      }
+    );
   },
 
   async queryWidgetData(q: WidgetQuery) {
@@ -188,5 +250,12 @@ export const api = {
     });
     widgetDataCache.set(key, { at: Date.now(), value: res });
     return res;
+  },
+
+  queryRows(q: RowsQuery) {
+    return request<RowsQueryResult>("/api/analytics/rows", {
+      method: "POST",
+      body: JSON.stringify(q),
+    });
   },
 };

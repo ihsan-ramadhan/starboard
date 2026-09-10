@@ -11,7 +11,7 @@ import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 
-export type BarChartWidgetProps = {
+export type AreaChartWidgetProps = {
   readonly title: string;
   readonly data: readonly WideRow[];
   readonly seriesKeys: readonly string[];
@@ -25,7 +25,7 @@ export type BarChartWidgetProps = {
   readonly onHideNote?: () => void;
 };
 
-export default function BarChartWidget({
+export default function AreaChartWidget({
   title,
   data,
   seriesKeys,
@@ -37,13 +37,13 @@ export default function BarChartWidget({
   reloadNonce,
   note,
   onHideNote,
-}: BarChartWidgetProps) {
-  const stacked = mode !== "grouped" && seriesKeys.length > 1;
-  const isPercent = mode === "stacked100" && seriesKeys.length > 1;
+}: AreaChartWidgetProps) {
   const multi = seriesKeys.length > 1;
+  const stacked = mode !== "grouped" && multi;
+  const isPercent = mode === "stacked100" && multi;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent);
+    const base = baseEChartOption(multi, currency, isPercent, { boundaryGap: false });
     const categories = data.map((d) => String(d.groupKey ?? ""));
 
     const rowSums = isPercent
@@ -52,27 +52,29 @@ export default function BarChartWidget({
         )
       : [];
 
-    const series = seriesKeys.map((key, index) => {
-      const isTop = !stacked || index === seriesKeys.length - 1;
-      return {
-        name: key,
-        type: "bar" as const,
-        stack: stacked ? "total" : undefined,
-        animationDuration: 750,
-        animationEasing: "cubicOut" as const,
-        animationDelay: (idx: number) => idx * 25 + index * 40,
-        itemStyle: {
-          color: colors[key],
-          borderRadius: isTop ? ([3, 3, 0, 0] as [number, number, number, number]) : undefined,
-        },
-        data: data.map((d, rowIndex) => {
-          const raw = Number(d[key]) || 0;
-          if (!isPercent) return raw;
-          const sum = rowSums[rowIndex] || 0;
-          return sum > 0 ? raw / sum : 0;
-        }),
-      };
-    });
+    const series = seriesKeys.map((key, index) => ({
+      name: key,
+      type: "line" as const,
+      smooth: true,
+      symbol: "none",
+      stack: stacked ? "total" : undefined,
+      animationDuration: 850,
+      animationEasing: "cubicOut" as const,
+      animationDelay: index * 80,
+      itemStyle: { color: colors[key] },
+      lineStyle: { width: 2, color: colors[key] },
+      areaStyle: {
+        color: colors[key],
+        opacity: stacked ? 0.85 : 0.2,
+      },
+      data: data.map((d, rowIndex) => {
+        const raw = Number(d[key]) || 0;
+        if (!isPercent) return raw;
+        const sum = rowSums[rowIndex] || 0;
+        return sum > 0 ? raw / sum : 0;
+      }),
+      connectNulls: true,
+    }));
 
     return {
       ...base,
@@ -88,6 +90,7 @@ export default function BarChartWidget({
         : undefined,
       tooltip: {
         ...base.tooltip,
+        axisPointer: { type: "line" },
         formatter: (params: any) => {
           if (!Array.isArray(params)) return "";
           const header = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(params[0]?.axisValueLabel)}</div>`;
@@ -108,7 +111,7 @@ export default function BarChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, stacked, isPercent, multi]);
+  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, multi, stacked, isPercent]);
 
   return (
     <ChartFrame

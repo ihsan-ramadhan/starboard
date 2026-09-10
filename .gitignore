@@ -19,10 +19,6 @@ build/
 src-tauri/target/
 crates/**/target/
 target/
-*.exe
-*.zip
-nssm.exe
-setup.ps1
 src-tauri/gen/
 src-tauri/icons/android/
 src-tauri/icons/ios/
@@ -41,7 +37,3 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
-
-# internal notes: business context and schema docs, kept out of the public repo
-docs/
-PROJECT.md

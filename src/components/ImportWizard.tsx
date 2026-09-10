@@ -1,8 +1,17 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useApp } from "../App";
 import { api } from "../lib/api";
+import {
+  fileNameOf,
+  isDesktop,
+  machineName,
+  onFileDrop,
+  pickExcelPath,
+  readSourceFile,
+} from "../lib/desktop";
+import { formatCount } from "../lib/format";
 import FilePlusIcon from "../assets/icons/file-plus.svg?react";
 
 type InferredType = "numeric" | "date" | "category";
@@ -25,8 +34,10 @@ export type DetectedSheet = {
 };
 
 export type ImportWizardState = {
-  file: File | null;
+  fileName: string;
   fileBytes: number[] | null;
+  sourcePath: string | null;
+  sourceRevision: string | null;
   displayName: string;
   searchQuery: string;
   activeSheetName: string | null;
@@ -36,8 +47,10 @@ export type ImportWizardState = {
 };
 
 export const initialImportWizardState: ImportWizardState = {
-  file: null,
+  fileName: "",
   fileBytes: null,
+  sourcePath: null,
+  sourceRevision: null,
   displayName: "",
   searchQuery: "",
   activeSheetName: null,
@@ -77,6 +90,26 @@ export type ImportWizardProps = {
   readonly onImportSuccess?: () => void;
 };
 
+function initialSelection(sheets: DetectedSheet[]) {
+  const selected: Record<string, boolean> = {};
+  const selectedCols: Record<string, string[]> = {};
+  for (const s of sheets) {
+    selected[s.sheetName] = false;
+    selectedCols[s.sheetName] = s.columns.map((c) => c.slug);
+  }
+  return { selected, selectedCols };
+}
+
+function matchSheets(
+  sheets: DetectedSheet[] | null,
+  query: string
+): DetectedSheet[] {
+  if (!sheets) return [];
+  const q = query.trim().toLowerCase();
+  if (!q) return sheets;
+  return sheets.filter((s) => s.sheetName.toLowerCase().includes(q));
+}
+
 export default function ImportWizard({
   wizardState,
   setWizardState,
@@ -91,8 +124,10 @@ export default function ImportWizard({
   const [error, setError] = useState<string | null>(null);
 
   const {
-    file,
+    fileName,
     fileBytes,
+    sourcePath,
+    sourceRevision,
     displayName,
     searchQuery,
     activeSheetName,
@@ -105,12 +140,10 @@ export default function ImportWizard({
     ? sheets.filter((s) => selected[s.sheetName]).length
     : 0;
 
-  const filteredSheets = useMemo(() => {
-    if (!sheets) return [];
-    if (!searchQuery.trim()) return sheets;
-    const q = searchQuery.toLowerCase();
-    return sheets.filter((s) => s.sheetName.toLowerCase().includes(q));
-  }, [sheets, searchQuery]);
+  const filteredSheets = useMemo(
+    () => matchSheets(sheets, searchQuery),
+    [sheets, searchQuery]
+  );
 
   const activeSheet = useMemo(() => {
     if (!sheets || sheets.length === 0) return null;
@@ -121,30 +154,29 @@ export default function ImportWizard({
     );
   }, [sheets, activeSheetName, filteredSheets]);
 
-  async function processFile(selectedFile: File) {
+  async function analyze(
+    bytes: number[],
+    name: string,
+    source: { path: string; revision: string } | null
+  ) {
     setError(null);
     setAnalyzing(true);
-    const cleaned = cleanInitialName(selectedFile.name);
+    const cleaned = cleanInitialName(name);
 
     try {
-      const buffer = await selectedFile.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(buffer));
-
       const result = await api.analyzeExcel(bytes, cleaned);
 
-      const initSel: Record<string, boolean> = {};
-      const initCols: Record<string, string[]> = {};
-      for (const s of result) {
-        initSel[s.sheetName] = false;
-        initCols[s.sheetName] = s.columns.map((c) => c.slug);
-      }
+      const { selected: initSel, selectedCols: initCols } =
+        initialSelection(result);
 
       setWizardState({
-        file: selectedFile,
+        fileName: name,
         fileBytes: bytes,
+        sourcePath: source?.path ?? null,
+        sourceRevision: source?.revision ?? null,
         displayName: "",
         searchQuery: "",
-        activeSheetName: result.length > 0 ? result[0].sheetName : null,
+        activeSheetName: result[0]?.sheetName ?? null,
         sheets: result,
         selected: initSel,
         selectedCols: initCols,
@@ -156,6 +188,59 @@ export default function ImportWizard({
       setAnalyzing(false);
     }
   }
+
+  async function processFile(selectedFile: File) {
+    const buffer = await selectedFile.arrayBuffer();
+    await analyze(Array.from(new Uint8Array(buffer)), selectedFile.name, null);
+  }
+
+  async function loadFromPath(path: string) {
+    if (!/\.(xlsx|xls)$/i.test(path)) {
+      setError("Hanya file Excel (.xlsx, .xls) yang didukung.");
+      return;
+    }
+    try {
+      setAnalyzing(true);
+      const source = await readSourceFile(path);
+      await analyze(source.bytes, fileNameOf(path), {
+        path,
+        revision: source.revision,
+      });
+    } catch (e: any) {
+      setAnalyzing(false);
+      toast.error(e?.toString() || "Gagal membuka file.");
+    }
+  }
+
+  async function pickFromDisk() {
+    try {
+      const path = await pickExcelPath();
+      if (!path) return;
+      await loadFromPath(path);
+    } catch (e: any) {
+      toast.error(e?.toString() || "Gagal membuka file.");
+    }
+  }
+
+  function openPicker() {
+    if (analyzing) return;
+    if (isDesktop()) {
+      pickFromDisk();
+    } else {
+      fileRef.current?.click();
+    }
+  }
+
+  useEffect(() => {
+    if (!isDesktop() || sheets || analyzing) return;
+    return onFileDrop({
+      onEnter: () => setIsDragging(true),
+      onLeave: () => setIsDragging(false),
+      onDrop: (paths) => {
+        if (paths[0]) loadFromPath(paths[0]);
+      },
+    });
+  }, [sheets, analyzing]);
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -209,7 +294,7 @@ export default function ImportWizard({
   }
 
   async function handleImport() {
-    if (!file || !fileBytes || !sheets) return;
+    if (!fileName || !fileBytes || !sheets) return;
     const valid = sheets
       .filter((s) => selected[s.sheetName])
       .filter((s) => (selectedCols[s.sheetName]?.length ?? 0) > 0)
@@ -230,16 +315,24 @@ export default function ImportWizard({
       const res = await api.importExcel({
         dept: user.role,
         fileBytes,
-        displayName: displayName.trim() || cleanInitialName(file.name),
-        baseKey: displayName.trim() || cleanInitialName(file.name),
+        displayName: displayName.trim() || cleanInitialName(fileName),
+        baseKey: displayName.trim() || cleanInitialName(fileName),
         selectedSheets: valid,
         selectedColumns: selCols,
+        sourcePath: sourcePath ?? undefined,
+        sourceMtime: sourceRevision ?? undefined,
+
+        watchedBy: sourcePath ? await machineName() : undefined,
       });
+
+      if (!res.primaryKey) {
+        throw new Error("Tidak ada sheet yang berhasil diimpor.");
+      }
 
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
       toast.success(
-        `${valid.length} sheet berhasil diimpor (${res.totalImported.toLocaleString()} baris).`
+        `${valid.length} sheet berhasil diimpor (${formatCount(res.totalImported)} baris).`
       );
       navigate(`/d/${res.primaryKey}`);
     } catch (e: any) {
@@ -267,7 +360,7 @@ export default function ImportWizard({
           }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          onClick={() => !analyzing && fileRef.current?.click()}
+          onClick={openPicker}
         >
           <input
             ref={fileRef}
@@ -288,7 +381,9 @@ export default function ImportWizard({
               {analyzing ? "Membaca file Excel..." : "Klik atau seret file Excel ke sini"}
             </div>
             <div className="dropzone-sub">
-              Format yang didukung: .xlsx, .xls
+              {isDesktop()
+                ? "Pilih dari disk atau folder share departemen. Starboard akan mengikuti perubahan file itu."
+                : "Format yang didukung: .xlsx, .xls"}
             </div>
           </div>
         </button>
@@ -308,7 +403,7 @@ export default function ImportWizard({
                       displayName: e.target.value,
                     }))
                   }
-                  placeholder={file ? cleanInitialName(file.name) : "Contoh: Daywork 2026"}
+                  placeholder={fileName ? cleanInitialName(fileName) : "Contoh: Daywork 2026"}
                 />
               </div>
             </div>
@@ -403,7 +498,7 @@ export default function ImportWizard({
                       <div className="sheet-nav-info">
                         <div className="sheet-nav-title">{s.sheetName}</div>
                         <div className="sheet-nav-meta">
-                          {s.rowCount.toLocaleString()} baris ·{" "}
+                          {formatCount(s.rowCount)} baris ·{" "}
                           {pickedCols.length}/{s.columns.length} kol
                         </div>
                       </div>
@@ -422,7 +517,7 @@ export default function ImportWizard({
                         {activeSheet.sheetName}
                       </div>
                       <div className="sheet-detail-meta">
-                        {activeSheet.rowCount.toLocaleString()} total baris ·{" "}
+                        {formatCount(activeSheet.rowCount)} total baris ·{" "}
                         {activeSheet.columns.length} kolom tersedia · Header baris ke-
                         {activeSheet.headerRowIndex}
                       </div>

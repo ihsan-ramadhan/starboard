@@ -20,11 +20,11 @@ use std::sync::Arc;
 use tokio_postgres::NoTls;
 use tower_http::cors::CorsLayer;
 
-use crate::analytics::execute_widget_query;
-use crate::excel::{execute_import, parse_and_analyze_sheets};
+use crate::analytics::{execute_rows_query, execute_widget_query};
+use crate::excel::{execute_import, parse_and_analyze_sheets, ImportSpec};
 use crate::types::{
     DatasetColumn, DatasetDetail, DatasetRegistry, DetectedSheet, SessionUser,
-    WidgetQueryRequest, WidgetQueryResult,
+    RowsQueryRequest, RowsQueryResult, WidgetQueryRequest, WidgetQueryResult,
 };
 
 #[derive(Clone)]
@@ -68,12 +68,34 @@ struct WidgetPayload {
     metric: String,
     #[serde(rename = "metricColumn", default)]
     metric_column: Option<String>,
+    #[serde(rename = "metricColumns", default)]
+    metric_columns: Option<Vec<String>>,
     #[serde(rename = "groupByColumn", default)]
     group_by_column: Option<String>,
+    #[serde(rename = "seriesColumn", default)]
+    series_column: Option<String>,
+    #[serde(rename = "seriesMode", default)]
+    series_mode: Option<String>,
+    #[serde(rename = "lineColumn", default)]
+    line_column: Option<String>,
+    #[serde(rename = "targetColumn", default)]
+    target_column: Option<String>,
+    #[serde(rename = "showTrendline", default)]
+    show_trendline: Option<bool>,
+    #[serde(default)]
+    filters: Option<Vec<crate::types::WidgetFilter>>,
+    #[serde(rename = "tableColumns", default)]
+    table_columns: Option<Vec<String>>,
+    #[serde(rename = "dateMode", default)]
+    date_mode: Option<String>,
+    #[serde(rename = "targetDate", default)]
+    target_date: Option<String>,
     #[serde(default)]
     limit: Option<i32>,
     #[serde(rename = "isCurrency", default)]
     is_currency: Option<bool>,
+    #[serde(default)]
+    currency: Option<String>,
     #[serde(default)]
     unit: Option<String>,
     #[serde(default)]
@@ -101,6 +123,46 @@ struct ImportRequest {
     selected_sheets: Vec<String>,
     #[serde(rename = "selectedColumns")]
     selected_columns: HashMap<String, Vec<String>>,
+    #[serde(rename = "sourcePath", default)]
+    source_path: Option<String>,
+    #[serde(rename = "sourceMtime", default)]
+    source_mtime: Option<String>,
+
+    #[serde(rename = "watchedBy", default)]
+    watched_by: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SyncRequest {
+    dept: String,
+    #[serde(rename = "fileBytes")]
+    file_bytes: Vec<u8>,
+    #[serde(rename = "sourceMtime")]
+    source_mtime: String,
+}
+
+#[derive(Deserialize)]
+struct RenameRequest {
+    dept: String,
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ReorderRequest {
+    dept: String,
+    keys: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SyncSettingsRequest {
+    dept: String,
+    enabled: bool,
+    #[serde(rename = "sourcePath", default)]
+    source_path: Option<String>,
+    #[serde(rename = "watchedBy", default)]
+    watched_by: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -109,6 +171,8 @@ struct ImportResponse {
     primary_key: String,
     #[serde(rename = "totalImported")]
     total_imported: usize,
+
+    skipped: bool,
 }
 
 #[derive(Serialize)]
@@ -150,6 +214,11 @@ async fn main() {
         }
     };
 
+    if let Err(e) = ensure_schema(&pool).await {
+        eprintln!("[ERROR] Gagal menyiapkan skema: {}", e);
+        std::process::exit(1);
+    }
+
     let state = Arc::new(AppState { pool });
 
     let cors = CorsLayer::new()
@@ -165,17 +234,27 @@ async fn main() {
 
     let protected = Router::new()
         .route("/api/auth/logout", post(logout_handler))
-        .route("/api/datasets", get(get_datasets_handler))
+        .route(
+            "/api/datasets",
+            get(get_datasets_handler).put(reorder_datasets_handler),
+        )
         .route("/api/datasets/{key}",
-            get(get_dataset_detail_handler).delete(delete_dataset_handler),
+            get(get_dataset_detail_handler)
+                .put(rename_dataset_handler)
+                .delete(delete_dataset_handler),
         )
         .route(
             "/api/datasets/{key}/widgets",
             get(get_widgets_handler).put(save_widgets_handler),
         )
+        .route(
+            "/api/datasets/{key}/sync",
+            post(sync_dataset_handler).put(update_sync_settings_handler),
+        )
         .route("/api/excel/analyze", post(analyze_excel_handler))
         .route("/api/excel/import", post(import_excel_handler))
         .route("/api/analytics/query", post(query_widget_data_handler))
+        .route("/api/analytics/rows", post(query_rows_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
@@ -205,6 +284,87 @@ async fn main() {
     }
 }
 
+async fn ensure_schema(pool: &Pool) -> Result<(), String> {
+    let client = pool.get().await.map_err(|e| e.to_string())?;
+    client
+        .batch_execute(
+            r#"
+            BEGIN;
+
+            ALTER TABLE dataset_registry
+                ADD COLUMN IF NOT EXISTS "sourcePath" text,
+                ADD COLUMN IF NOT EXISTS "syncConfig" jsonb,
+                ADD COLUMN IF NOT EXISTS "syncEnabled" boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "lastSyncedAt" timestamptz,
+                ADD COLUMN IF NOT EXISTS "lastSyncedMtime" text,
+                ADD COLUMN IF NOT EXISTS "watchedBy" text;
+
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS "accessLevel" text;
+            UPDATE users SET "accessLevel" = 'admin' WHERE "accessLevel" IS NULL;
+            ALTER TABLE users ALTER COLUMN "accessLevel" SET DEFAULT 'viewer';
+            ALTER TABLE users ALTER COLUMN "accessLevel" SET NOT NULL;
+
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "createdBy" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "description" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sortOrder" integer;
+            ALTER TABLE dashboard_widgets ADD COLUMN IF NOT EXISTS "userId" text;
+
+            ALTER TABLE dashboard_widgets
+                DROP CONSTRAINT IF EXISTS "dashboard_widgets_userId_fkey";
+            ALTER TABLE dashboard_widgets
+                ADD CONSTRAINT "dashboard_widgets_userId_fkey"
+                FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE SET NULL;
+
+            COMMIT;
+            "#,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for (label, sql) in [
+        (
+            "users (lower(username))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username))",
+        ),
+        (
+            "users (lower(email))",
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON users (lower(email))",
+        ),
+    ] {
+        if let Err(e) = client.batch_execute(sql).await {
+            eprintln!("[WARN] Gagal membuat indeks unik {}: {}", label, e);
+            eprintln!(
+                "[WARN] Biasanya ada dua baris yang hanya berbeda huruf besar-kecil. Server tetap jalan tanpa indeks ini; bereskan datanya lalu restart."
+            );
+        }
+    }
+
+    Ok(())
+}
+
+const REGISTRY_COLUMNS: &str = r#"id, dept, key, "tableName", "displayName", "createdAt"::text,
+    "sourcePath", "syncEnabled",
+    to_char("lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    "lastSyncedMtime", "watchedBy", "sortOrder", "description""#;
+
+fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
+    DatasetRegistry {
+        id: r.get(0),
+        dept: r.get(1),
+        key: r.get(2),
+        table_name: r.get(3),
+        display_name: r.get(4),
+        created_at: r.get(5),
+        source_path: r.get(6),
+        sync_enabled: r.get(7),
+        last_synced_at: r.get(8),
+        last_synced_mtime: r.get(9),
+        watched_by: r.get(10),
+        sort_order: r.get(11),
+        description: r.get(12),
+    }
+}
+
 async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "ok",
@@ -225,7 +385,8 @@ async fn login_handler(
     let row = client
         .query_opt(
             r#"
-            SELECT u.id, u.username, u.email, u."passwordHash", u.role, d.color as dept_color
+            SELECT u.id, u.username, u.email, u."passwordHash", u.role, d.color as dept_color,
+                   u."accessLevel"
             FROM users u
             LEFT JOIN departments d ON d.code = u.role
             WHERE lower(u.email) = lower($1) OR lower(u.username) = lower($1)
@@ -261,6 +422,7 @@ async fn login_handler(
         email: row.get(2),
         role: row.get(4),
         dept_color: row.get(5),
+        access_level: row.get(6),
     };
 
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -306,8 +468,16 @@ async fn logout_handler(
 
 async fn get_datasets_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Query(query): Query<DeptQuery>,
 ) -> Result<Json<Vec<DatasetRegistry>>, (StatusCode, String)> {
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
     let client = state
         .pool
         .get()
@@ -316,37 +486,38 @@ async fn get_datasets_handler(
 
     let rows = client
         .query(
-            r#"
-            SELECT id, dept, key, "tableName", "displayName", "createdAt"::text
-            FROM dataset_registry
-            WHERE dept = $1
-            ORDER BY "createdAt" DESC
-            "#,
+            &format!(
+                r#"
+                SELECT {}
+                FROM dataset_registry
+                WHERE dept = $1
+                ORDER BY "sortOrder" ASC NULLS LAST, "createdAt" DESC
+                "#,
+                REGISTRY_COLUMNS
+            ),
             &[&query.dept],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Query error: {}", e)))?;
 
-    let mut datasets = Vec::new();
-    for r in rows {
-        datasets.push(DatasetRegistry {
-            id: r.get(0),
-            dept: r.get(1),
-            key: r.get(2),
-            table_name: r.get(3),
-            display_name: r.get(4),
-            created_at: r.get(5),
-        });
-    }
+    let datasets: Vec<DatasetRegistry> = rows.iter().map(registry_from_row).collect();
 
     Ok(Json(datasets))
 }
 
 async fn get_dataset_detail_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Path(key): Path<String>,
     Query(query): Query<DeptQuery>,
 ) -> Result<Json<DatasetDetail>, (StatusCode, String)> {
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
     let client = state
         .pool
         .get()
@@ -355,26 +526,22 @@ async fn get_dataset_detail_handler(
 
     let ds_row = client
         .query_opt(
-            r#"
-            SELECT id, dept, key, "tableName", "displayName", "createdAt"::text
-            FROM dataset_registry
-            WHERE dept = $1 AND key = $2
-            LIMIT 1
-            "#,
+            &format!(
+                r#"
+                SELECT {}
+                FROM dataset_registry
+                WHERE dept = $1 AND key = $2
+                LIMIT 1
+                "#,
+                REGISTRY_COLUMNS
+            ),
             &[&query.dept, &key],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch dataset error: {}", e)))?;
 
     let dataset = match ds_row {
-        Some(r) => DatasetRegistry {
-            id: r.get(0),
-            dept: r.get(1),
-            key: r.get(2),
-            table_name: r.get(3),
-            display_name: r.get(4),
-            created_at: r.get(5),
-        },
+        Some(r) => registry_from_row(&r),
         None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
     };
 
@@ -453,11 +620,136 @@ async fn get_dataset_detail_handler(
     }))
 }
 
+async fn rename_dataset_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Json(payload): Json<RenameRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let name = payload.display_name.as_deref().map(str::trim);
+    if let Some(n) = name {
+        if n.is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "Nama menu tidak boleh kosong.".to_string()));
+        }
+        if n.chars().count() > 60 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Nama menu maksimal 60 karakter.".to_string(),
+            ));
+        }
+    }
+
+    let description = payload.description.as_deref().map(str::trim);
+    if let Some(d) = description {
+        if d.chars().count() > 160 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Deskripsi maksimal 160 karakter.".to_string(),
+            ));
+        }
+    }
+
+    if name.is_none() && description.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Tidak ada perubahan yang dikirim.".to_string(),
+        ));
+    }
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let mut affected = 0;
+
+    if let Some(n) = name {
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET "displayName" = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, &n],
+            )
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Rename error: {}", e)))?;
+    }
+
+    if let Some(d) = description {
+        let value: Option<&str> = if d.is_empty() { None } else { Some(d) };
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET "description" = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, &value],
+            )
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Deskripsi error: {}", e))
+            })?;
+    }
+
+    if affected == 0 {
+        return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
+    }
+
+    Ok(Json(true))
+}
+
+async fn reorder_datasets_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(payload): Json<ReorderRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let mut client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Tx error: {}", e)))?;
+
+    for (index, key) in payload.keys.iter().enumerate() {
+        let position = index as i32;
+        tx.execute(
+            r#"UPDATE dataset_registry SET "sortOrder" = $3 WHERE dept = $1 AND key = $2"#,
+            &[&payload.dept, key, &position],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Reorder error: {}", e)))?;
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Commit error: {}", e)))?;
+
+    Ok(Json(true))
+}
+
 async fn delete_dataset_handler(
     State(state): State<Arc<AppState>>,
     auth: crate::auth::AuthUser,
     Path(dataset_id): Path<String>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+
     let mut client = state
         .pool
         .get()
@@ -593,6 +885,8 @@ async fn save_widgets_handler(
     Query(query): Query<DeptQuery>,
     Json(payload): Json<Vec<WidgetPayload>>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+
     if payload.len() > 50 {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -631,6 +925,21 @@ async fn save_widgets_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Tx error: {}", e)))?;
 
+    let prior_rows = tx
+        .query(
+            r#"SELECT id, "userId" FROM dashboard_widgets WHERE "datasetId" = $1"#,
+            &[&dataset_id],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch widget owners error: {}", e)))?;
+
+    let mut prior_owners: HashMap<String, String> = HashMap::new();
+    for row in prior_rows {
+        if let Some(owner) = row.get::<_, Option<String>>(1) {
+            prior_owners.insert(row.get(0), owner);
+        }
+    }
+
     tx.execute(
         r#"DELETE FROM dashboard_widgets WHERE "datasetId" = $1"#,
         &[&dataset_id],
@@ -650,10 +959,21 @@ async fn save_widgets_handler(
             cfgs.push(cfg);
         }
 
+        let owners: Vec<String> = payload
+            .iter()
+            .map(|w| {
+                prior_owners
+                    .get(&w.id)
+                    .cloned()
+                    .unwrap_or_else(|| auth.id.clone())
+            })
+            .collect();
+
         let mut rows: Vec<Vec<&(dyn tokio_postgres::types::ToSql + Sync)>> = Vec::new();
-        for (w, cfg) in payload.iter().zip(cfgs.iter()) {
+        for ((w, cfg), owner) in payload.iter().zip(cfgs.iter()).zip(owners.iter()) {
             rows.push(vec![
                 &w.id as &(dyn tokio_postgres::types::ToSql + Sync),
+                owner,
                 &dataset_id,
                 &w.id as &(dyn tokio_postgres::types::ToSql + Sync),
                 &w.r#type,
@@ -667,7 +987,7 @@ async fn save_widgets_handler(
 
         let mut insert = String::from(
             r#"INSERT INTO dashboard_widgets
-            (id, "datasetId", "widgetKey", "chartType", "positionX", "positionY", width, height, "filterConfig")
+            (id, "userId", "datasetId", "widgetKey", "chartType", "positionX", "positionY", width, height, "filterConfig")
             VALUES "#,
         );
         let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = rows
@@ -676,19 +996,9 @@ async fn save_widgets_handler(
             .collect();
         let placeholders: Vec<String> = (0..payload.len())
             .map(|i| {
-                let base = i * 9 + 1;
-                format!(
-                    "(${base}, ${b1}, ${b2}, ${b3}, ${b4}, ${b5}, ${b6}, ${b7}, ${b8})",
-                    base = base,
-                    b1 = base + 1,
-                    b2 = base + 2,
-                    b3 = base + 3,
-                    b4 = base + 4,
-                    b5 = base + 5,
-                    b6 = base + 6,
-                    b7 = base + 7,
-                    b8 = base + 8
-                )
+                let base = i * 10 + 1;
+                let slots: Vec<String> = (0..10).map(|n| format!("${}", base + n)).collect();
+                format!("({})", slots.join(", "))
             })
             .collect();
         insert.push_str(&placeholders.join(","));
@@ -706,8 +1016,11 @@ async fn save_widgets_handler(
 }
 
 async fn analyze_excel_handler(
+    auth: crate::auth::AuthUser,
     Json(payload): Json<AnalyzeRequest>,
 ) -> Result<Json<Vec<DetectedSheet>>, (StatusCode, String)> {
+    auth.require_admin()?;
+
     let key = payload.dataset_key.unwrap_or_else(|| "dataset".to_string());
     let sheets = parse_and_analyze_sheets(&payload.file_bytes, &key)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
@@ -716,22 +1029,38 @@ async fn analyze_excel_handler(
 
 async fn import_excel_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Json(payload): Json<ImportRequest>,
 ) -> Result<Json<ImportResponse>, (StatusCode, String)> {
-    let client = state
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let mut client = state
         .pool
         .get()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
     let (primary_key, total_imported) = execute_import(
-        &client,
-        &payload.dept,
+        &mut client,
         &payload.file_bytes,
-        &payload.display_name,
-        &payload.base_key,
-        &payload.selected_sheets,
-        &payload.selected_columns,
+        &ImportSpec {
+            dept: &payload.dept,
+            display_name: &payload.display_name,
+            dataset_key: &payload.base_key,
+            selected_sheets: &payload.selected_sheets,
+            selected_columns: &payload.selected_columns,
+            source_path: payload.source_path.as_deref(),
+            source_mtime: payload.source_mtime.as_deref(),
+            watched_by: payload.watched_by.as_deref(),
+            created_by: Some(&auth.id),
+            strict: false,
+        },
     )
     .await
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
@@ -739,11 +1068,158 @@ async fn import_excel_handler(
     Ok(Json(ImportResponse {
         primary_key,
         total_imported,
+        skipped: false,
     }))
+}
+
+async fn sync_dataset_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Json(payload): Json<SyncRequest>,
+) -> Result<Json<ImportResponse>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let mut client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"SELECT "syncConfig", "syncEnabled", "lastSyncedMtime", "displayName"
+               FROM dataset_registry WHERE dept = $1 AND key = $2"#,
+            &[&payload.dept, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch sync config error: {}", e)))?;
+
+    let (config, enabled, last_mtime, current_name): (
+        Option<serde_json::Value>,
+        bool,
+        Option<String>,
+        String,
+    ) = match row {
+        Some(r) => (r.get(0), r.get(1), r.get(2), r.get(3)),
+        None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
+    };
+
+    if !enabled {
+        return Err((
+            StatusCode::CONFLICT,
+            "Sync dimatikan untuk dataset ini.".to_string(),
+        ));
+    }
+
+    if last_mtime.as_deref() == Some(payload.source_mtime.as_str()) {
+        return Ok(Json(ImportResponse {
+            primary_key: key,
+            total_imported: 0,
+            skipped: true,
+        }));
+    }
+
+    let config = config.ok_or((
+        StatusCode::CONFLICT,
+        "Dataset ini diimpor sebelum sync ada. Impor ulang sekali untuk mengaktifkannya."
+            .to_string(),
+    ))?;
+
+    let base_key: String = config
+        .get("baseKey")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let selected_sheets: Vec<String> =
+        serde_json::from_value(config.get("selectedSheets").cloned().unwrap_or_default())
+            .map_err(|e| (StatusCode::CONFLICT, format!("Resep sync rusak: {}", e)))?;
+    let selected_columns: HashMap<String, Vec<String>> =
+        serde_json::from_value(config.get("selectedColumns").cloned().unwrap_or_default())
+            .map_err(|e| (StatusCode::CONFLICT, format!("Resep sync rusak: {}", e)))?;
+
+    let (primary_key, total_imported) = execute_import(
+        &mut client,
+        &payload.file_bytes,
+        &ImportSpec {
+            dept: &payload.dept,
+            display_name: &current_name,
+            dataset_key: &base_key,
+            selected_sheets: &selected_sheets,
+            selected_columns: &selected_columns,
+            source_path: None,
+            source_mtime: Some(&payload.source_mtime),
+            watched_by: None,
+            created_by: Some(&auth.id),
+            strict: true,
+        },
+    )
+    .await
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    Ok(Json(ImportResponse {
+        primary_key,
+        total_imported,
+        skipped: false,
+    }))
+}
+
+async fn update_sync_settings_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Json(payload): Json<SyncSettingsRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let affected = client
+        .execute(
+            r#"
+            UPDATE dataset_registry
+            SET "syncEnabled" = $3,
+                "sourcePath" = COALESCE($4, "sourcePath"),
+                "watchedBy" = COALESCE($5, "watchedBy")
+            WHERE dept = $1 AND key = $2
+            "#,
+            &[
+                &payload.dept,
+                &key,
+                &payload.enabled,
+                &payload.source_path,
+                &payload.watched_by,
+            ],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Update sync error: {}", e)))?;
+
+    if affected == 0 {
+        return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
+    }
+
+    Ok(Json(true))
 }
 
 async fn query_widget_data_handler(
     State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
     Json(req): Json<WidgetQueryRequest>,
 ) -> Result<Json<WidgetQueryResult>, (StatusCode, String)> {
     let client = state
@@ -752,7 +1228,24 @@ async fn query_widget_data_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
-    let res = execute_widget_query(&client, req)
+    let res = execute_widget_query(&client, req, &auth.role)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(res))
+}
+
+async fn query_rows_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(req): Json<RowsQueryRequest>,
+) -> Result<Json<RowsQueryResult>, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let res = execute_rows_query(&client, req, &auth.role)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(res))

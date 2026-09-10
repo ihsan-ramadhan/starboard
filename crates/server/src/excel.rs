@@ -18,12 +18,30 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
+pub fn parse_date_value(val: &str) -> Option<String> {
+    for fmt in ["%Y-%m-%d", "%d/%m/%Y"] {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(val, fmt) {
+            return Some(d.format("%Y-%m-%d").to_string());
+        }
+    }
+    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%.f"] {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(val, fmt) {
+            return Some(dt.date().format("%Y-%m-%d").to_string());
+        }
+    }
+    None
+}
+
 pub fn format_sql_cell_value(val: &str, col_type: &str) -> String {
     let trimmed = val.trim();
     if trimmed.is_empty() {
         return "NULL".to_string();
     }
     match col_type {
+        "date" => match parse_date_value(trimmed) {
+            Some(d) => format!("'{}'", d),
+            None => "NULL".to_string(),
+        },
         "numeric" => {
             let cleaned = trimmed.replace(['$', '€', '£', '¥', ',', ' '], "");
             if cleaned.is_empty() {
@@ -41,23 +59,54 @@ pub fn format_sql_cell_value(val: &str, col_type: &str) -> String {
     }
 }
 
-pub fn normalize_category_value(val: &str) -> String {
-    let trimmed = val.trim();
-    if trimmed.is_empty() {
-        return "".to_string();
+pub fn tidy_whitespace(val: &str) -> String {
+    val.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub fn category_fold_key(val: &str) -> String {
+    let spaced: String = val
+        .chars()
+        .map(|c| if c == '-' || c == '_' { ' ' } else { c })
+        .collect();
+    tidy_whitespace(&spaced).to_uppercase()
+}
+
+pub fn canonical_spellings<I: Iterator<Item = String>>(values: I) -> HashMap<String, String> {
+    let mut seen: HashMap<String, HashMap<String, usize>> = HashMap::new();
+    for value in values {
+        if value.is_empty() {
+            continue;
+        }
+        *seen
+            .entry(category_fold_key(&value))
+            .or_default()
+            .entry(value)
+            .or_insert(0) += 1;
     }
-    
-    let re_spaces = Regex::new(r"\s+").unwrap();
-    let unified_spaces = re_spaces.replace_all(trimmed, " ");
-    
-    if unified_spaces.eq_ignore_ascii_case("post mining") {
-        return "POST-MINING".to_string();
+
+    seen.into_iter()
+        .filter_map(|(key, spellings)| {
+            let mut ranked: Vec<(String, usize)> = spellings.into_iter().collect();
+            ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            ranked.into_iter().next().map(|(best, _)| (key, best))
+        })
+        .collect()
+}
+
+pub fn unify_category_spellings(rows: &mut [HashMap<String, String>], columns: &[ColumnSchema]) {
+    for col in columns.iter().filter(|c| c.r#type == "category") {
+        let canonical =
+            canonical_spellings(rows.iter().filter_map(|r| r.get(&col.slug)).cloned());
+        for row in rows.iter_mut() {
+            if let Some(value) = row.get_mut(&col.slug) {
+                if let Some(best) = canonical.get(&category_fold_key(value)) {
+                    if best != value {
+                        *value = best.clone();
+                    }
+                }
+            }
+        }
     }
-    if unified_spaces.eq_ignore_ascii_case("pre mining") {
-        return "PRE-MINING".to_string();
-    }
-    
-    unified_spaces.to_string()
 }
 
 pub fn infer_type_from_cells(values: &[&Data]) -> String {
@@ -232,220 +281,351 @@ pub fn parse_and_analyze_sheets(
     Ok(detected)
 }
 
+pub struct ImportSpec<'a> {
+    pub dept: &'a str,
+    pub display_name: &'a str,
+    pub dataset_key: &'a str,
+    pub selected_sheets: &'a [String],
+    pub selected_columns: &'a HashMap<String, Vec<String>>,
+    pub source_path: Option<&'a str>,
+    pub source_mtime: Option<&'a str>,
+
+    pub watched_by: Option<&'a str>,
+    pub created_by: Option<&'a str>,
+    pub strict: bool,
+}
+
 pub async fn execute_import(
-    client: &tokio_postgres::Client,
-    dept: &str,
+    client: &mut tokio_postgres::Client,
     bytes: &[u8],
-    display_name: &str,
-    dataset_key: &str,
-    selected_sheets: &[String],
-    selected_columns: &HashMap<String, Vec<String>>,
+    spec: &ImportSpec<'_>,
 ) -> Result<(String, usize), String> {
     let cursor = Cursor::new(bytes);
     let mut workbook: Xlsx<_> = open_workbook_from_rs(cursor)
         .map_err(|e| format!("Gagal membaca format Excel: {}", e))?;
 
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|e| format!("Tx error: {}", e))?;
+
     let mut primary_key = "".to_string();
     let mut total_imported = 0;
-    let base_key = slugify(dataset_key);
-    let dept_slug = slugify(dept);
+    let base_key = slugify(spec.dataset_key);
+    let dept_slug = slugify(spec.dept);
 
-    for sheet_name in selected_sheets {
-        if let Ok(range) = workbook.worksheet_range(sheet_name) {
-            if let Some((header_idx_1based, cols_raw)) = find_header_row_in_range(&range) {
-                let header_idx_0based = header_idx_1based - 1;
-                let mut used_slugs: HashSet<String> = HashSet::new();
-                let mut all_columns: Vec<ColumnSchema> = Vec::new();
+    let sync_config = serde_json::json!({
+        "displayName": spec.display_name,
+        "baseKey": spec.dataset_key,
+        "selectedSheets": spec.selected_sheets,
+        "selectedColumns": spec.selected_columns,
+    });
 
-                for (col_idx, raw_name) in cols_raw {
-                    let mut base_slug = slugify(&raw_name);
-                    if base_slug.is_empty() {
-                        base_slug = format!("col_{}", col_idx);
-                    }
-                    let mut slug = base_slug.clone();
-                    let mut counter = 2;
-                    while used_slugs.contains(&slug) {
-                        slug = format!("{}_{}", base_slug, counter);
-                        counter += 1;
-                    }
-                    used_slugs.insert(slug.clone());
-
-                    let c_idx_0based = col_idx - 1;
-                    let mut sample_cells = Vec::new();
-                    for r in (header_idx_0based + 1)..range.height().min(header_idx_0based + 101) {
-                        if let Some(cell) = range.get((r, c_idx_0based)) {
-                            sample_cells.push(cell);
-                        }
-                    }
-                    let inferred = infer_type_from_cells(&sample_cells);
-                    all_columns.push(ColumnSchema {
-                        col_index: col_idx,
-                        raw_name,
-                        slug,
-                        r#type: inferred,
-                    });
+    for sheet_name in spec.selected_sheets {
+        let range = match workbook.worksheet_range(sheet_name) {
+            Ok(r) => r,
+            Err(_) => {
+                if spec.strict {
+                    return Err(format!(
+                        "Sheet \"{}\" tidak ada lagi di file. Impor ulang lewat wizard kalau struktur workbook-nya berubah.",
+                        sheet_name
+                    ));
                 }
+                continue;
+            }
+        };
+        let Some((header_idx_1based, cols_raw)) = find_header_row_in_range(&range) else {
+            if spec.strict {
+                return Err(format!(
+                    "Baris header di sheet \"{}\" tidak terbaca lagi.",
+                    sheet_name
+                ));
+            }
+            continue;
+        };
 
-                let chosen_slugs = selected_columns.get(sheet_name);
-                let import_cols: Vec<ColumnSchema> = if let Some(slugs) = chosen_slugs {
-                    all_columns.into_iter().filter(|c| slugs.contains(&c.slug)).collect()
-                } else {
-                    all_columns
-                };
+        let header_idx_0based = header_idx_1based - 1;
+        let mut used_slugs: HashSet<String> = HashSet::new();
+        let mut all_columns: Vec<ColumnSchema> = Vec::new();
 
-                if import_cols.is_empty() {
-                    continue;
+        for (col_idx, raw_name) in cols_raw {
+            let mut base_slug = slugify(&raw_name);
+            if base_slug.is_empty() {
+                base_slug = format!("col_{}", col_idx);
+            }
+            let mut slug = base_slug.clone();
+            let mut counter = 2;
+            while used_slugs.contains(&slug) {
+                slug = format!("{}_{}", base_slug, counter);
+                counter += 1;
+            }
+            used_slugs.insert(slug.clone());
+
+            let c_idx_0based = col_idx - 1;
+            let mut sample_cells = Vec::new();
+            for r in (header_idx_0based + 1)..range.height().min(header_idx_0based + 101) {
+                if let Some(cell) = range.get((r, c_idx_0based)) {
+                    sample_cells.push(cell);
                 }
+            }
+            let inferred = infer_type_from_cells(&sample_cells);
+            all_columns.push(ColumnSchema {
+                col_index: col_idx,
+                raw_name,
+                slug,
+                r#type: inferred,
+            });
+        }
 
-                let key = format!("{}_{}", base_key, slugify(sheet_name));
-                let table_name = format!("{}_{}_records", dept_slug, key);
-                if primary_key.is_empty() {
-                    primary_key = key.clone();
+        let chosen_slugs = spec.selected_columns.get(sheet_name);
+
+        if spec.strict {
+            if let Some(slugs) = chosen_slugs {
+                let present: HashSet<&str> =
+                    all_columns.iter().map(|c| c.slug.as_str()).collect();
+                let missing: Vec<&str> = slugs
+                    .iter()
+                    .map(|s| s.as_str())
+                    .filter(|s| !present.contains(s))
+                    .collect();
+                if !missing.is_empty() {
+                    return Err(format!(
+                        "Kolom {} tidak ada lagi di sheet \"{}\". Dataset dibiarkan seperti semula.",
+                        missing.join(", "),
+                        sheet_name
+                    ));
                 }
-
-                let mut col_defs = Vec::new();
-                for col in &import_cols {
-                    let pg_type = match col.r#type.as_str() {
-                        "numeric" => "numeric",
-                        "date" => "date",
-                        _ => "text",
-                    };
-                    col_defs.push(format!("\"{}\" {}", col.slug, pg_type));
-                }
-
-                let create_sql = format!(
-                    r#"
-                    CREATE TABLE IF NOT EXISTS "{}" (
-                        "id" text PRIMARY KEY DEFAULT gen_random_uuid(),
-                        {},
-                        "source_sheet" text,
-                        "created_at" timestamptz DEFAULT now()
-                    );
-                    "#,
-                    table_name,
-                    col_defs.join(",\n")
-                );
-
-                client
-                    .execute(&create_sql, &[])
-                    .await
-                    .map_err(|e| format!("Create table error: {}", e))?;
-
-                let ds_id = Uuid::new_v4().to_string();
-                let disp_title = if !display_name.is_empty() {
-                    display_name.to_string()
-                } else {
-                    sheet_name.clone()
-                };
-
-                client.execute(
-                    r#"
-                    INSERT INTO dataset_registry ("id", "dept", "key", "tableName", "displayName", "createdAt")
-                    VALUES ($1, $2, $3, $4, $5, now())
-                    ON CONFLICT ("dept", "key") DO UPDATE
-                    SET "tableName" = EXCLUDED."tableName", "displayName" = EXCLUDED."displayName"
-                    "#,
-                    &[&ds_id, &dept, &key, &table_name, &disp_title],
-                ).await.map_err(|e| format!("Registry upsert error: {}", e))?;
-
-                let ds_row = client.query_one(
-                    r#"SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2"#,
-                    &[&dept, &key],
-                ).await.map_err(|e| format!("Fetch dataset id error: {}", e))?;
-                let true_ds_id: String = ds_row.get(0);
-
-                client.execute(
-                    r#"DELETE FROM dataset_columns WHERE "datasetId" = $1"#,
-                    &[&true_ds_id],
-                ).await.ok();
-
-                for col in &import_cols {
-                    let col_id = Uuid::new_v4().to_string();
-                    let is_dim = col.r#type == "category";
-                    client.execute(
-                        r#"
-                        INSERT INTO dataset_columns ("id", "datasetId", "name", "label", "type", "isDimension")
-                        VALUES ($1, $2, $3, $4, $5, $6)
-                        "#,
-                        &[&col_id, &true_ds_id, &col.slug, &col.raw_name, &col.r#type, &is_dim],
-                    ).await.ok();
-                }
-
-                let mut rows_data = Vec::new();
-                for r in (header_idx_0based + 1)..range.height() {
-                    let mut row_map = HashMap::new();
-                    let mut filled_count = 0;
-
-                    for col in &import_cols {
-                        let c_idx = col.col_index - 1;
-                        if let Some(cell_val) = range.get((r, c_idx)) {
-                            let str_val = match cell_val {
-                                Data::Empty => "".to_string(),
-                                Data::String(s) => {
-                                    if col.r#type == "category" {
-                                        normalize_category_value(s)
-                                    } else if col.r#type == "numeric" {
-                                        let cleaned = s.replace(['$', '€', '£', '¥', ',', ' '], "");
-                                        cleaned.trim().to_string()
-                                    } else {
-                                        s.trim().to_string()
-                                    }
-                                }
-                                Data::Float(f) => f.to_string(),
-                                Data::Int(i) => i.to_string(),
-                                Data::DateTime(d) => format!("{:.4}", d.as_f64()),
-                                Data::DateTimeIso(s) => s.clone(),
-                                Data::Bool(b) => b.to_string(),
-                                _ => "".to_string(),
-                            };
-                            if !str_val.is_empty() {
-                                filled_count += 1;
-                                row_map.insert(col.slug.clone(), str_val);
-                            }
-                        }
-                    }
-
-                    if filled_count >= 1 {
-                        row_map.insert("source_sheet".to_string(), sheet_name.clone());
-                        rows_data.push(row_map);
-                    }
-                }
-
-                if !rows_data.is_empty() {
-                    let chunk_size = 250;
-                    for chunk in rows_data.chunks(chunk_size) {
-                        let mut insert_sql = format!("INSERT INTO \"{}\" (", table_name);
-                        let mut col_names: Vec<String> = import_cols.iter().map(|c| format!("\"{}\"", c.slug)).collect();
-                        col_names.push("\"source_sheet\"".to_string());
-                        insert_sql.push_str(&col_names.join(", "));
-                        insert_sql.push_str(") VALUES\n");
-
-                        let mut row_literals = Vec::new();
-                        let escaped_sheet = sheet_name.replace('\'', "''");
-
-                        for r_map in chunk {
-                            let mut row_vals = Vec::new();
-                            for col in &import_cols {
-                                let val_str = r_map.get(&col.slug).cloned().unwrap_or_default();
-                                row_vals.push(format_sql_cell_value(&val_str, &col.r#type));
-                            }
-                            row_vals.push(format!("'{}'", escaped_sheet));
-                            row_literals.push(format!("({})", row_vals.join(", ")));
-                        }
-
-                        insert_sql.push_str(&row_literals.join(",\n"));
-
-                        client
-                            .execute(&insert_sql, &[])
-                            .await
-                            .map_err(|e| format!("Batch insert error: {}", e))?;
-                    }
-                }
-
-                total_imported += rows_data.len();
             }
         }
+
+        let import_cols: Vec<ColumnSchema> = if let Some(slugs) = chosen_slugs {
+            all_columns.into_iter().filter(|c| slugs.contains(&c.slug)).collect()
+        } else {
+            all_columns
+        };
+
+        if import_cols.is_empty() {
+            continue;
+        }
+
+        let key = format!("{}_{}", base_key, slugify(sheet_name));
+        let table_name = format!("{}_{}_records", dept_slug, key);
+        if primary_key.is_empty() {
+            primary_key = key.clone();
+        }
+
+        let mut col_defs = Vec::new();
+        for col in &import_cols {
+            let pg_type = match col.r#type.as_str() {
+                "numeric" => "numeric",
+                "date" => "date",
+                _ => "text",
+            };
+            col_defs.push(format!("\"{}\" {}", col.slug, pg_type));
+        }
+
+        let existed: bool = tx
+            .query_one("SELECT to_regclass($1) IS NOT NULL", &[&table_name])
+            .await
+            .map_err(|e| format!("Table lookup error: {}", e))?
+            .get(0);
+
+        let previous_rows: i64 = if existed {
+            tx.query_one(&format!("SELECT count(*) FROM \"{}\"", table_name), &[])
+                .await
+                .map_err(|e| format!("Row count error: {}", e))?
+                .get(0)
+        } else {
+            0
+        };
+
+        tx.execute(&format!("DROP TABLE IF EXISTS \"{}\"", table_name), &[])
+            .await
+            .map_err(|e| format!("Drop table error: {}", e))?;
+
+        let create_sql = format!(
+            r#"
+            CREATE TABLE "{}" (
+                "id" text PRIMARY KEY DEFAULT gen_random_uuid(),
+                {},
+                "source_sheet" text,
+                "created_at" timestamptz DEFAULT now()
+            );
+            "#,
+            table_name,
+            col_defs.join(",\n")
+        );
+
+        tx.execute(&create_sql, &[])
+            .await
+            .map_err(|e| format!("Create table error: {}", e))?;
+
+        let ds_id = Uuid::new_v4().to_string();
+        let disp_title = if !spec.display_name.is_empty() {
+            spec.display_name.to_string()
+        } else {
+            sheet_name.clone()
+        };
+        let sync_enabled = spec.source_path.is_some();
+
+        tx.execute(
+            r#"
+            INSERT INTO dataset_registry
+                ("id", "dept", "key", "tableName", "displayName", "createdAt",
+                 "sourcePath", "syncConfig", "syncEnabled", "lastSyncedAt",
+                 "lastSyncedMtime", "watchedBy", "createdBy")
+            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9, $10, $11)
+            ON CONFLICT ("dept", "key") DO UPDATE
+            SET "tableName" = EXCLUDED."tableName",
+                "displayName" = EXCLUDED."displayName",
+                "syncConfig" = EXCLUDED."syncConfig",
+                "lastSyncedAt" = now(),
+                "lastSyncedMtime" = EXCLUDED."lastSyncedMtime",
+                "sourcePath" = COALESCE(EXCLUDED."sourcePath", dataset_registry."sourcePath"),
+                "watchedBy" = COALESCE(EXCLUDED."watchedBy", dataset_registry."watchedBy"),
+                "syncEnabled" = EXCLUDED."syncEnabled" OR dataset_registry."syncEnabled",
+                "createdBy" = COALESCE(dataset_registry."createdBy", EXCLUDED."createdBy")
+            "#,
+            &[
+                &ds_id,
+                &spec.dept,
+                &key,
+                &table_name,
+                &disp_title,
+                &spec.source_path,
+                &sync_config,
+                &sync_enabled,
+                &spec.source_mtime,
+                &spec.watched_by,
+                &spec.created_by,
+            ],
+        )
+        .await
+        .map_err(|e| format!("Registry upsert error: {}", e))?;
+
+        let ds_row = tx
+            .query_one(
+                r#"SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2"#,
+                &[&spec.dept, &key],
+            )
+            .await
+            .map_err(|e| format!("Fetch dataset id error: {}", e))?;
+        let true_ds_id: String = ds_row.get(0);
+
+        tx.execute(
+            r#"DELETE FROM dataset_columns WHERE "datasetId" = $1"#,
+            &[&true_ds_id],
+        )
+        .await
+        .map_err(|e| format!("Delete columns error: {}", e))?;
+
+        for col in &import_cols {
+            let col_id = Uuid::new_v4().to_string();
+            let is_dim = col.r#type == "category";
+            tx.execute(
+                r#"
+                INSERT INTO dataset_columns ("id", "datasetId", "name", "label", "type", "isDimension")
+                VALUES ($1, $2, $3, $4, $5, $6)
+                "#,
+                &[&col_id, &true_ds_id, &col.slug, &col.raw_name, &col.r#type, &is_dim],
+            )
+            .await
+            .map_err(|e| format!("Insert column error: {}", e))?;
+        }
+
+        let mut rows_data = Vec::new();
+        for r in (header_idx_0based + 1)..range.height() {
+            let mut row_map = HashMap::new();
+            let mut filled_count = 0;
+
+            for col in &import_cols {
+                let c_idx = col.col_index - 1;
+                if let Some(cell_val) = range.get((r, c_idx)) {
+                    let str_val = match cell_val {
+                        Data::Empty => "".to_string(),
+                        Data::String(s) => {
+                            if col.r#type == "category" {
+                                tidy_whitespace(s)
+                            } else if col.r#type == "numeric" {
+                                let cleaned = s.replace(['$', '€', '£', '¥', ',', ' '], "");
+                                cleaned.trim().to_string()
+                            } else {
+                                s.trim().to_string()
+                            }
+                        }
+                        Data::Float(f) => f.to_string(),
+                        Data::Int(i) => i.to_string(),
+                        Data::DateTime(d) => d
+                            .as_datetime()
+                            .map(|dt| dt.date().format("%Y-%m-%d").to_string())
+                            .unwrap_or_default(),
+                        Data::DateTimeIso(s) => s.clone(),
+                        Data::Bool(b) => b.to_string(),
+                        _ => "".to_string(),
+                    };
+                    if !str_val.is_empty() {
+                        filled_count += 1;
+                        row_map.insert(col.slug.clone(), str_val);
+                    }
+                }
+            }
+
+            if filled_count >= 1 {
+                row_map.insert("source_sheet".to_string(), sheet_name.clone());
+                rows_data.push(row_map);
+            }
+        }
+
+        unify_category_spellings(&mut rows_data, &import_cols);
+
+        if rows_data.is_empty() && previous_rows > 0 {
+            return Err(format!(
+                "Sheet \"{}\" terbaca tanpa satu pun baris data, padahal tabel sebelumnya berisi {} baris. Impor dibatalkan agar data lama tidak terhapus.",
+                sheet_name, previous_rows
+            ));
+        }
+
+        if !rows_data.is_empty() {
+            let chunk_size = 250;
+            for chunk in rows_data.chunks(chunk_size) {
+                let mut insert_sql = format!("INSERT INTO \"{}\" (", table_name);
+                let mut col_names: Vec<String> =
+                    import_cols.iter().map(|c| format!("\"{}\"", c.slug)).collect();
+                col_names.push("\"source_sheet\"".to_string());
+                insert_sql.push_str(&col_names.join(", "));
+                insert_sql.push_str(") VALUES\n");
+
+                let mut row_literals = Vec::new();
+                let escaped_sheet = sheet_name.replace('\'', "''");
+
+                for r_map in chunk {
+                    let mut row_vals = Vec::new();
+                    for col in &import_cols {
+                        let val_str = r_map.get(&col.slug).cloned().unwrap_or_default();
+                        row_vals.push(format_sql_cell_value(&val_str, &col.r#type));
+                    }
+                    row_vals.push(format!("'{}'", escaped_sheet));
+                    row_literals.push(format!("({})", row_vals.join(", ")));
+                }
+
+                insert_sql.push_str(&row_literals.join(",\n"));
+
+                tx.execute(&insert_sql, &[])
+                    .await
+                    .map_err(|e| format!("Batch insert error: {}", e))?;
+            }
+        }
+
+        total_imported += rows_data.len();
     }
+
+    if primary_key.is_empty() {
+        return Err(
+            "Tidak ada sheet yang bisa diimpor. Periksa pilihan sheet dan kolomnya.".to_string(),
+        );
+    }
+
+    tx.commit().await.map_err(|e| format!("Commit error: {}", e))?;
 
     Ok((primary_key, total_imported))
 }

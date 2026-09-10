@@ -66,7 +66,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               type="text"
               name="identifier"
               className={error ? "input-error" : ""}
-              placeholder="MIOP / miop@aspire.id"
+              placeholder="Nama pengguna atau email"
               autoComplete="username"
               value={identifier}
               onChange={(e) => handleIdentifierChange(e.target.value)}
@@ -114,9 +114,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </button>
         </form>
 
-        <div className="login-demo">
-          Gunakan akun demo: <strong>MIOP</strong> / <strong>password123</strong>
-        </div>
       </div>
     </div>
   );

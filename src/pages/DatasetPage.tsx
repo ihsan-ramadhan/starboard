@@ -1,27 +1,52 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { useParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import GridLayout, { bottom, collides, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api, clearWidgetDataCache } from "../lib/api";
-import PencilIcon from "../assets/icons/pencil.svg?react";
+import { fileNameOf, isDesktop, machineName, pickExcelPath } from "../lib/desktop";
+import { useMachineName, type SyncStatus } from "../lib/excelSync";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
+import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
+import ExpandIcon from "../assets/icons/expand.svg?react";
+import ShrinkIcon from "../assets/icons/shrink.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
 import WidgetRender from "../components/widgets/WidgetRender";
-import WidgetBuilderModal from "../components/widgets/WidgetBuilderModal";
-import SchemaInspector from "../components/table/SchemaInspector";
-import RawTablePreview from "../components/table/RawTablePreview";
-import type {
-  DatasetDetail,
-  WidgetDefinition,
-  WidgetLayout,
-  WidgetType,
+import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
+import {
+  isAdmin,
+  type DatasetDetail,
+  type WidgetDefinition,
+  type WidgetLayout,
+  type WidgetType,
 } from "../types";
 
 const GRID_COLS = 12;
+const DESCRIPTION_MAX = 160;
+
+function formatSyncTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.floor((Date.now() - at) / 60_000);
+  if (minutes < 1) return "baru saja";
+  if (minutes < 60) return `${minutes} menit lalu`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} jam lalu`;
+  return new Date(at).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+  });
+}
 
 function toLayoutItem(w: WidgetDefinition): LayoutItem {
   const def = defaultLayoutFor(w.type);
@@ -51,38 +76,86 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
   const base = { x: 0, y: 0 };
   switch (type) {
     case "kpi":
-      return { ...base, w: 3, h: 2 };
+    case "date":
+      return { ...base, w: 3, h: 3 };
     case "pie":
       return { ...base, w: 4, h: 5 };
+    case "table":
+      return { ...base, w: 12, h: 7 };
     case "line":
-      return { ...base, w: 6, h: 5 };
+    case "area":
+    case "combo":
     case "bar":
     default:
       return { ...base, w: 6, h: 5 };
   }
 }
 
-export default function DatasetPage() {
-  const { user, refreshDatasets, datasetCache, fetchDatasetDetail } = useApp();
-  const { key } = useParams<{ key: string }>();
-  const navigate = useNavigate();
+function applyLayout(
+  widgets: WidgetDefinition[],
+  layout: Layout
+): WidgetDefinition[] | null {
+  if (widgets.length === 0) return null;
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "data">("dashboard");
-  // Not persisted: opening a dashboard should always land in the read-only state.
-  const [editMode, setEditMode] = useState(false);
+  const pos = new Map(layout.map((l) => [l.i, l]));
+  let changed = false;
+
+  const next = widgets.map((w) => {
+    const p = pos.get(w.id);
+    const cur = w.layout;
+    const same =
+      cur && cur.x === p?.x && cur.y === p?.y && cur.w === p?.w && cur.h === p?.h;
+    if (!p || same) return w;
+    changed = true;
+    return { ...w, layout: { x: p.x, y: p.y, w: p.w, h: p.h } };
+  });
+
+  return changed ? next : null;
+}
+
+export default function DatasetPage() {
+  const {
+    user,
+    datasets,
+    refreshDatasets,
+    datasetCache,
+    widgetCache,
+    setWidgetCache,
+    fetchDatasetDetail,
+    syncStatuses,
+    editMode,
+    setEditMode,
+    fullscreen,
+    setFullscreen,
+  } = useApp();
+  const admin = isAdmin(user);
+  const machine = useMachineName();
+  const { key } = useParams<{ key: string }>();
+
+
   const [detail, setDetail] = useState<DatasetDetail | null>(() => {
     return key ? datasetCache[key] ?? null : null;
   });
 
   const [loading, setLoading] = useState(!detail);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
-  const [widgets, setWidgets] = useState<WidgetDefinition[]>([]);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [editingWidget, setEditingWidget] = useState<WidgetDefinition | null>(null);
+  const [widgets, setWidgets] = useState<WidgetDefinition[]>(
+    () => (key ? widgetCache[key] : undefined) ?? []
+  );
+  const [widgetsLoaded, setWidgetsLoaded] = useState(
+    () => Boolean(key && widgetCache[key])
+  );
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [togglingSync, setTogglingSync] = useState(false);
+
+  const syncStatus = key ? syncStatuses[key] : undefined;
+
+  const registry = datasets.find((d) => d.key === key);
+  const registryStamp = registry?.lastSyncedAt ?? null;
+  const inRegistry = registry !== undefined;
+  const seenStampRef = useRef<string | null>(null);
 
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<(() => void) | null>(null);
@@ -94,36 +167,36 @@ export default function DatasetPage() {
       resizeObserverRef.current.disconnect();
       resizeObserverRef.current = null;
     }
-
     if (node) {
-      const update = () => {
-        const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
-        if (width > 0) {
-          setContainerWidth(Math.floor(width));
-        }
-      };
+      const width = node.getBoundingClientRect().width || node.offsetWidth || node.clientWidth;
+      if (width > 0) {
+        const next = Math.floor(width);
+        setContainerWidth((prev) => (prev === next ? prev : next));
+      }
 
-      requestAnimationFrame(update);
-      const ro = new ResizeObserver(() => {
-        update();
+      const ro = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry) {
+          const next = Math.floor(entry.contentRect.width);
+          if (next > 0) {
+            setContainerWidth((prev) => (prev === next ? prev : next));
+          }
+        }
       });
       ro.observe(node);
       resizeObserverRef.current = ro;
     }
   }, []);
 
-  // datasetCache is read for the value it holds when the dataset opens, so it
-  // is deliberately not a dependency. Listing it re-ran this effect every time
-  // any dataset got cached, which blanked the widget list and fetched it twice.
   useEffect(() => {
     if (!key) return;
-    // A const so the narrowing survives into the async closure below.
+
     const datasetKey = key;
 
-    // Stops a slow response for a dataset the user has already left from
-    // overwriting the one now on screen.
     let active = true;
-    setWidgets([]);
+    const cached = widgetCache[datasetKey];
+    setWidgets(cached ?? []);
+    setWidgetsLoaded(Boolean(cached));
 
     async function load() {
       let d: DatasetDetail | null = datasetCache[datasetKey] ?? null;
@@ -140,19 +213,27 @@ export default function DatasetPage() {
       }
 
       const ds = d?.dataset;
-      if (!ds) return;
+      if (!ds) {
+        if (active) setWidgetsLoaded(true);
+        return;
+      }
 
       try {
         const w = await api.getWidgets(user.role, datasetKey);
         if (!active) return;
-        setWidgets(
-          w.map((item) => ({
-            ...item,
-            datasetId: item.datasetId || ds.id,
-          }))
-        );
+        const loaded = w.map((item) => ({
+          ...item,
+          datasetId: item.datasetId || ds.id,
+        }));
+        setWidgets((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(loaded)) return prev;
+          return loaded;
+        });
+        setWidgetCache((prev) => ({ ...prev, [datasetKey]: loaded }));
       } catch (err) {
         console.error("Failed to load widgets:", err);
+      } finally {
+        if (active) setWidgetsLoaded(true);
       }
     }
 
@@ -162,8 +243,18 @@ export default function DatasetPage() {
     };
   }, [key, user.role]);
 
-  // The debounced save is flushed on unmount instead of dropped. Navigating
-  // away inside the 400ms window used to discard the layout just arranged.
+  useEffect(() => {
+    if (!inRegistry) return;
+
+    const mark = `${key}:${registryStamp ?? ""}`;
+    const previous = seenStampRef.current;
+    seenStampRef.current = mark;
+
+    if (previous === null || !previous.startsWith(`${key}:`)) return;
+    if (previous === mark) return;
+    handleRefresh();
+  }, [key, registryStamp, inRegistry]);
+
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
@@ -173,8 +264,37 @@ export default function DatasetPage() {
     };
   }, []);
 
-  // Bypasses every cache: the dataset detail in App, the widget query results in
-  // api.ts, and the memoised query inside each mounted WidgetRender.
+  useEffect(() => {
+    if (!editMode) {
+      setSelectedWidgetId(null);
+    }
+  }, [editMode]);
+
+  useEffect(() => {
+    if (!selectedWidgetId) return;
+
+    function handleOutsidePointerDown(e: PointerEvent) {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest(".widget-card") ||
+        target.closest(".builder-sidebar") ||
+        target.closest("dialog") ||
+        target.closest(".ctx-menu")
+      ) {
+        return;
+      }
+      setSelectedWidgetId(null);
+    }
+
+    window.addEventListener("pointerdown", handleOutsidePointerDown);
+    return () => window.removeEventListener("pointerdown", handleOutsidePointerDown);
+  }, [selectedWidgetId]);
+
+  const editingWidget = selectedWidgetId
+    ? widgets.find((w) => w.id === selectedWidgetId) ?? null
+    : null;
+
   async function handleRefresh() {
     if (!key || refreshing) return;
     setRefreshing(true);
@@ -183,12 +303,12 @@ export default function DatasetPage() {
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
       const w = await api.getWidgets(user.role, key);
-      setWidgets(
-        w.map((item) => ({
-          ...item,
-          datasetId: item.datasetId || d?.dataset?.id || item.datasetId,
-        }))
-      );
+      const loaded = w.map((item) => ({
+        ...item,
+        datasetId: item.datasetId || d?.dataset?.id || item.datasetId,
+      }));
+      setWidgets(loaded);
+      setWidgetCache((prev) => ({ ...prev, [key]: loaded }));
       setReloadNonce((n) => n + 1);
     } catch (err) {
       toast.error("Gagal memuat ulang data: " + String(err));
@@ -197,26 +317,66 @@ export default function DatasetPage() {
     }
   }
 
-  async function handleDeleteDataset() {
-    if (!detail?.dataset) return;
-    setIsDeleting(true);
+  async function handleClaimWatch() {
+    if (!key || togglingSync) return;
+    setTogglingSync(true);
     try {
-      await api.deleteDataset(detail.dataset.id);
+      const path = await pickExcelPath();
+      if (!path) return;
+      await api.setSyncEnabled(user.role, key, true, path, await machineName());
       await refreshDatasets();
-      setShowDeleteModal(false);
-      toast.success("Dataset berhasil dihapus.");
-      navigate("/", { replace: true });
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+      toast.success("Dataset ini sekarang diawasi dari laptop ini.");
     } catch (err) {
-      toast.error("Gagal menghapus dataset: " + String(err));
+      toast.error("Gagal mengambil alih pengawasan: " + String(err));
     } finally {
-      setIsDeleting(false);
+      setTogglingSync(false);
+    }
+  }
+
+  async function handleSaveDescription(next: string) {
+    if (!key) return;
+    try {
+      await api.updateDataset(user.role, key, { description: next });
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+    } catch (err) {
+      toast.error("Gagal menyimpan deskripsi: " + String(err));
+    }
+  }
+
+  async function handleToggleSync() {
+    if (!key || togglingSync) return;
+
+    const next = !(registry ?? detail?.dataset)?.syncEnabled;
+    setTogglingSync(true);
+    try {
+      await api.setSyncEnabled(user.role, key, next);
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+    } catch (err) {
+      toast.error("Gagal mengubah sync: " + String(err));
+    } finally {
+      setTogglingSync(false);
     }
   }
 
   if (loading && !detail) {
     return (
-      <main className="content">
-        <div className="hint">Memuat dataset…</div>
+      <main className="content" aria-busy="true" aria-label={`Memuat dataset ${key}`}>
+        <div className="dataset-header">
+          <div className="dataset-heading">
+            <span className="sk sk-page-title" />
+            <span className="sk sk-page-meta" />
+          </div>
+        </div>
+        <div className="sk-page-grid">
+          <span className="sk sk-page-card" />
+          <span className="sk sk-page-card" />
+        </div>
       </main>
     );
   }
@@ -235,10 +395,11 @@ export default function DatasetPage() {
     );
   }
 
-  const { dataset, columns, totalRows, sampleRows } = detail;
+  const { dataset, columns } = detail;
 
   function persistWidgets(next: WidgetDefinition[]) {
     if (!key) return;
+    setWidgetCache((prev) => ({ ...prev, [key]: next }));
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
     }
@@ -268,8 +429,8 @@ export default function DatasetPage() {
       persistWidgets(next);
       return next;
     });
-    setShowBuilder(false);
-    setEditingWidget(null);
+    toast.success(selectedWidgetId ? "Widget berhasil diperbarui" : "Widget berhasil ditambahkan");
+    setSelectedWidgetId(null);
   }
 
   function handleDeleteWidget(id: string) {
@@ -278,7 +439,11 @@ export default function DatasetPage() {
       persistWidgets(next);
       return next;
     });
+    if (selectedWidgetId === id) {
+      setSelectedWidgetId(null);
+    }
     setWidgetToDelete(null);
+    toast.success("Widget berhasil dihapus");
   }
 
   function openWidgetDeleteConfirm(widget: WidgetDefinition) {
@@ -287,52 +452,85 @@ export default function DatasetPage() {
 
   function handleLayoutChange(layout: Layout) {
     setWidgets((prev) => {
-      if (prev.length === 0) return prev;
-      const pos = new Map(layout.map((l) => [l.i, l]));
-      const next = prev.map((w) => {
-        const p = pos.get(w.id);
-        if (!p) return w;
-        const cur = w.layout;
-        if (cur && cur.x === p.x && cur.y === p.y && cur.w === p.w && cur.h === p.h) {
-          return w;
-        }
-        return { ...w, layout: { x: p.x, y: p.y, w: p.w, h: p.h } };
-      });
-      const changed = next.some((w, i) => {
-        const a = w.layout;
-        const b = prev[i].layout;
-        return a !== b && (!a || !b || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h);
-      });
-      if (changed) {
-        persistWidgets(next);
-        return next;
-      }
-      return prev;
+      const next = applyLayout(prev, layout);
+      if (!next) return prev;
+      persistWidgets(next);
+      return next;
     });
   }
 
   function openCreateWidget() {
-    setEditingWidget(null);
-    setShowBuilder(true);
+    setSelectedWidgetId(null);
   }
 
   function openEditWidget(widget: WidgetDefinition) {
-    setEditingWidget(widget);
-    setShowBuilder(true);
+    setSelectedWidgetId(widget.id);
   }
 
   const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
 
+  let dashboardNotice: ReactNode = null;
+  if (!widgetsLoaded) {
+    dashboardNotice = (
+      <div className="sk-page-grid" aria-busy="true" aria-label="Memuat widget">
+        <span className="sk sk-page-card" />
+        <span className="sk sk-page-card" />
+      </div>
+    );
+  } else if (widgets.length === 0) {
+    dashboardNotice = (
+      <div className="empty-widgets-card">
+        <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
+        {admin ? (
+          <>
+            <p className="empty-widgets-desc">
+              Pilih tipe visual di panel kanan untuk menambahkan widget pertama.
+            </p>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setEditMode(true);
+                openCreateWidget();
+              }}
+            >
+              + Tambah Widget Pertama
+            </button>
+          </>
+        ) : (
+          <p className="empty-widgets-desc">
+            Admin {user.role} belum menyusun dashboard untuk dataset ini.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <main className="content">
-      <div className="dataset-header">
+    <div className="dataset-page-layout">
+      <main className="content">
+        <div className="dataset-header">
         <div className="dataset-heading">
           <h1 className="dataset-title">{dataset.displayName}</h1>
-          <p className="dataset-meta">
-            Tabel database: <code>{dataset.tableName}</code> · Total baris:{" "}
-            <strong>{totalRows.toLocaleString()}</strong> · Terdeteksi{" "}
-            <strong>{columns.length} kolom</strong>
-          </p>
+          <DatasetDescription
+            value={(registry ?? dataset).description}
+            canEdit={admin && editMode}
+            onSave={handleSaveDescription}
+          />
+          {(registry ?? dataset).sourcePath && (
+            <SyncLine
+              sourcePath={(registry ?? dataset).sourcePath as string}
+              enabled={(registry ?? dataset).syncEnabled}
+              lastSyncedAt={(registry ?? dataset).lastSyncedAt}
+              watchedBy={(registry ?? dataset).watchedBy}
+              machine={machine}
+              status={syncStatus}
+              canEdit={admin}
+              busy={togglingSync}
+              onToggle={handleToggleSync}
+              onClaim={handleClaimWatch}
+            />
+          )}
         </div>
         <div className="dataset-actions">
           <button
@@ -345,112 +543,77 @@ export default function DatasetPage() {
           >
             <RefreshIcon width={15} height={15} />
           </button>
-          <div className="view-toggle">
-            <button
-              type="button"
-              className={`toggle-btn${activeTab === "dashboard" ? " active" : ""}`}
-              onClick={() => setActiveTab("dashboard")}
-            >
-              Dashboard
-            </button>
-            <button
-              type="button"
-              className={`toggle-btn${activeTab === "data" ? " active" : ""}`}
-              onClick={() => {
-                setActiveTab("data");
-                setEditMode(false);
-              }}
-            >
-              Tabel Data
-            </button>
-          </div>
-          {activeTab === "dashboard" && editMode ? (
-            <>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={openCreateWidget}
-              >
-                + Tambah Widget
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => setEditMode(false)}
-              >
-                Selesai
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to="/import" className="btn-ghost">
-                + Import File Lain
-              </Link>
-              {activeTab === "dashboard" && (
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setEditMode(true)}
-                >
-                  Atur Dashboard
-                </button>
-              )}
-            </>
-          )}
+          <button
+            type="button"
+            className="btn-ghost btn-icon"
+            onClick={() => setFullscreen(!fullscreen)}
+            aria-pressed={fullscreen}
+            aria-label={
+              fullscreen ? "Keluar dari layar penuh" : "Tampilkan layar penuh"
+            }
+            title={
+              fullscreen
+                ? "Keluar dari layar penuh (Esc)"
+                : "Layar penuh, tanpa sidebar"
+            }
+          >
+            {fullscreen ? (
+              <ShrinkIcon width={15} height={15} />
+            ) : (
+              <ExpandIcon width={15} height={15} />
+            )}
+          </button>
         </div>
       </div>
 
-      {activeTab === "dashboard" ? (
-        <div className="dashboard-container">
-          {widgets.length === 0 ? (
-            <div className="empty-widgets-card">
-              <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
-              <p className="empty-widgets-desc">
-                Buat KPI Card, Bar Chart, Line Chart, atau Donut Chart dari data Anda.
-              </p>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => {
-                  setEditMode(true);
-                  openCreateWidget();
+      <div className="dashboard-container">
+        {dashboardNotice ?? (
+          <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
+            {containerWidth > 0 && (
+              <GridLayout
+                className={`charts-grid${editMode ? " edit-mode" : ""}`}
+                width={containerWidth}
+                layout={gridLayout}
+                gridConfig={{
+                  cols: GRID_COLS,
+                  rowHeight: 60,
+                  margin: [16, 16],
+                  containerPadding: [0, 0],
                 }}
+                dragConfig={{
+                  enabled: editMode,
+                  bounded: true,
+                  handle: ".widget-card",
+                  cancel: "button, a, input, select, canvas",
+                }}
+                resizeConfig={{
+                  enabled: editMode,
+                  handles: ["s", "e", "se"],
+                }}
+                onLayoutChange={handleLayoutChange}
               >
-                + Tambah Widget Pertama
-              </button>
-            </div>
-          ) : (
-            <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
-              {containerWidth > 0 && (
-                <GridLayout
-                  className={`charts-grid${editMode ? " edit-mode" : ""}`}
-                  width={containerWidth}
-                  layout={gridLayout}
-                  gridConfig={{
-                    cols: GRID_COLS,
-                    rowHeight: 60,
-                    margin: [16, 16],
-                    containerPadding: [0, 0],
-                  }}
-                  dragConfig={{
-                    enabled: editMode,
-                    handle: ".widget-card",
-                    cancel: "button, a, input, select, .recharts-surface, .recharts-legend-wrapper",
-                  }}
-                  resizeConfig={{ enabled: editMode }}
-                  onLayoutChange={handleLayoutChange}
-                >
-                  {widgets.map((widget) => (
+                {widgets.map((widget) => {
+                  const isSelected = editMode && selectedWidgetId === widget.id;
+                  return (
                     <div key={widget.id}>
-                      <div className="widget-card wrap">
+                      <div
+                        className={`widget-card wrap${isSelected ? " is-selected" : ""}`}
+                        onPointerDown={() => {
+                          if (editMode) {
+                            openEditWidget(widget);
+                          }
+                        }}
+                      >
                         {editMode && (
                           <div className="widget-toolbar">
                             <button
                               type="button"
-                              className="icon-btn"
+                              className="icon-btn keyboard-only"
                               aria-label={`Edit widget ${widget.title}`}
-                              title="Edit widget"
-                              onClick={() => openEditWidget(widget)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditWidget(widget);
+                              }}
                             >
                               <PencilIcon width={15} height={15} />
                             </button>
@@ -459,67 +622,29 @@ export default function DatasetPage() {
                               className="icon-btn danger"
                               aria-label={`Hapus widget ${widget.title}`}
                               title="Hapus widget"
-                              onClick={() => openWidgetDeleteConfirm(widget)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openWidgetDeleteConfirm(widget);
+                              }}
                             >
                               <TrashIcon width={15} height={15} />
                             </button>
                           </div>
                         )}
-                        <WidgetRender widget={widget} reloadNonce={reloadNonce} />
+                        <WidgetRender
+                          widget={widget}
+                          columns={columns}
+                          reloadNonce={reloadNonce}
+                        />
                       </div>
                     </div>
-                  ))}
-                </GridLayout>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="data-view-container">
-          <SchemaInspector columns={columns} />
-          <RawTablePreview columns={columns} sampleRows={sampleRows} />
-          <div className="danger-zone">
-            <div>
-              <p className="danger-zone-title">Zona Berbahaya</p>
-              <p className="danger-zone-desc">
-                Menghapus dataset ikut membuang {totalRows.toLocaleString()} baris
-                data beserta seluruh widget yang memakainya.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn-danger-outline"
-              onClick={() => setShowDeleteModal(true)}
-            >
-              Hapus Dataset
-            </button>
+                  );
+                })}
+              </GridLayout>
+            )}
           </div>
-        </div>
-      )}
-
-      <WidgetBuilderModal
-        isOpen={showBuilder}
-        columns={columns}
-        datasetId={dataset.id}
-        editing={editingWidget}
-        onSave={handleSaveWidget}
-        onCancel={() => {
-          setShowBuilder(false);
-          setEditingWidget(null);
-        }}
-      />
-
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        title="Hapus Dataset"
-        message={`Dataset "${dataset.displayName}" dan seluruh baris datanya akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus Dataset"
-        cancelLabel="Batal"
-        isDestructive={true}
-        isLoading={isDeleting}
-        onConfirm={handleDeleteDataset}
-        onCancel={() => setShowDeleteModal(false)}
-      />
+        )}
+      </div>
 
       <ConfirmModal
         isOpen={widgetToDelete !== null}
@@ -536,5 +661,223 @@ export default function DatasetPage() {
         onCancel={() => setWidgetToDelete(null)}
       />
     </main>
+
+    {admin && (
+      <WidgetBuilderSidebar
+        isOpen={editMode}
+        columns={columns}
+        datasetId={dataset.id}
+        editing={editingWidget}
+        onSave={handleSaveWidget}
+        onDeselect={() => setSelectedWidgetId(null)}
+        onDelete={openWidgetDeleteConfirm}
+      />
+    )}
+  </div>
+);
+}
+
+type SyncLineProps = {
+  readonly sourcePath: string;
+  readonly enabled: boolean;
+  readonly lastSyncedAt: string | null;
+  readonly watchedBy: string | null;
+  readonly machine: string | null;
+  readonly status: SyncStatus | undefined;
+  readonly canEdit: boolean;
+  readonly busy: boolean;
+  readonly onToggle: () => void;
+  readonly onClaim: () => void;
+};
+
+type SyncAction = "enable" | "claim" | "pause";
+
+const SYNC_ACTION_LABEL: Record<SyncAction, string> = {
+  enable: "Aktifkan",
+  claim: "Awasi dari laptop ini",
+  pause: "Jeda",
+};
+
+type SyncView = {
+  readonly tone: string;
+  readonly text: string;
+  readonly action: SyncAction | null;
+};
+
+type SyncViewInput = {
+  readonly name: string;
+  readonly when: string | null;
+  readonly enabled: boolean;
+  readonly watchedBy: string | null;
+  readonly mine: boolean;
+  readonly status: SyncStatus | undefined;
+};
+
+function syncView({
+  name,
+  when,
+  enabled,
+  watchedBy,
+  mine,
+  status,
+}: SyncViewInput): SyncView {
+  if (!enabled) {
+    return { tone: "paused", text: `Sync dijeda untuk ${name}`, action: "enable" };
+  }
+  if (!isDesktop()) {
+    return {
+      tone: "paused",
+      text: `${name} diikuti dari aplikasi desktop`,
+      action: null,
+    };
+  }
+  if (!watchedBy) {
+    return {
+      tone: "paused",
+      text: `${name} belum diawasi laptop mana pun`,
+      action: "claim",
+    };
+  }
+  if (!mine) {
+    return {
+      tone: "live",
+      text: when
+        ? `Diikuti dari ${watchedBy} · diperbarui ${when}`
+        : `Diikuti dari ${watchedBy}`,
+      action: "claim",
+    };
+  }
+  if (status?.state === "importing") {
+    return { tone: "busy", text: `Membaca perubahan ${name}…`, action: null };
+  }
+  if (status?.state === "error") {
+    return {
+      tone: "error",
+      text: status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`,
+      action: "pause",
+    };
+  }
+  return {
+    tone: "live",
+    text: when ? `Mengikuti ${name} · diperbarui ${when}` : `Mengikuti ${name}`,
+    action: "pause",
+  };
+}
+
+function SyncLine({
+  sourcePath,
+  enabled,
+  lastSyncedAt,
+  watchedBy,
+  machine,
+  status,
+  canEdit,
+  busy,
+  onToggle,
+  onClaim,
+}: SyncLineProps) {
+  const view = syncView({
+    name: fileNameOf(sourcePath),
+    when: formatSyncTime(lastSyncedAt),
+    enabled,
+    watchedBy,
+    mine: !!machine && watchedBy === machine,
+    status,
+  });
+  const action = canEdit ? view.action : null;
+
+  return (
+    <p className={`dataset-sync tone-${view.tone}`}>
+      <span className="dataset-sync-dot" aria-hidden="true" />
+      <span className="dataset-sync-text" title={status?.error ?? sourcePath}>
+        {view.text}
+      </span>
+      {action && (
+        <button
+          type="button"
+          className="dataset-sync-toggle"
+          onClick={action === "claim" ? onClaim : onToggle}
+          disabled={busy}
+        >
+          {SYNC_ACTION_LABEL[action]}
+        </button>
+      )}
+    </p>
+  );
+}
+
+type DatasetDescriptionProps = {
+  readonly value: string | null;
+  readonly canEdit: boolean;
+  readonly onSave: (next: string) => Promise<void>;
+};
+
+function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editing]);
+
+  useEffect(() => {
+    if (!canEdit) setEditing(false);
+  }, [canEdit]);
+
+  function commit(raw: string) {
+    setEditing(false);
+    const next = raw.trim();
+    if (next === (value ?? "")) return;
+    void onSave(next);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="dataset-desc-input"
+        defaultValue={value ?? ""}
+        maxLength={DESCRIPTION_MAX}
+        placeholder="Jelaskan isi dashboard ini dalam satu kalimat"
+        aria-label="Deskripsi dashboard"
+        onBlur={(e) => commit(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            e.currentTarget.value = value ?? "";
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  if (!value) {
+    if (!canEdit) return null;
+    return (
+      <button
+        type="button"
+        className="dataset-desc-add"
+        onClick={() => setEditing(true)}
+      >
+        + Tambah deskripsi
+      </button>
+    );
+  }
+
+  if (!canEdit) return <p className="dataset-desc">{value}</p>;
+
+  return (
+    <button
+      type="button"
+      className="dataset-desc"
+      onClick={() => setEditing(true)}
+      title="Klik untuk mengubah deskripsi"
+    >
+      {value}
+    </button>
   );
 }
