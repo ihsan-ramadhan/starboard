@@ -62,8 +62,9 @@ export function formatCompactValue(
 
 export function formatCell(val: unknown): string {
   if (val === null || val === undefined) return "-";
-  if (val instanceof Date) return val.toISOString().split("T")[0];
+  if (typeof val === "string") return val;
   if (typeof val === "number") return plain.format(val);
-  if (typeof val === "object") return JSON.stringify(val);
-  return String(val);
+  if (val instanceof Date) return val.toISOString().split("T")[0];
+  if (typeof val === "boolean" || typeof val === "bigint") return val.toString();
+  return JSON.stringify(val) ?? "";
 }

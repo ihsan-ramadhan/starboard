@@ -17,6 +17,27 @@ const COLLAPSE_KEY = "starboard_sidebar_collapsed";
 const LONG_PRESS_MS = 150;
 const MOVE_TOLERANCE = 6;
 
+function movedPast(press: { x: number; y: number }, x: number, y: number) {
+  return (
+    Math.abs(x - press.x) > MOVE_TOLERANCE || Math.abs(y - press.y) > MOVE_TOLERANCE
+  );
+}
+
+function rowIndexAt(list: HTMLElement, clientY: number): number {
+  const rows = [...list.querySelectorAll<HTMLElement>("[data-key]")];
+  return rows.findIndex((row) => {
+    const box = row.getBoundingClientRect();
+    return clientY >= box.top && clientY <= box.bottom;
+  });
+}
+
+function nudgeStep(e: React.KeyboardEvent<HTMLElement>): number | null {
+  if (!e.altKey) return null;
+  if (e.key === "ArrowUp") return -1;
+  if (e.key === "ArrowDown") return 1;
+  return null;
+}
+
 function initials(name: string) {
   return name
     .trim()
@@ -54,6 +75,14 @@ function NavItem({
   onFinishRename,
   onDelete,
 }: NavItemProps) {
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!renaming) return;
+    renameRef.current?.focus();
+    renameRef.current?.select();
+  }, [renaming]);
+
   if (!arranging) {
     return (
       <Link
@@ -83,10 +112,10 @@ function NavItem({
     >
       {renaming ? (
         <input
+          ref={renameRef}
           className="nav-rename"
           defaultValue={item.displayName}
           maxLength={60}
-          autoFocus
           aria-label={`Nama menu untuk ${item.displayName}`}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
@@ -275,19 +304,12 @@ export function Sidebar({
   function pressMove(e: React.PointerEvent<HTMLElement>) {
     const press = pressRef.current;
     if (press) {
-      const moved =
-        Math.abs(e.clientX - press.x) > MOVE_TOLERANCE ||
-        Math.abs(e.clientY - press.y) > MOVE_TOLERANCE;
-      if (moved) cancelPress();
+      if (movedPast(press, e.clientX, e.clientY)) cancelPress();
       return;
     }
     const key = draggingRef.current;
     if (!key || !listRef.current) return;
-    const rows = [...listRef.current.querySelectorAll<HTMLElement>("[data-key]")];
-    const over = rows.findIndex((row) => {
-      const box = row.getBoundingClientRect();
-      return e.clientY >= box.top && e.clientY <= box.bottom;
-    });
+    const over = rowIndexAt(listRef.current, e.clientY);
     if (over < 0) return;
     const next = withMoved(itemsRef.current, key, over);
     if (next === itemsRef.current) return;
@@ -314,11 +336,11 @@ export function Sidebar({
   }
 
   function nudge(e: React.KeyboardEvent<HTMLElement>, key: string) {
-    if (!e.altKey) return;
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    const step = nudgeStep(e);
+    if (step === null) return;
     e.preventDefault();
     const from = itemsRef.current.findIndex((i) => i.key === key);
-    const next = withMoved(itemsRef.current, key, from + (e.key === "ArrowUp" ? -1 : 1));
+    const next = withMoved(itemsRef.current, key, from + step);
     if (next === itemsRef.current) return;
     itemsRef.current = next;
     setItems(next);

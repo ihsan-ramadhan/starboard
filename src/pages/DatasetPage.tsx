@@ -244,11 +244,12 @@ export default function DatasetPage() {
   }, [key, user.role]);
 
   useEffect(() => {
+    if (!inRegistry) return;
+
     const mark = `${key}:${registryStamp ?? ""}`;
     const previous = seenStampRef.current;
     seenStampRef.current = mark;
 
-    if (!inRegistry) return;
     if (previous === null || !previous.startsWith(`${key}:`)) return;
     if (previous === mark) return;
     handleRefresh();
@@ -302,12 +303,12 @@ export default function DatasetPage() {
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
       const w = await api.getWidgets(user.role, key);
-      setWidgets(
-        w.map((item) => ({
-          ...item,
-          datasetId: item.datasetId || d?.dataset?.id || item.datasetId,
-        }))
-      );
+      const loaded = w.map((item) => ({
+        ...item,
+        datasetId: item.datasetId || d?.dataset?.id || item.datasetId,
+      }));
+      setWidgets(loaded);
+      setWidgetCache((prev) => ({ ...prev, [key]: loaded }));
       setReloadNonce((n) => n + 1);
     } catch (err) {
       toast.error("Gagal memuat ulang data: " + String(err));
@@ -597,20 +598,8 @@ export default function DatasetPage() {
                     <div key={widget.id}>
                       <div
                         className={`widget-card wrap${isSelected ? " is-selected" : ""}`}
-                        role={editMode ? "button" : undefined}
-                        tabIndex={editMode ? 0 : undefined}
-                        aria-label={
-                          editMode ? `Atur widget ${widget.title}` : undefined
-                        }
-                        onClick={() => {
+                        onPointerDown={() => {
                           if (editMode) {
-                            openEditWidget(widget);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (!editMode || e.target !== e.currentTarget) return;
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
                             openEditWidget(widget);
                           }
                         }}
@@ -828,7 +817,9 @@ function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps)
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (editing) inputRef.current?.select();
+    if (!editing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
   }, [editing]);
 
   useEffect(() => {
@@ -851,7 +842,6 @@ function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps)
         maxLength={DESCRIPTION_MAX}
         placeholder="Jelaskan isi dashboard ini dalam satu kalimat"
         aria-label="Deskripsi dashboard"
-        autoFocus
         onBlur={(e) => commit(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {

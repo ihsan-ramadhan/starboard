@@ -3,6 +3,8 @@ import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
 import type { DatasetColumn, WidgetFilter } from "../../types";
 
+type TableRow = { key: string; data: Record<string, unknown> };
+
 export type TableWidgetProps = {
   readonly title: string;
   readonly datasetId: string;
@@ -27,7 +29,7 @@ export default function TableWidget({
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [pageDraft, setPageDraft] = useState("1");
-  const [rows, setRows] = useState<Array<Record<string, unknown>> | null>(null);
+  const [rows, setRows] = useState<TableRow[] | null>(null);
   const [shown, setShown] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -68,7 +70,7 @@ export default function TableWidget({
       })
       .then((res) => {
         if (!active) return;
-        setRows(res.rows);
+        setRows(res.rows.map((data) => ({ key: crypto.randomUUID(), data })));
         setShown(res.columns);
         setTotal(res.total);
       })
@@ -109,7 +111,7 @@ export default function TableWidget({
   function toggleSort(column: string) {
     setPage(0);
     setSort((current) => {
-      if (!current || current.column !== column) return { column, dir: "asc" };
+      if (current?.column !== column) return { column, dir: "asc" };
       if (current.dir === "asc") return { column, dir: "desc" };
       return null;
     });
@@ -190,14 +192,14 @@ export default function TableWidget({
                 </tr>
               </thead>
               <tbody>
-                {(rows ?? []).map((row, index) => (
-                  <tr key={index}>
+                {(rows ?? []).map((row) => (
+                  <tr key={row.key}>
                     {shown.map((name) => (
                       <td
                         key={name}
                         className={typeOf(name) === "numeric" ? "cell-num" : undefined}
                       >
-                        {formatCell(row[name])}
+                        {formatCell(row.data[name])}
                       </td>
                     ))}
                   </tr>

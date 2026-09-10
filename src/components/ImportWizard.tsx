@@ -90,6 +90,16 @@ export type ImportWizardProps = {
   readonly onImportSuccess?: () => void;
 };
 
+function initialSelection(sheets: DetectedSheet[]) {
+  const selected: Record<string, boolean> = {};
+  const selectedCols: Record<string, string[]> = {};
+  for (const s of sheets) {
+    selected[s.sheetName] = false;
+    selectedCols[s.sheetName] = s.columns.map((c) => c.slug);
+  }
+  return { selected, selectedCols };
+}
+
 function matchSheets(
   sheets: DetectedSheet[] | null,
   query: string
@@ -156,12 +166,8 @@ export default function ImportWizard({
     try {
       const result = await api.analyzeExcel(bytes, cleaned);
 
-      const initSel: Record<string, boolean> = {};
-      const initCols: Record<string, string[]> = {};
-      for (const s of result) {
-        initSel[s.sheetName] = false;
-        initCols[s.sheetName] = s.columns.map((c) => c.slug);
-      }
+      const { selected: initSel, selectedCols: initCols } =
+        initialSelection(result);
 
       setWizardState({
         fileName: name,
@@ -170,7 +176,7 @@ export default function ImportWizard({
         sourceRevision: source?.revision ?? null,
         displayName: "",
         searchQuery: "",
-        activeSheetName: result.length > 0 ? result[0].sheetName : null,
+        activeSheetName: result[0]?.sheetName ?? null,
         sheets: result,
         selected: initSel,
         selectedCols: initCols,
