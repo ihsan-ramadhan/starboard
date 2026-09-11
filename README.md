@@ -57,6 +57,18 @@ Cross-compiles for Windows, stops the `StarboardBackend` service over SSH,
 copies the binary, starts it again. Host, path, and service name are hardcoded
 in the script.
 
+The server re-reads watched workbooks itself every 20 seconds, so a laptop no
+longer has to be running for a dataset to stay current. Two optional settings
+control it:
+
+- `SERVER_SYNC=0` turns that loop off without a rebuild.
+- `SYNC_ROOT` limits which folders it will read, semicolon-separated. Anything
+  outside is refused with a message on the dataset. Unset means no limit.
+
+```
+SYNC_ROOT=\\fileserver\share\folder
+```
+
 The desktop app has no auto-updater — a new build has to be installed on each
 machine.
 

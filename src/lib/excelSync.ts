@@ -154,6 +154,11 @@ export function useExcelSync(
         return "skipped";
       }
 
+      if (ds.serverPath) {
+        setStatus(ds.key, { state: "watching" });
+        return "skipped";
+      }
+
       let revision: string;
       try {
         revision = await sourceFileRevision(path);

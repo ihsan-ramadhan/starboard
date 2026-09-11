@@ -11,6 +11,7 @@ struct Candidate {
     dept: String,
     key: String,
     paths: Vec<String>,
+    base_key: String,
     display_name: String,
     last_mtime: Option<String>,
     source_name: Option<String>,
@@ -42,14 +43,67 @@ fn revision_of(meta: &std::fs::Metadata) -> Result<String, String> {
     Ok(format!("{}-{}", millis, meta.len()))
 }
 
+fn disabled() -> bool {
+    matches!(
+        std::env::var("SERVER_SYNC").unwrap_or_default().trim(),
+        "0" | "off" | "false"
+    )
+}
+
+fn sync_roots() -> Option<Vec<String>> {
+    let raw = std::env::var("SYNC_ROOT").ok()?;
+    let roots: Vec<String> = raw
+        .split(';')
+        .map(|r| normalize(r.trim()))
+        .filter(|r| !r.is_empty())
+        .collect();
+    if roots.is_empty() {
+        None
+    } else {
+        Some(roots)
+    }
+}
+
+fn normalize(path: &str) -> String {
+    path.replace('/', "\\").to_lowercase()
+}
+
+fn within_roots(path: &str, roots: &Option<Vec<String>>) -> bool {
+    let Some(roots) = roots else { return true };
+
+    let candidate = normalize(path);
+    if candidate.split('\\').any(|seg| seg == "..") {
+        return false;
+    }
+
+    roots.iter().any(|root| {
+        let mut prefix = root.clone();
+        if !prefix.ends_with('\\') {
+            prefix.push('\\');
+        }
+        candidate.starts_with(&prefix)
+    })
+}
+
 pub fn spawn(pool: Pool) {
+    if disabled() {
+        println!(">>> Server-side sync DIMATIKAN (SERVER_SYNC=0)");
+        return;
+    }
+
+    let roots = sync_roots();
+    match &roots {
+        Some(list) => println!(">>> Server-side sync dibatasi ke: {}", list.join(", ")),
+        None => println!(">>> Server-side sync tanpa batas folder (SYNC_ROOT belum diset)"),
+    }
+
     tokio::spawn(async move {
         let host = machine_name();
         println!(">>> Server-side sync aktif (mesin: {})", host);
         let mut ticker = tokio::time::interval(POLL_INTERVAL);
         loop {
             ticker.tick().await;
-            if let Err(e) = sweep(&pool).await {
+            if let Err(e) = sweep(&pool, &roots).await {
                 eprintln!("[WARN] Server sync gagal: {}", e);
             }
         }
@@ -87,6 +141,12 @@ async fn load_candidates(pool: &Pool) -> Result<Vec<Candidate>, String> {
             last_mtime: r.get(4),
             source_name: r.get(5),
             source_size: r.get(6),
+            base_key: r
+                .get::<_, serde_json::Value>(7)
+                .get("baseKey")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
             config: r.get(7),
             paths: {
                 let mut seen = HashSet::new();
@@ -109,14 +169,29 @@ async fn record(pool: &Pool, id: &str, path: Option<&str>, error: Option<&str>) 
         .await;
 }
 
-async fn sweep(pool: &Pool) -> Result<(), String> {
+async fn sweep(pool: &Pool, roots: &Option<Vec<String>>) -> Result<(), String> {
     let candidates = load_candidates(pool).await?;
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
 
     for c in candidates {
-        let readable = c.paths.iter().find_map(|p| {
-            std::fs::metadata(p).ok().map(|m| (p.clone(), m))
-        });
+        let allowed: Vec<&String> = c
+            .paths
+            .iter()
+            .filter(|p| within_roots(p, roots))
+            .collect();
+
+        if allowed.is_empty() && !c.paths.is_empty() {
+            let why = format!(
+                "Semua path di luar SYNC_ROOT, tidak dibaca server: {}",
+                c.paths.join(", ")
+            );
+            record(pool, &c.id, None, Some(&why)).await;
+            continue;
+        }
+
+        let readable = allowed
+            .iter()
+            .find_map(|p| std::fs::metadata(p).ok().map(|m| ((*p).clone(), m)));
 
         let Some((path, meta)) = readable else {
             let tried = c.paths.join(", ");
@@ -129,7 +204,7 @@ async fn sweep(pool: &Pool) -> Result<(), String> {
             continue;
         };
 
-        if !seen.insert(path.clone()) {
+        if !seen.insert((path.clone(), c.base_key.clone())) {
             continue;
         }
 
@@ -172,12 +247,6 @@ async fn sweep(pool: &Pool) -> Result<(), String> {
 }
 
 async fn import(pool: &Pool, c: &Candidate, path: &str, revision: &str) -> Result<usize, String> {
-    let base_key: String = c
-        .config
-        .get("baseKey")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
     let selected_sheets: Vec<String> =
         serde_json::from_value(c.config.get("selectedSheets").cloned().unwrap_or_default())
             .map_err(|e| format!("Resep sync rusak: {}", e))?;
@@ -194,7 +263,7 @@ async fn import(pool: &Pool, c: &Candidate, path: &str, revision: &str) -> Resul
         &ImportSpec {
             dept: &c.dept,
             display_name: &c.display_name,
-            dataset_key: &base_key,
+            dataset_key: &c.base_key,
             selected_sheets: &selected_sheets,
             selected_columns: &selected_columns,
             source_path: None,
