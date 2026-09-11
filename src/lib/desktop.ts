@@ -16,6 +16,15 @@ export async function pickExcelPath(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
+export async function canonicalPath(path: string): Promise<string> {
+  if (!isDesktop()) return path;
+  try {
+    return await invoke<string>("canonical_path", { path });
+  } catch {
+    return path;
+  }
+}
+
 export function readSourceBytes(path: string) {
   return invoke<ArrayBuffer>("read_source_bytes", { path });
 }

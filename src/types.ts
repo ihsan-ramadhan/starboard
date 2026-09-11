@@ -38,6 +38,8 @@ export type DatasetRegistry = {
   sortOrder: number | null;
   sourceName: string | null;
   sourceSize: number | null;
+  serverPath: string | null;
+  serverError: string | null;
   myPath: string | null;
   watcherCount: number;
   lastSeenAt: string | null;

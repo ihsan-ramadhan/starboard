@@ -16,6 +16,46 @@ fn source_file_revision(path: String) -> Result<String, String> {
     revision_of(&meta)
 }
 
+#[cfg(windows)]
+fn mapped_drive_to_unc(path: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+
+    let rest = path.get(1..2)?;
+    if rest != ":" {
+        return None;
+    }
+    let letter = path.get(0..1)?;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "(Get-PSDrive -Name {} -ErrorAction SilentlyContinue).DisplayRoot",
+                letter
+            ),
+        ])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+
+    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !root.starts_with("\\\\") {
+        return None;
+    }
+    Some(format!("{}{}", root, &path[2..]))
+}
+
+#[cfg(not(windows))]
+fn mapped_drive_to_unc(_path: &str) -> Option<String> {
+    None
+}
+
+#[tauri::command]
+fn canonical_path(path: String) -> String {
+    mapped_drive_to_unc(&path).unwrap_or(path)
+}
+
 #[tauri::command]
 fn machine_name() -> String {
     if let Ok(name) = std::env::var("COMPUTERNAME") {
@@ -46,6 +86,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             source_file_revision,
             read_source_bytes,
+            canonical_path,
             machine_name
         ])
         .run(tauri::generate_context!())

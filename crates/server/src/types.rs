@@ -42,6 +42,10 @@ pub struct DatasetRegistry {
     pub source_name: Option<String>,
     #[serde(rename = "sourceSize")]
     pub source_size: Option<i64>,
+    #[serde(rename = "serverPath")]
+    pub server_path: Option<String>,
+    #[serde(rename = "serverError")]
+    pub server_error: Option<String>,
     #[serde(rename = "myPath")]
     pub my_path: Option<String>,
     #[serde(rename = "watcherCount")]

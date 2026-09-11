@@ -1,6 +1,7 @@
 mod types;
 mod excel;
 mod analytics;
+mod server_sync;
 mod auth;
 
 use axum::{
@@ -270,6 +271,8 @@ async fn main() {
         uploads: Mutex::new(HashMap::new()),
     });
 
+    server_sync::spawn(state.pool.clone());
+
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([
@@ -298,7 +301,9 @@ async fn main() {
         )
         .route(
             "/api/datasets/{key}/sync",
-            post(sync_dataset_handler).put(update_sync_settings_handler),
+            post(sync_dataset_handler)
+                .put(update_sync_settings_handler)
+                .delete(release_watch_handler),
         )
         .route("/api/uploads", post(stage_upload_handler))
         .route("/api/sync/heartbeat", post(heartbeat_handler))
@@ -359,6 +364,8 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "description" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sourceName" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sourceSize" bigint;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverPath" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverError" text;
 
             CREATE TABLE IF NOT EXISTS dataset_source_paths (
                 "datasetId" text NOT NULL
@@ -414,7 +421,7 @@ const REGISTRY_COLUMNS: &str = r#"r.id, r.dept, r.key, r."tableName", r."display
     r."createdAt"::text, r."sourcePath", r."syncEnabled",
     to_char(r."lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     r."lastSyncedMtime", r."watchedBy", r."sortOrder", r.description,
-    r."sourceName", r."sourceSize",
+    r."sourceName", r."sourceSize", r."serverPath", r."serverError",
     sp.path,
     (SELECT count(*) FROM dataset_source_paths w WHERE w."datasetId" = r.id),
     to_char((SELECT max(w."lastSeenAt") FROM dataset_source_paths w
@@ -442,9 +449,11 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         description: r.get(12),
         source_name: r.get(13),
         source_size: r.get(14),
-        my_path: r.get(15),
-        watcher_count: r.get::<_, i64>(16) as i32,
-        last_seen_at: r.get(17),
+        server_path: r.get(15),
+        server_error: r.get(16),
+        my_path: r.get(17),
+        watcher_count: r.get::<_, i64>(18) as i32,
+        last_seen_at: r.get(19),
     }
 }
 
@@ -1326,7 +1335,7 @@ async fn sync_dataset_handler(
     }))
 }
 
-fn claim_mismatch(
+pub(crate) fn claim_mismatch(
     known_name: Option<&str>,
     known_size: Option<i64>,
     new_name: Option<&str>,
@@ -1358,6 +1367,66 @@ fn claim_mismatch(
             notes.join("; ")
         ))
     }
+}
+
+async fn release_watch_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Query(query): Query<DeptQuery>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let machine = query.machine.ok_or((
+        StatusCode::BAD_REQUEST,
+        "Nama mesin tidak disertakan.".to_string(),
+    ))?;
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    client
+        .execute(
+            r#"
+            DELETE FROM dataset_source_paths sp
+            USING dataset_registry r
+            WHERE sp."datasetId" = r.id
+              AND r.dept = $1 AND r.key = $2 AND sp.machine = $3
+            "#,
+            &[&query.dept, &key, &machine],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Release error: {}", e)))?;
+
+    client
+        .execute(
+            r#"
+            UPDATE dataset_registry r
+            SET "sourcePath" = (
+                SELECT sp.path FROM dataset_source_paths sp
+                WHERE sp."datasetId" = r.id ORDER BY sp."lastSeenAt" DESC LIMIT 1
+            )
+            WHERE r.dept = $1 AND r.key = $2
+              AND NOT EXISTS (
+                SELECT 1 FROM dataset_source_paths sp
+                WHERE sp."datasetId" = r.id AND sp.path = r."sourcePath"
+              )
+            "#,
+            &[&query.dept, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Repoint error: {}", e)))?;
+
+    Ok(Json(true))
 }
 
 async fn update_sync_settings_handler(

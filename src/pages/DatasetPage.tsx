@@ -13,6 +13,7 @@ import "react-resizable/css/styles.css";
 import { useApp } from "../App";
 import { api, ApiError, clearWidgetDataCache } from "../lib/api";
 import {
+  canonicalPath,
   fileNameOf,
   isDesktop,
   machineName,
@@ -363,7 +364,7 @@ export default function DatasetPage() {
         toast.error("File sedang ditulis aplikasi lain. Coba lagi sebentar.");
         return;
       }
-      await claimWatch(path, source.bytes.byteLength, false);
+      await claimWatch(await canonicalPath(path), source.bytes.byteLength, false);
       await refreshDatasets();
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
@@ -384,6 +385,22 @@ export default function DatasetPage() {
       if (d) setDetail(d);
     } catch (err) {
       toast.error("Gagal menyimpan deskripsi: " + String(err));
+    }
+  }
+
+  async function handleReleaseWatch() {
+    if (!key || togglingSync) return;
+    setTogglingSync(true);
+    try {
+      await api.releaseWatch(user.role, key, await machineName());
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+      toast.success("Laptop ini berhenti mengawasi dataset ini.");
+    } catch (err) {
+      toast.error("Gagal melepas pengawasan: " + String(err));
+    } finally {
+      setTogglingSync(false);
     }
   }
 
@@ -562,6 +579,8 @@ export default function DatasetPage() {
               sourcePath={(registry ?? dataset).sourcePath as string}
               enabled={(registry ?? dataset).syncEnabled}
               lastSyncedAt={(registry ?? dataset).lastSyncedAt}
+              serverPath={(registry ?? dataset).serverPath}
+              serverError={(registry ?? dataset).serverError}
               myPath={(registry ?? dataset).myPath}
               watcherCount={(registry ?? dataset).watcherCount}
               lastSeenAt={(registry ?? dataset).lastSeenAt}
@@ -570,6 +589,7 @@ export default function DatasetPage() {
               busy={togglingSync}
               onToggle={handleToggleSync}
               onClaim={handleClaimWatch}
+              onRelease={handleReleaseWatch}
             />
           )}
         </div>
@@ -737,6 +757,8 @@ type SyncLineProps = {
   readonly sourcePath: string;
   readonly enabled: boolean;
   readonly lastSyncedAt: string | null;
+  readonly serverPath: string | null;
+  readonly serverError: string | null;
   readonly myPath: string | null;
   readonly watcherCount: number;
   readonly lastSeenAt: string | null;
@@ -745,13 +767,16 @@ type SyncLineProps = {
   readonly busy: boolean;
   readonly onToggle: () => void;
   readonly onClaim: () => void;
+  readonly onRelease: () => void;
 };
 
-type SyncAction = "enable" | "claim" | "pause";
+type SyncAction = "enable" | "claim" | "change" | "release" | "pause";
 
 const SYNC_ACTION_LABEL: Record<SyncAction, string> = {
   enable: "Aktifkan",
   claim: "Awasi dari laptop ini",
+  change: "Ganti file",
+  release: "Lepas dari laptop ini",
   pause: "Jeda",
 };
 
@@ -775,13 +800,14 @@ function watcherTone(lastSeenAt: string | null): "live" | "warn" | "error" {
 type SyncView = {
   readonly tone: string;
   readonly text: string;
-  readonly action: SyncAction | null;
+  readonly actions: readonly SyncAction[];
 };
 
 type SyncViewInput = {
   readonly name: string;
   readonly when: string | null;
   readonly enabled: boolean;
+  readonly onServer: boolean;
   readonly mine: boolean;
   readonly others: number;
   readonly lastSeenAt: string | null;
@@ -792,36 +818,48 @@ function syncView({
   name,
   when,
   enabled,
+  onServer,
   mine,
   others,
   lastSeenAt,
   status,
 }: SyncViewInput): SyncView {
+  const mineActions: SyncAction[] = ["change", "release", "pause"];
+
   if (!enabled) {
-    return { tone: "paused", text: `Sync dijeda untuk ${name}`, action: "enable" };
+    return { tone: "paused", text: `Sync dijeda untuk ${name}`, actions: ["enable"] };
+  }
+  if (onServer) {
+    return {
+      tone: "live",
+      text: when
+        ? `Mengikuti ${name} dari server · diperbarui ${when}`
+        : `Mengikuti ${name} dari server`,
+      actions: mine ? mineActions : ["pause"],
+    };
   }
   if (!isDesktop()) {
     return {
       tone: "paused",
       text: `${name} diikuti dari aplikasi desktop`,
-      action: null,
+      actions: [],
     };
   }
   if (!mine && others === 0) {
     return {
       tone: "warn",
       text: `${name} belum diawasi laptop mana pun`,
-      action: "claim",
+      actions: ["claim"],
     };
   }
   if (mine && status?.state === "importing") {
-    return { tone: "busy", text: `Membaca perubahan ${name}…`, action: "pause" };
+    return { tone: "busy", text: `Membaca perubahan ${name}…`, actions: ["pause"] };
   }
   if (mine && status?.state === "error") {
     return {
       tone: "error",
       text: status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`,
-      action: "pause",
+      actions: mineActions,
     };
   }
   if (mine) {
@@ -831,7 +869,7 @@ function syncView({
       text: when
         ? `Mengikuti ${name} · diperbarui ${when}${shared}`
         : `Mengikuti ${name}${shared}`,
-      action: "pause",
+      actions: mineActions,
     };
   }
 
@@ -843,7 +881,7 @@ function syncView({
       text: when
         ? `Diikuti dari ${laptops} · diperbarui ${when}`
         : `Diikuti dari ${laptops}`,
-      action: "claim",
+      actions: ["claim"],
     };
   }
 
@@ -853,7 +891,7 @@ function syncView({
     text: seen
       ? `Tidak ada laptop yang memeriksa sejak ${seen} · awasi dari sini agar sync jalan`
       : `${laptops} terdaftar, tapi tidak ada yang memeriksa`,
-    action: "claim",
+    actions: ["claim"],
   };
 }
 
@@ -861,6 +899,8 @@ function SyncLine({
   sourcePath,
   enabled,
   lastSyncedAt,
+  serverPath,
+  serverError,
   myPath,
   watcherCount,
   lastSeenAt,
@@ -869,35 +909,47 @@ function SyncLine({
   busy,
   onToggle,
   onClaim,
+  onRelease,
 }: SyncLineProps) {
   const mine = myPath !== null;
   const view = syncView({
-    name: fileNameOf(myPath ?? sourcePath),
+    name: fileNameOf(serverPath ?? myPath ?? sourcePath),
     when: formatSyncTime(lastSyncedAt),
     enabled,
+    onServer: serverPath !== null,
     mine,
     others: mine ? watcherCount - 1 : watcherCount,
     lastSeenAt,
     status,
   });
-  const action = canEdit ? view.action : null;
+  const actions = canEdit ? view.actions : [];
+
+  function run(action: SyncAction) {
+    if (action === "claim" || action === "change") return onClaim();
+    if (action === "release") return onRelease();
+    return onToggle();
+  }
 
   return (
     <p className={`dataset-sync tone-${view.tone}`}>
       <span className="dataset-sync-dot" aria-hidden="true" />
-      <span className="dataset-sync-text" title={status?.error ?? myPath ?? sourcePath}>
+      <span
+        className="dataset-sync-text"
+        title={status?.error ?? serverError ?? serverPath ?? myPath ?? sourcePath}
+      >
         {view.text}
       </span>
-      {action && (
+      {actions.map((action) => (
         <button
+          key={action}
           type="button"
           className="dataset-sync-toggle"
-          onClick={action === "claim" ? onClaim : onToggle}
+          onClick={() => run(action)}
           disabled={busy}
         >
           {SYNC_ACTION_LABEL[action]}
         </button>
-      )}
+      ))}
     </p>
   );
 }

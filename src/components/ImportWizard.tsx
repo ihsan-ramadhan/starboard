@@ -9,6 +9,7 @@ import {
   machineName,
   onFileDrop,
   pickExcelPath,
+  canonicalPath,
   readStableSource,
 } from "../lib/desktop";
 import { formatCount } from "../lib/format";
@@ -209,7 +210,7 @@ export default function ImportWizard({
         return;
       }
       await analyze(source.bytes, fileNameOf(path), {
-        path,
+        path: await canonicalPath(path),
         revision: source.revision,
       });
     } catch (e: any) {

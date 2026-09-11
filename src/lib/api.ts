@@ -278,6 +278,13 @@ export const api = {
     return res;
   },
 
+  releaseWatch(dept: string, key: string, machine: string) {
+    return request<boolean>(
+      `/api/datasets/${encodeURIComponent(key)}/sync?dept=${encodeURIComponent(dept)}&machine=${encodeURIComponent(machine)}`,
+      { method: "DELETE" }
+    );
+  },
+
   setSyncEnabled(
     dept: string,
     key: string,

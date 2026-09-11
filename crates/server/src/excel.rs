@@ -295,7 +295,7 @@ pub struct ImportSpec<'a> {
     pub strict: bool,
 }
 
-fn base_name(path: &str) -> Option<String> {
+pub fn base_name(path: &str) -> Option<String> {
     path.rsplit(['/', '\\'])
         .next()
         .filter(|s| !s.is_empty())
