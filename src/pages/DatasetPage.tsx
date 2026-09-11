@@ -26,7 +26,11 @@ import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
 import ExpandIcon from "../assets/icons/expand.svg?react";
 import ShrinkIcon from "../assets/icons/shrink.svg?react";
+import SettingsIcon from "../assets/icons/settings.svg?react";
 import ConfirmModal from "../components/ConfirmModal";
+import DatasetSourceModal, {
+  type SourceAction,
+} from "../components/DatasetSourceModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
 import {
@@ -156,6 +160,7 @@ export default function DatasetPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [togglingSync, setTogglingSync] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
   const [claimConflict, setClaimConflict] = useState<{
     path: string;
     size: number;
@@ -486,8 +491,12 @@ export default function DatasetPage() {
       persistWidgets(next);
       return next;
     });
-    toast.success(selectedWidgetId ? "Widget berhasil diperbarui" : "Widget berhasil ditambahkan");
-    setSelectedWidgetId(null);
+    if (selectedWidgetId) {
+      toast.success("Widget berhasil diperbarui");
+    } else {
+      toast.success("Widget berhasil ditambahkan");
+      setSelectedWidgetId(null);
+    }
   }
 
   function handleDeleteWidget(id: string) {
@@ -525,6 +534,41 @@ export default function DatasetPage() {
   }
 
   const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
+
+  const reg = registry ?? dataset;
+  const syncShown = reg.syncEnabled || reg.sourcePath !== null;
+  const syncMine = reg.myPath !== null;
+  const syncOthers = syncMine ? reg.watcherCount - 1 : reg.watcherCount;
+  const syncKnownPath = reg.serverPath ?? reg.myPath ?? reg.sourcePath;
+  const syncState = syncShown
+    ? syncView({
+        name: syncKnownPath ? fileNameOf(syncKnownPath) : reg.sourceName ?? "File sumber",
+        when: formatSyncTime(reg.lastSyncedAt),
+        enabled: reg.syncEnabled,
+        onServer: reg.serverPath !== null,
+        mine: syncMine,
+        others: syncOthers,
+        lastSeenAt: reg.lastSeenAt,
+        status: syncStatus,
+      })
+    : null;
+
+  function runSyncAction(action: SyncAction) {
+    setSourceOpen(false);
+    if (action === "claim" || action === "change") return handleClaimWatch();
+    if (action === "release") return handleReleaseWatch();
+    return handleToggleSync();
+  }
+
+  const sourceActions: SourceAction[] = admin
+    ? (syncState?.actions ?? []).map((action) => ({
+        key: action,
+        label: SYNC_ACTION_LABEL[action],
+        hint: SYNC_ACTION_HINT[action],
+        destructive: action === "release",
+        run: () => runSyncAction(action),
+      }))
+    : [];
 
   let dashboardNotice: ReactNode = null;
   if (!widgetsLoaded) {
@@ -574,24 +618,6 @@ export default function DatasetPage() {
             canEdit={admin && editMode}
             onSave={handleSaveDescription}
           />
-          {(registry ?? dataset).sourcePath && (
-            <SyncLine
-              sourcePath={(registry ?? dataset).sourcePath as string}
-              enabled={(registry ?? dataset).syncEnabled}
-              lastSyncedAt={(registry ?? dataset).lastSyncedAt}
-              serverPath={(registry ?? dataset).serverPath}
-              serverError={(registry ?? dataset).serverError}
-              myPath={(registry ?? dataset).myPath}
-              watcherCount={(registry ?? dataset).watcherCount}
-              lastSeenAt={(registry ?? dataset).lastSeenAt}
-              status={syncStatus}
-              canEdit={admin}
-              busy={togglingSync}
-              onToggle={handleToggleSync}
-              onClaim={handleClaimWatch}
-              onRelease={handleReleaseWatch}
-            />
-          )}
         </div>
         <div className="dataset-actions">
           <button
@@ -604,6 +630,17 @@ export default function DatasetPage() {
           >
             <RefreshIcon width={15} height={15} />
           </button>
+          {syncState && (
+            <button
+              type="button"
+              className={`btn-ghost btn-icon tone-${syncState.tone}`}
+              onClick={() => setSourceOpen(true)}
+              aria-label={sourceButtonLabel(syncState.tone)}
+              title={sourceButtonLabel(syncState.tone)}
+            >
+              <SettingsIcon width={15} height={15} />
+            </button>
+          )}
           <button
             type="button"
             className="btn-ghost btn-icon"
@@ -707,6 +744,19 @@ export default function DatasetPage() {
         )}
       </div>
 
+      <DatasetSourceModal
+        isOpen={sourceOpen && syncState !== null}
+        tone={syncState?.tone ?? "paused"}
+        status={syncState?.text ?? ""}
+        path={syncKnownPath}
+        watchedBy={watcherSummary(reg.serverPath !== null, syncMine, syncOthers)}
+        updatedAt={formatSyncTime(reg.lastSyncedAt)}
+        error={reg.serverError}
+        actions={sourceActions}
+        busy={togglingSync}
+        onClose={() => setSourceOpen(false)}
+      />
+
       <ConfirmModal
         isOpen={claimConflict !== null}
         title="File sepertinya berbeda"
@@ -753,22 +803,6 @@ export default function DatasetPage() {
 );
 }
 
-type SyncLineProps = {
-  readonly sourcePath: string;
-  readonly enabled: boolean;
-  readonly lastSyncedAt: string | null;
-  readonly serverPath: string | null;
-  readonly serverError: string | null;
-  readonly myPath: string | null;
-  readonly watcherCount: number;
-  readonly lastSeenAt: string | null;
-  readonly status: SyncStatus | undefined;
-  readonly canEdit: boolean;
-  readonly busy: boolean;
-  readonly onToggle: () => void;
-  readonly onClaim: () => void;
-  readonly onRelease: () => void;
-};
 
 type SyncAction = "enable" | "claim" | "change" | "release" | "pause";
 
@@ -833,9 +867,9 @@ function syncView({
     return {
       tone: "live",
       text: when
-        ? `Mengikuti ${name} dari server · diperbarui ${when}`
-        : `Mengikuti ${name} dari server`,
-      actions: mine ? mineActions : ["pause"],
+        ? `${name} · dari server · diperbarui ${when}`
+        : `${name} · dari server`,
+      actions: ["change", "pause"],
     };
   }
   if (!isDesktop()) {
@@ -867,8 +901,8 @@ function syncView({
     return {
       tone: "live",
       text: when
-        ? `Mengikuti ${name} · diperbarui ${when}${shared}`
-        : `Mengikuti ${name}${shared}`,
+        ? `${name} · dari laptop ini · diperbarui ${when}${shared}`
+        : `${name} · dari laptop ini${shared}`,
       actions: mineActions,
     };
   }
@@ -895,63 +929,27 @@ function syncView({
   };
 }
 
-function SyncLine({
-  sourcePath,
-  enabled,
-  lastSyncedAt,
-  serverPath,
-  serverError,
-  myPath,
-  watcherCount,
-  lastSeenAt,
-  status,
-  canEdit,
-  busy,
-  onToggle,
-  onClaim,
-  onRelease,
-}: SyncLineProps) {
-  const mine = myPath !== null;
-  const view = syncView({
-    name: fileNameOf(serverPath ?? myPath ?? sourcePath),
-    when: formatSyncTime(lastSyncedAt),
-    enabled,
-    onServer: serverPath !== null,
-    mine,
-    others: mine ? watcherCount - 1 : watcherCount,
-    lastSeenAt,
-    status,
-  });
-  const actions = canEdit ? view.actions : [];
+const SYNC_ACTION_HINT: Record<SyncAction, string> = {
+  enable: "Mulai lagi mengikuti perubahan berkas, untuk semua orang.",
+  claim: "Tunjuk berkasnya di laptop ini supaya ikut memeriksa perubahan.",
+  change: "Pilih berkas lain untuk diikuti dataset ini.",
+  release: "Laptop ini berhenti memeriksa. Laptop lain tidak terpengaruh.",
+  pause: "Berhenti mengikuti perubahan berkas, untuk semua orang.",
+};
 
-  function run(action: SyncAction) {
-    if (action === "claim" || action === "change") return onClaim();
-    if (action === "release") return onRelease();
-    return onToggle();
-  }
+function sourceButtonLabel(tone: string): string {
+  if (tone === "warn") return "Sumber data: perlu diperiksa";
+  if (tone === "error") return "Sumber data: bermasalah";
+  if (tone === "paused") return "Sumber data: dijeda";
+  return "Sumber data";
+}
 
-  return (
-    <p className={`dataset-sync tone-${view.tone}`}>
-      <span className="dataset-sync-dot" aria-hidden="true" />
-      <span
-        className="dataset-sync-text"
-        title={status?.error ?? serverError ?? serverPath ?? myPath ?? sourcePath}
-      >
-        {view.text}
-      </span>
-      {actions.map((action) => (
-        <button
-          key={action}
-          type="button"
-          className="dataset-sync-toggle"
-          onClick={() => run(action)}
-          disabled={busy}
-        >
-          {SYNC_ACTION_LABEL[action]}
-        </button>
-      ))}
-    </p>
-  );
+function watcherSummary(onServer: boolean, mine: boolean, others: number): string {
+  if (onServer) return "Server";
+  if (mine && others > 0) return `Laptop ini dan ${others} laptop lain`;
+  if (mine) return "Laptop ini";
+  if (others > 0) return `${others} laptop lain`;
+  return "Belum ada";
 }
 
 type DatasetDescriptionProps = {

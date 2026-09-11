@@ -6,6 +6,24 @@ use uuid::Uuid;
 
 use crate::types::{ColumnSchema, DetectedSheet};
 
+const PG_IDENT_MAX: usize = 63;
+
+pub fn fit_dataset_key(dept_slug: &str, key: &str) -> String {
+    let overhead = dept_slug.len() + "_".len() + "_records".len();
+    let budget = PG_IDENT_MAX.saturating_sub(overhead);
+
+    if key.len() <= budget {
+        return key.to_string();
+    }
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&key, &mut hasher);
+    let tag = format!("{:06x}", (std::hash::Hasher::finish(&hasher) as u32) & 0xff_ffff);
+
+    let head = budget.saturating_sub(tag.len() + 1);
+    format!("{}_{}", &key[..head], tag)
+}
+
 pub fn slugify(name: &str) -> String {
     let re = Regex::new(r"[^a-z0-9]+").unwrap();
     let lower = name.to_lowercase();
@@ -415,7 +433,7 @@ pub async fn execute_import(
             continue;
         }
 
-        let key = format!("{}_{}", base_key, slugify(sheet_name));
+        let key = fit_dataset_key(&dept_slug, &format!("{}_{}", base_key, slugify(sheet_name)));
         let table_name = format!("{}_{}_records", dept_slug, key);
         if primary_key.is_empty() {
             primary_key = key.clone();

@@ -1293,13 +1293,98 @@ a {
 }
 
 .dataset-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
   margin-bottom: 20px;
-  padding-bottom: 16px;
+  padding: 20px 0 16px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
+}
+
+.source-modal {
+  max-width: 560px;
+}
+
+.source-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.source-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.source-facts dt {
+  color: var(--fg-subtle);
+}
+
+.source-facts dd {
+  margin: 0;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.source-error {
+  margin: 14px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.source-actions {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.source-actions li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.source-actions button {
+  flex-shrink: 0;
+  min-width: 168px;
+}
+
+.source-actions span {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+@media (max-width: 640px) {
+  .source-actions li {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .source-actions button {
+    min-width: 0;
+  }
 }
 
 .dataset-heading {
@@ -1556,15 +1641,15 @@ a {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 0 24px 20px;
 }
 
 .app-shell.is-fullscreen .dataset-page-layout > .content {
-  padding: 14px 18px;
+  padding: 0 18px 14px;
 }
 
-.app-shell.is-fullscreen .dataset-sync {
-  display: none;
+.app-shell.is-fullscreen .dataset-header {
+  padding-top: 14px;
 }
 
 .app-shell.is-fullscreen .dataset-header {
@@ -1976,22 +2061,6 @@ button.dataset-desc:focus-visible,
 }
 
 
-.dataset-sync {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--fg-dim);
-}
-
-.dataset-sync-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .dataset-sync-dot {
   flex-shrink: 0;
   width: 7px;
@@ -2000,29 +2069,29 @@ button.dataset-desc:focus-visible,
   background: var(--fg-subtle);
 }
 
-.dataset-sync.tone-live .dataset-sync-dot {
+.source-status.tone-live .dataset-sync-dot {
   background: var(--success);
 }
 
-.dataset-sync.tone-busy .dataset-sync-dot {
+.source-status.tone-busy .dataset-sync-dot {
   background: var(--accent);
   animation: sync-pulse 1.2s ease-in-out infinite;
 }
 
-.dataset-sync.tone-warn {
-  color: #92400e;
-}
-
-.dataset-sync.tone-warn .dataset-sync-dot {
+.source-status.tone-warn .dataset-sync-dot {
   background: var(--warning);
 }
 
-.dataset-sync.tone-error {
-  color: #b91c1c;
+.source-status.tone-error .dataset-sync-dot {
+  background: var(--danger);
 }
 
-.dataset-sync.tone-error .dataset-sync-dot {
-  background: var(--danger);
+.btn-icon.tone-warn {
+  color: #92400e;
+}
+
+.btn-icon.tone-error {
+  color: #b91c1c;
 }
 
 @keyframes sync-pulse {
@@ -2032,7 +2101,7 @@ button.dataset-desc:focus-visible,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dataset-sync.tone-busy .dataset-sync-dot {
+  .source-status.tone-busy .dataset-sync-dot {
     animation: none;
   }
   .sidebar,
@@ -2045,27 +2114,7 @@ button.dataset-desc:focus-visible,
   }
 }
 
-.dataset-sync-toggle {
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.dataset-sync-toggle:hover {
-  color: var(--accent-hover);
-}
-
-.dataset-sync-toggle:disabled {
-  color: var(--fg-subtle);
-  text-decoration: none;
-  cursor: default;
-}.kpi-label {
+.kpi-label {
   font-size: 11px;
   font-weight: 700;
   color: var(--fg-subtle);
