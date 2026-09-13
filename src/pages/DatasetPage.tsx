@@ -33,8 +33,13 @@ import DatasetSourceModal, {
 } from "../components/DatasetSourceModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
+import SlicerBar from "../components/SlicerBar";
 import {
   isAdmin,
+  slicerToFilters,
+  type Slicer,
+  type SlicerValue,
+  type WidgetFilter,
   type DatasetDetail,
   type WidgetDefinition,
   type WidgetLayout,
@@ -161,6 +166,7 @@ export default function DatasetPage() {
   const [reloadNonce, setReloadNonce] = useState(0);
   const [togglingSync, setTogglingSync] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [slicerValues, setSlicerValues] = useState<Record<string, SlicerValue>>({});
   const [claimConflict, setClaimConflict] = useState<{
     path: string;
     size: number;
@@ -381,6 +387,18 @@ export default function DatasetPage() {
     }
   }
 
+  async function handleSaveSlicers(next: Slicer[]) {
+    if (!key) return;
+    try {
+      await api.updateDataset(user.role, key, { slicers: next });
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+    } catch (err) {
+      toast.error("Gagal menyimpan filter: " + String(err));
+    }
+  }
+
   async function handleSaveDescription(next: string) {
     if (!key) return;
     try {
@@ -536,6 +554,10 @@ export default function DatasetPage() {
   const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
 
   const reg = registry ?? dataset;
+  const slicers: Slicer[] = reg.slicers ?? [];
+  const globalFilters: WidgetFilter[] = slicers.flatMap((slicer) =>
+    slicerToFilters(slicer, slicerValues[slicer.id])
+  );
   const syncShown = reg.syncEnabled || reg.sourcePath !== null;
   const syncMine = reg.myPath !== null;
   const syncOthers = syncMine ? reg.watcherCount - 1 : reg.watcherCount;
@@ -620,6 +642,18 @@ export default function DatasetPage() {
           />
         </div>
         <div className="dataset-actions">
+          <SlicerBar
+            datasetId={dataset.id}
+            slicers={slicers}
+            columns={columns}
+            selection={slicerValues}
+            onChange={(id, value) =>
+              setSlicerValues((prev) => ({ ...prev, [id]: value }))
+            }
+            onReset={() => setSlicerValues({})}
+            editing={admin && editMode}
+            onSlicersChange={handleSaveSlicers}
+          />
           <button
             type="button"
             className={`btn-ghost btn-icon${refreshing ? " is-spinning" : ""}`}
@@ -733,6 +767,7 @@ export default function DatasetPage() {
                           widget={widget}
                           columns={columns}
                           reloadNonce={reloadNonce}
+                          globalFilters={globalFilters}
                         />
                       </div>
                     </div>

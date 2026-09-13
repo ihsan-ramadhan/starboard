@@ -41,7 +41,10 @@ export default function TableWidget({
   );
 
   const filterKey = useMemo(
-    () => (filters ?? []).map((f) => `${f.column}${f.op}${f.value}`).join(","),
+    () =>
+      (filters ?? [])
+        .map((f) => `${f.column}${f.op}${f.value}${f.values?.join("~") ?? ""}`)
+        .join(","),
     [filters]
   );
   const activeFilters = useMemo(

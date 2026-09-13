@@ -24,11 +24,12 @@ use tokio_postgres::NoTls;
 use uuid::Uuid;
 use tower_http::cors::CorsLayer;
 
-use crate::analytics::{execute_rows_query, execute_widget_query};
+use crate::analytics::{execute_column_values, execute_rows_query, execute_widget_query};
 use crate::excel::{execute_import, parse_and_analyze_sheets, ImportSpec};
 use crate::types::{
-    DatasetColumn, DatasetDetail, DatasetRegistry, DetectedSheet, SessionUser,
-    RowsQueryRequest, RowsQueryResult, WidgetQueryRequest, WidgetQueryResult,
+    ColumnValuesRequest, ColumnValuesResult, DatasetColumn, DatasetDetail, DatasetRegistry,
+    DetectedSheet, SessionUser, RowsQueryRequest, RowsQueryResult, WidgetQueryRequest,
+    WidgetQueryResult,
 };
 
 struct AppState {
@@ -176,6 +177,7 @@ struct RenameRequest {
     #[serde(rename = "displayName")]
     display_name: Option<String>,
     description: Option<String>,
+    slicers: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -311,6 +313,7 @@ async fn main() {
         .route("/api/excel/import", post(import_excel_handler))
         .route("/api/analytics/query", post(query_widget_data_handler))
         .route("/api/analytics/rows", post(query_rows_handler))
+        .route("/api/analytics/values", post(query_values_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
@@ -366,6 +369,7 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sourceSize" bigint;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverPath" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverError" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "slicers" jsonb;
 
             CREATE TABLE IF NOT EXISTS dataset_source_paths (
                 "datasetId" text NOT NULL
@@ -421,7 +425,7 @@ const REGISTRY_COLUMNS: &str = r#"r.id, r.dept, r.key, r."tableName", r."display
     r."createdAt"::text, r."sourcePath", r."syncEnabled",
     to_char(r."lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     r."lastSyncedMtime", r."watchedBy", r."sortOrder", r.description,
-    r."sourceName", r."sourceSize", r."serverPath", r."serverError",
+    r."sourceName", r."sourceSize", r."serverPath", r."serverError", r.slicers,
     sp.path,
     (SELECT count(*) FROM dataset_source_paths w WHERE w."datasetId" = r.id),
     to_char((SELECT max(w."lastSeenAt") FROM dataset_source_paths w
@@ -451,9 +455,10 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         source_size: r.get(14),
         server_path: r.get(15),
         server_error: r.get(16),
-        my_path: r.get(17),
-        watcher_count: r.get::<_, i64>(18) as i32,
-        last_seen_at: r.get(19),
+        slicers: r.get(17),
+        my_path: r.get(18),
+        watcher_count: r.get::<_, i64>(19) as i32,
+        last_seen_at: r.get(20),
     }
 }
 
@@ -749,7 +754,7 @@ async fn rename_dataset_handler(
         }
     }
 
-    if name.is_none() && description.is_none() {
+    if name.is_none() && description.is_none() && payload.slicers.is_none() {
         return Err((
             StatusCode::BAD_REQUEST,
             "Tidak ada perubahan yang dikirim.".to_string(),
@@ -785,6 +790,16 @@ async fn rename_dataset_handler(
             .map_err(|e| {
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("Deskripsi error: {}", e))
             })?;
+    }
+
+    if let Some(slicers) = payload.slicers.as_ref() {
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET slicers = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, slicers],
+            )
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Slicer error: {}", e)))?;
     }
 
     if affected == 0 {
@@ -1525,6 +1540,23 @@ async fn query_widget_data_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
     let res = execute_widget_query(&client, req, &auth.role)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(res))
+}
+
+async fn query_values_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(req): Json<ColumnValuesRequest>,
+) -> Result<Json<ColumnValuesResult>, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let res = execute_column_values(&client, req, &auth.role)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(res))

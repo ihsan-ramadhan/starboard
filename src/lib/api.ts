@@ -136,7 +136,9 @@ function widgetDataKey(q: WidgetQuery) {
     q.seriesColumn,
     q.limit,
     q.orderByKey,
-    q.filters?.map((f) => `${f.column}${f.op}${f.value}`).join(","),
+    q.filters
+      ?.map((f) => `${f.column}${f.op}${f.value}${f.values?.join("~") ?? ""}`)
+      .join(","),
   ].join("|");
 }
 
@@ -188,6 +190,16 @@ export const api = {
     return upload(bytes);
   },
 
+  columnValues(datasetId: string, column: string, limit?: number) {
+    return request<{ values: string[]; truncated: boolean }>(
+      "/api/analytics/values",
+      {
+        method: "POST",
+        body: JSON.stringify({ datasetId, column, limit }),
+      }
+    );
+  },
+
   heartbeat(dept: string, machine: string) {
     return request<boolean>("/api/sync/heartbeat", {
       method: "POST",
@@ -209,7 +221,7 @@ export const api = {
   updateDataset(
     dept: string,
     key: string,
-    patch: { displayName?: string; description?: string }
+    patch: { displayName?: string; description?: string; slicers?: unknown }
   ) {
     return request<boolean>(`/api/datasets/${encodeURIComponent(key)}`, {
       method: "PUT",

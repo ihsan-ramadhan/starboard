@@ -4,8 +4,7 @@ use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
 
 use crate::types::{
-    RowsQueryRequest, RowsQueryResult, WidgetFilter, WidgetQueryRequest, WidgetQueryResult,
-};
+    RowsQueryRequest, RowsQueryResult, WidgetFilter, WidgetQueryRequest, WidgetQueryResult, ColumnValuesRequest, ColumnValuesResult,};
 
 const MAX_SERIES: i64 = 8;
 const OTHER_SERIES: &str = "Lainnya";
@@ -100,13 +99,35 @@ fn filter_conditions(
     alias: &str,
 ) -> Result<Vec<String>, String> {
     let mut conditions = Vec::new();
+    let mut slot = 0;
 
-    for (index, filter) in filters.iter().enumerate() {
+    for filter in filters {
         guard.check(&filter.column)?;
-        let slot = index + 1;
         let column = format!("{}\"{}\"", alias, filter.column);
         let kind = guard.type_of(&filter.column).unwrap_or("category");
         let op = filter.op.to_lowercase();
+
+        if op == "in" {
+            let picked = filter.values.as_deref().unwrap_or_default();
+            if picked.is_empty() {
+                continue;
+            }
+            let parts: Vec<String> = picked
+                .iter()
+                .map(|_| {
+                    slot += 1;
+                    match kind {
+                        "numeric" => format!("{} = (${}::text)::numeric", column, slot),
+                        "date" => format!("{} = (${}::text)::date", column, slot),
+                        _ => format!("{}::text = ${}", column, slot),
+                    }
+                })
+                .collect();
+            conditions.push(format!("({})", parts.join(" OR ")));
+            continue;
+        }
+
+        slot += 1;
 
         let comparison = match op.as_str() {
             "eq" => "=",
@@ -147,7 +168,15 @@ fn filter_conditions(
 }
 
 fn filter_values(filters: &[WidgetFilter]) -> Vec<String> {
-    filters.iter().map(|f| f.value.clone()).collect()
+    let mut out = Vec::new();
+    for f in filters {
+        if f.op.eq_ignore_ascii_case("in") {
+            out.extend(f.values.clone().unwrap_or_default());
+        } else {
+            out.push(f.value.clone());
+        }
+    }
+    out
 }
 
 fn as_params(values: &[String]) -> Vec<&(dyn ToSql + Sync)> {
@@ -548,6 +577,45 @@ async fn pivot_query(
         scalar_text: None,
         rows,
     })
+}
+
+pub async fn execute_column_values(
+    client: &Client,
+    req: ColumnValuesRequest,
+    dept: &str,
+) -> Result<ColumnValuesResult, String> {
+    let table = resolve_table(client, &req.dataset_id, dept).await?;
+    let guard = ColumnGuard::load(client, &req.dataset_id).await?;
+    guard.check(&req.column)?;
+
+    let limit = req.limit.unwrap_or(200).clamp(1, 500);
+
+    let sql = format!(
+        r#"
+        SELECT DISTINCT ON ("{col}") "{col}"::text
+        FROM "{table}"
+        WHERE "{col}" IS NOT NULL AND "{col}"::text <> ''
+        ORDER BY "{col}"
+        LIMIT {take}
+        "#,
+        col = req.column,
+        table = table,
+        take = limit + 1,
+    );
+
+    let rows = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| format!("Gagal membaca nilai kolom: {}", e))?;
+
+    let truncated = rows.len() as i64 > limit;
+    let values: Vec<String> = rows
+        .iter()
+        .take(limit as usize)
+        .map(|r| r.get::<_, String>(0))
+        .collect();
+
+    Ok(ColumnValuesResult { values, truncated })
 }
 
 pub async fn execute_rows_query(

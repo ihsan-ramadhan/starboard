@@ -14,6 +14,7 @@ import type {
   DatasetColumn,
   SeriesMode,
   WidgetDefinition,
+  WidgetFilter,
   WidgetQueryResult,
 } from "../../types";
 import type { WideRow } from "../../lib/series";
@@ -36,6 +37,7 @@ export type WidgetRenderProps = {
   readonly widget: WidgetDefinition;
   readonly columns: readonly DatasetColumn[];
   readonly reloadNonce?: number;
+  readonly globalFilters?: readonly WidgetFilter[];
 };
 
 const MAX_PIE_SLICES = 8;
@@ -58,12 +60,19 @@ function valueColumns(widget: WidgetDefinition): string[] | undefined {
   return widget.metricColumn ? [widget.metricColumn] : undefined;
 }
 
-function usableFilters(widget: WidgetDefinition) {
-  const active = (widget.filters ?? []).filter((f) => f.column && f.value !== "");
-  return active.length > 0 ? active : undefined;
+function usableFilters(
+  widget: WidgetDefinition,
+  global: readonly WidgetFilter[]
+): WidgetFilter[] | undefined {
+  const own = (widget.filters ?? []).filter((f) => f.column && f.value !== "");
+  const all = [...own, ...global];
+  return all.length > 0 ? all : undefined;
 }
 
-function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
+function buildQuery(
+  widget: WidgetDefinition,
+  global: readonly WidgetFilter[]
+): WidgetQuery | null {
   if (widget.type === "table") return null;
 
   if (widget.type === "date") {
@@ -86,7 +95,7 @@ function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
     seriesColumn: multi ? undefined : widget.seriesColumn,
     limit: widget.limit ?? 10,
     orderByKey: widget.type === "line" || widget.type === "area",
-    filters: usableFilters(widget),
+    filters: usableFilters(widget, global),
   };
 }
 
@@ -209,8 +218,9 @@ function WidgetRender({
   widget,
   columns,
   reloadNonce = 0,
+  globalFilters = [],
 }: WidgetRenderProps) {
-  const spec = buildQuery(widget);
+  const spec = buildQuery(widget, globalFilters);
   const specKey = spec ? JSON.stringify(spec) : "";
   const query = useMemo(() => spec, [specKey, reloadNonce]);
 
@@ -306,7 +316,7 @@ function WidgetRender({
         datasetId={widget.datasetId}
         columns={columns}
         selected={widget.tableColumns}
-        filters={usableFilters(widget)}
+        filters={usableFilters(widget, globalFilters)}
         limit={widget.limit ?? 25}
         reloadNonce={reloadNonce}
       />
