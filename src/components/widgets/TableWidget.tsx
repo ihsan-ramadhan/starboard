@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
-import type { DatasetColumn, WidgetFilter } from "../../types";
+import type { DatasetColumn, ValueLabelMap, WidgetFilter } from "../../types";
 
 type TableRow = { key: string; data: Record<string, unknown> };
 
@@ -13,6 +13,7 @@ export type TableWidgetProps = {
   readonly filters?: readonly WidgetFilter[];
   readonly limit: number;
   readonly reloadNonce: number;
+  readonly valueLabels?: ValueLabelMap | null;
 };
 
 type SortState = { column: string; dir: "asc" | "desc" } | null;
@@ -25,6 +26,7 @@ export default function TableWidget({
   filters,
   limit,
   reloadNonce,
+  valueLabels,
 }: TableWidgetProps) {
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
@@ -34,6 +36,14 @@ export default function TableWidget({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function displayCell(column: string, raw: unknown) {
+    const map = valueLabels?.[column];
+    const direct = map?.[String(raw)];
+    if (direct) return direct;
+    const text = formatCell(raw);
+    return map?.[text] || text;
+  }
 
   const wanted = useMemo(
     () => (selected?.length ? [...selected] : undefined),
@@ -202,7 +212,7 @@ export default function TableWidget({
                         key={name}
                         className={typeOf(name) === "numeric" ? "cell-num" : undefined}
                       >
-                        {formatCell(row.data[name])}
+                        {displayCell(name, row.data[name])}
                       </td>
                     ))}
                   </tr>

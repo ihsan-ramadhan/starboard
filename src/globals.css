@@ -1521,6 +1521,111 @@ a {
   text-decoration: underline;
 }
 
+.slicer-control-select.is-block {
+  width: 100%;
+  height: 30px;
+  margin-top: 6px;
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.slicer-modes {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.slicer-mode {
+  flex: 1;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.slicer-mode.is-on {
+  background: var(--bg);
+  font-weight: 600;
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.slicer-mode:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.slicer-labels {
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.slicer-labels li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.slicer-label-raw {
+  flex-shrink: 0;
+  width: 72px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slicer-labels input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.slicer-labels input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.slicer-save {
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.slicer-save:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.slicer-save:disabled {
+  color: var(--fg-subtle);
+  cursor: default;
+}
+
 .slicer-stacked + .slicer-stacked {
   margin-top: 14px;
   padding-top: 14px;

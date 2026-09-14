@@ -13,6 +13,7 @@ import type {
   CurrencyCode,
   DatasetColumn,
   SeriesMode,
+  ValueLabelMap,
   WidgetDefinition,
   WidgetFilter,
   WidgetQueryResult,
@@ -38,6 +39,7 @@ export type WidgetRenderProps = {
   readonly columns: readonly DatasetColumn[];
   readonly reloadNonce?: number;
   readonly globalFilters?: readonly WidgetFilter[];
+  readonly valueLabels?: ValueLabelMap | null;
 };
 
 const MAX_PIE_SLICES = 8;
@@ -219,12 +221,13 @@ function WidgetRender({
   columns,
   reloadNonce = 0,
   globalFilters = [],
+  valueLabels,
 }: WidgetRenderProps) {
   const spec = buildQuery(widget, globalFilters);
   const specKey = spec ? JSON.stringify(spec) : "";
   const query = useMemo(() => spec, [specKey, reloadNonce]);
 
-  const [result, setResult] = useState<WidgetQueryResult | null>(() =>
+  const [raw, setResult] = useState<WidgetQueryResult | null>(() =>
     query ? peekWidgetData(query) ?? null : null
   );
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +261,22 @@ function WidgetRender({
       active = false;
     };
   }, [query]);
+
+  const groupLabels = widget.groupByColumn
+    ? valueLabels?.[widget.groupByColumn]
+    : undefined;
+
+  const result = useMemo(() => {
+    if (!raw || !groupLabels) return raw;
+    return {
+      ...raw,
+      rows: raw.rows.map((row) =>
+        row.groupKey in groupLabels
+          ? { ...row, groupKey: groupLabels[row.groupKey] || row.groupKey }
+          : row
+      ),
+    };
+  }, [raw, groupLabels]);
 
   const warningHidden = useScaleWarningHidden();
   const currency = widget.isCurrency ? widget.currency ?? "IDR" : undefined;
@@ -319,6 +338,7 @@ function WidgetRender({
         filters={usableFilters(widget, globalFilters)}
         limit={widget.limit ?? 25}
         reloadNonce={reloadNonce}
+        valueLabels={valueLabels}
       />
     );
   }

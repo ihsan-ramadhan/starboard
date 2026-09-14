@@ -39,6 +39,7 @@ import {
   slicerToFilters,
   type Slicer,
   type SlicerValue,
+  type ValueLabelMap,
   type WidgetFilter,
   type DatasetDetail,
   type WidgetDefinition,
@@ -399,6 +400,18 @@ export default function DatasetPage() {
     }
   }
 
+  async function handleSaveValueLabels(next: ValueLabelMap) {
+    if (!key) return;
+    try {
+      await api.updateDataset(user.role, key, { valueLabels: next });
+      await refreshDatasets();
+      const d = await fetchDatasetDetail(key, true);
+      if (d) setDetail(d);
+    } catch (err) {
+      toast.error("Gagal menyimpan nama tampilan: " + String(err));
+    }
+  }
+
   async function handleSaveDescription(next: string) {
     if (!key) return;
     try {
@@ -555,6 +568,7 @@ export default function DatasetPage() {
 
   const reg = registry ?? dataset;
   const slicers: Slicer[] = reg.slicers ?? [];
+  const valueLabels: ValueLabelMap | null = reg.valueLabels ?? null;
   const globalFilters: WidgetFilter[] = slicers.flatMap((slicer) =>
     slicerToFilters(slicer, slicerValues[slicer.id])
   );
@@ -653,6 +667,8 @@ export default function DatasetPage() {
             onReset={() => setSlicerValues({})}
             editing={admin && editMode}
             onSlicersChange={handleSaveSlicers}
+            valueLabels={valueLabels}
+            onValueLabelsChange={handleSaveValueLabels}
           />
           <button
             type="button"
@@ -768,6 +784,7 @@ export default function DatasetPage() {
                           columns={columns}
                           reloadNonce={reloadNonce}
                           globalFilters={globalFilters}
+                          valueLabels={valueLabels}
                         />
                       </div>
                     </div>

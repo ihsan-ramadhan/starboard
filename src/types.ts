@@ -41,6 +41,7 @@ export type DatasetRegistry = {
   serverPath: string | null;
   serverError: string | null;
   slicers: Slicer[] | null;
+  valueLabels: ValueLabelMap | null;
   myPath: string | null;
   watcherCount: number;
   lastSeenAt: string | null;
@@ -99,7 +100,20 @@ export type WidgetFilter = {
   values?: string[];
 };
 
-export type SlicerControl = "multi" | "range";
+export type SlicerControl = "multi" | "range" | "both";
+
+export type SlicerMode = "multi" | "range";
+
+export type ValueLabelMap = Record<string, Record<string, string>>;
+
+export function labelForValue(
+  map: ValueLabelMap | null | undefined,
+  column: string,
+  raw: string
+): string {
+  const custom = map?.[column]?.[raw];
+  return custom && custom.trim() ? custom : raw;
+}
 
 export type Slicer = {
   id: string;
@@ -109,10 +123,20 @@ export type Slicer = {
 };
 
 export type SlicerValue = {
+  mode?: SlicerMode;
   values?: string[];
   from?: string;
   to?: string;
 };
+
+export function slicerMode(
+  slicer: Slicer,
+  value: SlicerValue | undefined
+): SlicerMode {
+  if (slicer.control !== "both") return slicer.control;
+  if (value?.mode) return value.mode;
+  return value?.values?.length ? "multi" : "range";
+}
 
 export function slicerToFilters(
   slicer: Slicer,
@@ -120,7 +144,7 @@ export function slicerToFilters(
 ): WidgetFilter[] {
   if (!value) return [];
 
-  if (slicer.control === "multi") {
+  if (slicerMode(slicer, value) === "multi") {
     const picked = value.values ?? [];
     if (picked.length === 0) return [];
     return [{ column: slicer.column, op: "in", value: "", values: picked }];

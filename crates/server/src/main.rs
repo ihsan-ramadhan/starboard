@@ -178,6 +178,8 @@ struct RenameRequest {
     display_name: Option<String>,
     description: Option<String>,
     slicers: Option<serde_json::Value>,
+    #[serde(rename = "valueLabels")]
+    value_labels: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -370,6 +372,7 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverPath" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverError" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "slicers" jsonb;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "valueLabels" jsonb;
 
             CREATE TABLE IF NOT EXISTS dataset_source_paths (
                 "datasetId" text NOT NULL
@@ -426,6 +429,7 @@ const REGISTRY_COLUMNS: &str = r#"r.id, r.dept, r.key, r."tableName", r."display
     to_char(r."lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     r."lastSyncedMtime", r."watchedBy", r."sortOrder", r.description,
     r."sourceName", r."sourceSize", r."serverPath", r."serverError", r.slicers,
+    r."valueLabels",
     sp.path,
     (SELECT count(*) FROM dataset_source_paths w WHERE w."datasetId" = r.id),
     to_char((SELECT max(w."lastSeenAt") FROM dataset_source_paths w
@@ -456,9 +460,10 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         server_path: r.get(15),
         server_error: r.get(16),
         slicers: r.get(17),
-        my_path: r.get(18),
-        watcher_count: r.get::<_, i64>(19) as i32,
-        last_seen_at: r.get(20),
+        value_labels: r.get(18),
+        my_path: r.get(19),
+        watcher_count: r.get::<_, i64>(20) as i32,
+        last_seen_at: r.get(21),
     }
 }
 
@@ -754,7 +759,11 @@ async fn rename_dataset_handler(
         }
     }
 
-    if name.is_none() && description.is_none() && payload.slicers.is_none() {
+    if name.is_none()
+        && description.is_none()
+        && payload.slicers.is_none()
+        && payload.value_labels.is_none()
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             "Tidak ada perubahan yang dikirim.".to_string(),
@@ -800,6 +809,18 @@ async fn rename_dataset_handler(
             )
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Slicer error: {}", e)))?;
+    }
+
+    if let Some(labels) = payload.value_labels.as_ref() {
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET "valueLabels" = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, labels],
+            )
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Label nilai error: {}", e))
+            })?;
     }
 
     if affected == 0 {

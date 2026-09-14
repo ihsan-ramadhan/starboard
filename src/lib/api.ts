@@ -221,7 +221,12 @@ export const api = {
   updateDataset(
     dept: string,
     key: string,
-    patch: { displayName?: string; description?: string; slicers?: unknown }
+    patch: {
+      displayName?: string;
+      description?: string;
+      slicers?: unknown;
+      valueLabels?: unknown;
+    }
   ) {
     return request<boolean>(`/api/datasets/${encodeURIComponent(key)}`, {
       method: "PUT",

@@ -47,6 +47,8 @@ pub struct DatasetRegistry {
     #[serde(rename = "serverError")]
     pub server_error: Option<String>,
     pub slicers: Option<serde_json::Value>,
+    #[serde(rename = "valueLabels")]
+    pub value_labels: Option<serde_json::Value>,
     #[serde(rename = "myPath")]
     pub my_path: Option<String>,
     #[serde(rename = "watcherCount")]
