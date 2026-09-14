@@ -24,7 +24,12 @@ import LineChartIcon from "../../assets/icons/chart-line.svg?react";
 import AreaChartIcon from "../../assets/icons/chart-area.svg?react";
 import ComboChartIcon from "../../assets/icons/chart-combo.svg?react";
 import PieChartIcon from "../../assets/icons/chart-pie.svg?react";
-import KpiIcon from "../../assets/icons/gauge.svg?react";
+import KpiIcon from "../../assets/icons/chart-kpi.svg?react";
+import GaugeIcon from "../../assets/icons/gauge.svg?react";
+import BarHChartIcon from "../../assets/icons/chart-bar-h.svg?react";
+import HeatmapIcon from "../../assets/icons/chart-heatmap.svg?react";
+import ScatterIcon from "../../assets/icons/chart-scatter.svg?react";
+import TreemapIcon from "../../assets/icons/chart-treemap.svg?react";
 import TableIcon from "../../assets/icons/table.svg?react";
 import CalendarIcon from "../../assets/icons/calendar-clock.svg?react";
 import TrashIcon from "../../assets/icons/trash.svg?react";
@@ -77,11 +82,16 @@ const NO_CAPS: Caps = {
 
 const CAPS: Record<WidgetType, Caps> = {
   kpi: { ...NO_CAPS, values: "one", target: true, money: true, unit: true, filter: true },
+  gauge: { ...NO_CAPS, values: "one", target: true, money: true, unit: true, filter: true },
   bar: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
+  barh: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
   line: { ...NO_CAPS, values: "many", group: true, series: true, trend: true, limit: true, money: true, filter: true },
   area: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
   combo: { ...NO_CAPS, values: "many", group: true, combo: true, limit: true, money: true, filter: true },
   pie: { ...NO_CAPS, values: "one", group: true, limit: true, money: true, filter: true },
+  treemap: { ...NO_CAPS, values: "one", group: true, limit: true, money: true, unit: true, filter: true },
+  heatmap: { ...NO_CAPS, values: "one", group: true, series: true, limit: true, money: true, unit: true, filter: true },
+  scatter: { ...NO_CAPS, values: "many", group: true, limit: true, money: true, unit: true, filter: true },
   table: { ...NO_CAPS, table: true, limit: true, filter: true },
   date: { ...NO_CAPS, date: true },
 };
@@ -92,11 +102,16 @@ const VISUAL_TYPES: {
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }[] = [
   { type: "bar", labelKey: "visual.bar", icon: BarChartIcon },
+  { type: "barh", labelKey: "visual.barh", icon: BarHChartIcon },
   { type: "line", labelKey: "visual.line", icon: LineChartIcon },
   { type: "area", labelKey: "visual.area", icon: AreaChartIcon },
   { type: "combo", labelKey: "visual.combo", icon: ComboChartIcon },
   { type: "pie", labelKey: "visual.pie", icon: PieChartIcon },
+  { type: "treemap", labelKey: "visual.treemap", icon: TreemapIcon },
+  { type: "heatmap", labelKey: "visual.heatmap", icon: HeatmapIcon },
+  { type: "scatter", labelKey: "visual.scatter", icon: ScatterIcon },
   { type: "kpi", labelKey: "visual.kpi", icon: KpiIcon },
+  { type: "gauge", labelKey: "visual.gauge", icon: GaugeIcon },
   { type: "table", labelKey: "visual.table", icon: TableIcon },
   { type: "date", labelKey: "visual.date", icon: CalendarIcon },
 ];
@@ -235,6 +250,16 @@ const VALIDATION_RULES: readonly ValidationRule[] = [
     fails: ({ draft, caps, isCount }) =>
       caps.values === "one" && !isCount && !draft.metricColumn,
     messageKey: "validate.valueColumn",
+  },
+  {
+    fails: ({ draft }) =>
+      draft.type === "heatmap" && (!draft.groupByColumn || !draft.seriesColumn),
+    messageKey: "validate.heatmapSeries",
+  },
+  {
+    fails: ({ draft, isCount, picked }) =>
+      draft.type === "scatter" && !isCount && picked.length !== 2,
+    messageKey: "validate.scatterTwo",
   },
   {
     fails: ({ caps, isCount, picked }) =>

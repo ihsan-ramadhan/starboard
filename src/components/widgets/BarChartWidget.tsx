@@ -19,6 +19,7 @@ export type BarChartWidgetProps = {
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
   readonly mode: SeriesMode;
+  readonly horizontal?: boolean;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -33,6 +34,7 @@ export default function BarChartWidget({
   colors,
   labelOf,
   mode,
+  horizontal = false,
   unit,
   currency,
   reloadNonce,
@@ -46,10 +48,11 @@ export default function BarChartWidget({
 
   const option = useMemo<EChartsOption>(() => {
     const base = baseEChartOption(multi, currency, isPercent);
-    const categories = data.map((d) => String(d.groupKey ?? ""));
+    const rows = horizontal ? [...data].reverse() : data;
+    const categories = rows.map((d) => String(d.groupKey ?? ""));
 
     const rowSums = isPercent
-      ? data.map((d) =>
+      ? rows.map((d) =>
           seriesKeys.reduce((sum, key) => sum + (Number(d[key]) || 0), 0)
         )
       : [];
@@ -65,9 +68,11 @@ export default function BarChartWidget({
         animationDelay: (idx: number) => idx * 25 + index * 40,
         itemStyle: {
           color: colors[key],
-          borderRadius: isTop ? ([3, 3, 0, 0] as [number, number, number, number]) : undefined,
+          borderRadius: isTop
+            ? ((horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0]) as [number, number, number, number])
+            : undefined,
         },
-        data: data.map((d, rowIndex) => {
+        data: rows.map((d, rowIndex) => {
           const raw = Number(d[key]) || 0;
           if (!isPercent) return raw;
           const sum = rowSums[rowIndex] || 0;
@@ -76,12 +81,19 @@ export default function BarChartWidget({
       };
     });
 
+    const categoryAxis = {
+      ...(base.xAxis as any),
+      data: categories,
+      axisLabel: horizontal
+        ? { color: "#64748b", fontSize: 11, overflow: "truncate", width: 120 }
+        : (base.xAxis as any).axisLabel,
+    };
+
     return {
       ...base,
-      xAxis: {
-        ...base.xAxis,
-        data: categories,
-      },
+      grid: { ...(base.grid as any), left: horizontal ? 4 : 8 },
+      xAxis: horizontal ? base.yAxis : categoryAxis,
+      yAxis: horizontal ? categoryAxis : base.yAxis,
       legend: multi
         ? {
             ...base.legend,
@@ -110,7 +122,20 @@ export default function BarChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, stacked, isPercent, multi, lang]);
+  }, [
+    data,
+    seriesKeys,
+    colors,
+    labelOf,
+    mode,
+    horizontal,
+    unit,
+    currency,
+    stacked,
+    isPercent,
+    multi,
+    lang,
+  ]);
 
   return (
     <ChartFrame

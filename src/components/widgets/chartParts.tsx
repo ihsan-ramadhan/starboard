@@ -81,6 +81,7 @@ export function baseEChartOption(
     },
     tooltip: {
       trigger: "axis",
+      appendToBody: true,
       backgroundColor: "#ffffff",
       borderColor: "#e2e8f0",
       borderWidth: 1,

@@ -19,7 +19,7 @@ export default defineConfig(() => ({
   },
   clearScreen: false,
   build: {
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 700,
   },
   server: {
     port: 1420,

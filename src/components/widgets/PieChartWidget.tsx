@@ -43,6 +43,7 @@ export default function PieChartWidget({
       animationEasing: "cubicOut",
       tooltip: {
         trigger: "item",
+        appendToBody: true,
         backgroundColor: "#ffffff",
         borderColor: "#e2e8f0",
         borderWidth: 1,

@@ -34,6 +34,10 @@ const LineChartWidget = lazy(() => import("./LineChartWidget"));
 const AreaChartWidget = lazy(() => import("./AreaChartWidget"));
 const ComboChartWidget = lazy(() => import("./ComboChartWidget"));
 const PieChartWidget = lazy(() => import("./PieChartWidget"));
+const TreemapWidget = lazy(() => import("./TreemapWidget"));
+const HeatmapWidget = lazy(() => import("./HeatmapWidget"));
+const ScatterWidget = lazy(() => import("./ScatterWidget"));
+const GaugeWidget = lazy(() => import("./GaugeWidget"));
 
 export type WidgetRenderProps = {
   readonly widget: WidgetDefinition;
@@ -52,7 +56,7 @@ const EMPTY_PIVOT = pivotSeries([], true);
 
 
 function valueColumns(widget: WidgetDefinition): string[] | undefined {
-  if (widget.type === "kpi") {
+  if (widget.type === "kpi" || widget.type === "gauge") {
     if (widget.metricColumn && widget.targetColumn) {
       return [widget.metricColumn, widget.targetColumn];
     }
@@ -211,6 +215,9 @@ function SeriesChart({
   };
 
   if (widget.type === "bar") return <BarChartWidget {...shared} mode={stacking} />;
+  if (widget.type === "barh") {
+    return <BarChartWidget {...shared} mode={stacking} horizontal />;
+  }
   if (widget.type === "area") return <AreaChartWidget {...shared} mode={stacking} />;
   if (widget.type === "combo") {
     return <ComboChartWidget {...shared} lineKeys={lineKeys} />;
@@ -292,9 +299,12 @@ function WidgetRender({
 
   const isSeriesChart =
     widget.type === "bar" ||
+    widget.type === "barh" ||
     widget.type === "area" ||
     widget.type === "combo" ||
-    widget.type === "line";
+    widget.type === "line" ||
+    widget.type === "heatmap" ||
+    widget.type === "scatter";
 
   const pivot = useMemo(
     () =>
@@ -311,7 +321,7 @@ function WidgetRender({
 
   const slices = useMemo(
     () =>
-      result && widget.type === "pie"
+      result && (widget.type === "pie" || widget.type === "treemap")
         ? foldOthers(result.rows as ChartDataPoint[], MAX_PIE_SLICES)
         : null,
     [result, widget.type]
@@ -399,9 +409,70 @@ function WidgetRender({
     );
   }
 
+  if (widget.type === "treemap") {
+    return suspend(
+      <TreemapWidget
+        title={widget.title}
+        data={slices ?? []}
+        colors={sliceColors}
+        unit={widget.unit}
+        currency={currency}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+
+  if (widget.type === "gauge") {
+    const valueOf = (column?: string) =>
+      result.rows.find((r) => r.series === column)?.value ?? null;
+    const hasMax = Boolean(widget.targetColumn);
+    return suspend(
+      <GaugeWidget
+        title={widget.title}
+        value={hasMax ? valueOf(widget.metricColumn) : result.scalarValue ?? null}
+        max={hasMax ? valueOf(widget.targetColumn) : null}
+        goodDirection={widget.goodDirection}
+        unit={widget.unit}
+        currency={currency}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+
   const stacking = widget.seriesMode ?? "grouped";
   const { seriesKeys, data } = pivot ?? EMPTY_PIVOT;
   const colors = seriesColors;
+
+  if (widget.type === "heatmap") {
+    return suspend(
+      <HeatmapWidget
+        title={widget.title}
+        data={data}
+        seriesKeys={seriesKeys}
+        labelOf={labelOf}
+        unit={widget.unit}
+        currency={currency}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+
+  if (widget.type === "scatter") {
+    const axisPair = (widget.metricColumns ?? seriesKeys).filter((name) =>
+      seriesKeys.includes(name)
+    );
+    return suspend(
+      <ScatterWidget
+        title={widget.title}
+        data={data}
+        seriesKeys={axisPair.length === 2 ? axisPair : seriesKeys}
+        labelOf={labelOf}
+        unit={widget.unit}
+        currency={currency}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
 
   const mismatch =
     warningHidden || stacking === "stacked100"

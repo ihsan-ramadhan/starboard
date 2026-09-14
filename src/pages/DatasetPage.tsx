@@ -96,8 +96,14 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
     case "kpi":
     case "date":
       return { ...base, w: 3, h: 3 };
+    case "gauge":
+      return { ...base, w: 3, h: 4 };
     case "pie":
+    case "treemap":
       return { ...base, w: 4, h: 5 };
+    case "barh":
+    case "heatmap":
+      return { ...base, w: 6, h: 6 };
     case "table":
       return { ...base, w: 12, h: 7 };
     case "line":

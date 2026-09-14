@@ -75,11 +75,16 @@ export type RowsQueryResult = {
 
 export type WidgetType =
   | "kpi"
+  | "gauge"
   | "bar"
+  | "barh"
   | "line"
   | "area"
   | "combo"
   | "pie"
+  | "treemap"
+  | "heatmap"
+  | "scatter"
   | "table"
   | "date";
 
@@ -245,11 +250,16 @@ export type WidgetDefinition = {
 
 export const WIDGET_TYPE_KEY: Record<WidgetType, TKey> = {
   kpi: "widgetType.kpi",
+  gauge: "widgetType.gauge",
   bar: "widgetType.bar",
+  barh: "widgetType.barh",
   line: "widgetType.line",
   area: "widgetType.area",
   combo: "widgetType.combo",
   pie: "widgetType.pie",
+  treemap: "widgetType.treemap",
+  heatmap: "widgetType.heatmap",
+  scatter: "widgetType.scatter",
   table: "widgetType.table",
   date: "widgetType.date",
 };

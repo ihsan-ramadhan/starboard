@@ -1,23 +1,37 @@
 import { useEffect, useRef } from "react";
 import { init, use, type EChartsType } from "echarts/core";
-import { BarChart, LineChart, PieChart } from "echarts/charts";
+import {
+  BarChart,
+  GaugeChart,
+  HeatmapChart,
+  LineChart,
+  PieChart,
+  ScatterChart,
+  TreemapChart,
+} from "echarts/charts";
 import {
   AxisPointerComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
 
 use([
   BarChart,
+  GaugeChart,
+  HeatmapChart,
   LineChart,
   PieChart,
+  ScatterChart,
+  TreemapChart,
   AxisPointerComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
+  VisualMapComponent,
   CanvasRenderer,
 ]);
 
