@@ -1,5 +1,5 @@
-import type { CurrencyCode, GoodDirection } from "../../types";
-import { formatCompactValue, formatFullValue } from "../../lib/format";
+import type { CurrencyCode, GoodDirection, ValueFormat } from "../../types";
+import { compactValueAs, formatValueAs } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 
 export type KpiCardProps = {
@@ -9,6 +9,7 @@ export type KpiCardProps = {
   readonly targetLabel?: string;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
+  readonly format?: ValueFormat;
   readonly goodDirection?: GoodDirection;
   readonly reloadNonce?: number;
 };
@@ -20,6 +21,7 @@ export default function KpiCard({
   targetLabel = "Target",
   unit,
   currency,
+  format,
   goodDirection = "higher",
   reloadNonce = 0,
 }: KpiCardProps) {
@@ -36,7 +38,7 @@ export default function KpiCard({
     <div className="kpi-wrapper">
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">
-        {value === null ? "…" : formatCompactValue(value, currency)}
+        {value === null ? "…" : compactValueAs(value, format, currency)}
         {unit && !currency && <span className="kpi-unit"> {unit}</span>}
       </div>
 
@@ -51,14 +53,14 @@ export default function KpiCard({
           </div>
           <div className="kpi-target-row">
             <span className="kpi-target-text">
-              {targetLabel} {formatCompactValue(target as number, currency, unit)}
+              {targetLabel} {compactValueAs(target as number, format, currency, unit)}
             </span>
             <span
               className={`kpi-delta${good ? " is-good" : " is-bad"}`}
               title={t("kpi.deltaTitle", {
                 dir: t(above ? "kpi.above" : "kpi.below"),
                 label: targetLabel.toLowerCase(),
-                amount: formatFullValue(Math.abs(gap), currency, unit),
+                amount: formatValueAs(Math.abs(gap), format, currency, unit),
               })}
             >
               {above ? "▲" : "▼"} {Math.round(ratio * 100)}%

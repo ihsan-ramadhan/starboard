@@ -78,17 +78,29 @@ pub async fn auth_middleware(
     }
 }
 
+pub const SESSION_DAYS: i32 = 7;
+const RENEW_UNDER_DAYS: i32 = 6;
+
 async fn resolve_user(pool: &Pool, token: &str) -> Option<AuthUser> {
     let client = pool.get().await.ok()?;
     let row = client
         .query_opt(
             r#"
-            SELECT u.id, u.role, u."accessLevel"
-            FROM sessions s
-            JOIN users u ON u.id = s."userId"
-            WHERE s.token = $1 AND s."expiresAt" > now()
+            WITH valid AS (
+                SELECT s.token AS tok, s."expiresAt" AS exp,
+                       u.id, u.role, u."accessLevel" AS lvl
+                FROM sessions s
+                JOIN users u ON u.id = s."userId"
+                WHERE s.token = $1 AND s."expiresAt" > now()
+            ), renewed AS (
+                UPDATE sessions
+                SET "expiresAt" = now() + make_interval(days => $2)
+                WHERE token = (SELECT tok FROM valid)
+                  AND (SELECT exp FROM valid) < now() + make_interval(days => $3)
+            )
+            SELECT id, role, lvl FROM valid
             "#,
-            &[&token],
+            &[&token, &SESSION_DAYS, &RENEW_UNDER_DAYS],
         )
         .await
         .ok()?;

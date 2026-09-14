@@ -5,6 +5,7 @@ import {
   ChartFrame,
   baseEChartOption,
   type SeriesLabeller,
+  type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
@@ -19,6 +20,7 @@ export type ComboChartWidgetProps = {
   readonly lineKeys: readonly string[];
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -33,6 +35,7 @@ export default function ComboChartWidget({
   lineKeys,
   colors,
   labelOf,
+  formatValue,
   unit,
   currency,
   reloadNonce,
@@ -94,7 +97,7 @@ export default function ComboChartWidget({
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
               `<span>${marker}${escapeHtml(labelOf(p.seriesName))}</span>` +
-              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))}</span>` +
+              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatValue(p.seriesName, p.value))}</span>` +
               `</div>`
             );
           });
@@ -103,7 +106,7 @@ export default function ComboChartWidget({
       },
       series: [...barSeries, ...lineSeries],
     };
-  }, [data, seriesKeys, lineKeys, colors, labelOf, unit, currency, lang]);
+  }, [data, seriesKeys, lineKeys, colors, labelOf, formatValue, unit, currency, lang]);
 
   return (
     <ChartFrame

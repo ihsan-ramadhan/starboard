@@ -5,6 +5,7 @@ import {
   ChartFrame,
   baseEChartOption,
   type SeriesLabeller,
+  type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
@@ -20,6 +21,7 @@ export type BarChartWidgetProps = {
   readonly labelOf: SeriesLabeller;
   readonly mode: SeriesMode;
   readonly horizontal?: boolean;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -35,6 +37,7 @@ export default function BarChartWidget({
   labelOf,
   mode,
   horizontal = false,
+  formatValue,
   unit,
   currency,
   reloadNonce,
@@ -109,7 +112,7 @@ export default function BarChartWidget({
             const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
             const val = isPercent
               ? `${Math.round(p.value * 100)}%`
-              : formatFullValue(p.value, currency, unit);
+              : formatValue(p.seriesName, p.value);
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
               `<span>${marker}${escapeHtml(labelOf(p.seriesName))}</span>` +
@@ -127,6 +130,7 @@ export default function BarChartWidget({
     seriesKeys,
     colors,
     labelOf,
+    formatValue,
     mode,
     horizontal,
     unit,

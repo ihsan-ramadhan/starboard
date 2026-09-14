@@ -2164,6 +2164,46 @@ a {
   margin: 0;
 }
 
+.builder-formats {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.builder-formats li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.builder-format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.builder-format-col {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fg-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder-formats .builder-input {
+  flex-shrink: 0;
+  width: 128px;
+}
+
+.builder-formats .builder-format-currency {
+  width: 100%;
+}
+
 .builder-visual-gallery {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

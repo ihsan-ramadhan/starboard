@@ -1,9 +1,14 @@
 import { useMemo } from "react";
 import type { CurrencyCode } from "../../types";
 import type { WideRow } from "../../lib/series";
-import { ChartFrame, escapeHtml, type SeriesLabeller } from "./chartParts";
+import {
+  ChartFrame,
+  escapeHtml,
+  type SeriesLabeller,
+  type ValueFormatter,
+} from "./chartParts";
 import { EChart } from "./EChart";
-import { formatCompactValue, formatFullValue } from "../../lib/format";
+import { formatAxisValue } from "../../lib/format";
 import { SINGLE_SERIES_COLOR } from "../../lib/palette";
 import type { EChartsOption } from "echarts";
 import { useLang, useT } from "../../lib/i18n";
@@ -13,6 +18,7 @@ export type ScatterWidgetProps = {
   readonly data: readonly WideRow[];
   readonly seriesKeys: readonly string[];
   readonly labelOf: SeriesLabeller;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -23,6 +29,7 @@ export default function ScatterWidget({
   data,
   seriesKeys,
   labelOf,
+  formatValue,
   unit,
   currency,
   reloadNonce,
@@ -41,7 +48,7 @@ export default function ScatterWidget({
     const axisLabel = {
       color: "#64748b",
       fontSize: 11,
-      formatter: (val: number) => formatCompactValue(val, currency),
+      formatter: (val: number) => formatAxisValue(val, currency),
     };
 
     return {
@@ -68,8 +75,8 @@ export default function ScatterWidget({
             )}</span></div>`;
           return (
             `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(p.name)}</div>` +
-            row(labelOf(xKey), formatFullValue(x, currency, unit)) +
-            row(labelOf(yKey), formatFullValue(y, currency, unit))
+            row(labelOf(xKey), formatValue(xKey, x)) +
+            row(labelOf(yKey), formatValue(yKey, y))
           );
         },
       },
@@ -103,7 +110,7 @@ export default function ScatterWidget({
         },
       ],
     };
-  }, [data, xKey, yKey, labelOf, unit, currency, lang]);
+  }, [data, xKey, yKey, labelOf, formatValue, unit, currency, lang]);
 
   if (!ready) {
     return (

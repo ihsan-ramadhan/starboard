@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import type { CurrencyCode, GoodDirection } from "../../types";
+import type { CurrencyCode, GoodDirection, ValueFormat } from "../../types";
 import { ChartFrame } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatCompactValue } from "../../lib/format";
+import { compactValueAs } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 
@@ -13,6 +13,7 @@ export type GaugeWidgetProps = {
   readonly goodDirection?: GoodDirection;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
+  readonly format?: ValueFormat;
   readonly reloadNonce?: number;
 };
 
@@ -27,6 +28,7 @@ export default function GaugeWidget({
   goodDirection = "higher",
   unit,
   currency,
+  format,
   reloadNonce,
 }: GaugeWidgetProps) {
   const lang = useLang();
@@ -71,13 +73,13 @@ export default function GaugeWidget({
             fontSize: 26,
             fontWeight: 700,
             color: "#0f172a",
-            formatter: () => formatCompactValue(current, currency, unit),
+            formatter: () => compactValueAs(current, format, currency, unit),
           },
           data: [{ value: Math.min(current, ceiling) }],
         },
       ],
     };
-  }, [value, max, goodDirection, unit, currency, lang]);
+  }, [value, max, goodDirection, format, unit, currency, lang]);
 
   return (
     <ChartFrame title={title} isEmpty={value === null}>

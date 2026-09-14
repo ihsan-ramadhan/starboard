@@ -10,12 +10,17 @@ import type {
   WidgetType,
 } from "../../types";
 import {
-  CURRENCY_KEY,
+  CURRENCY_SHORT_KEY,
   DATE_MODE_KEY,
   FILTER_OP_KEY,
   GOOD_DIRECTION_KEY,
+  defaultSortBy,
   opsForColumn,
+  SORT_BY_KEY,
+  VALUE_FORMAT_KEY,
   type GoodDirection,
+  type SortBy,
+  type ValueFormat,
 } from "../../types";
 import { useT, type TKey } from "../../lib/i18n";
 import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
@@ -133,7 +138,10 @@ type Draft = {
   groupByColumn: string;
   seriesColumn: string;
   seriesMode: SeriesMode;
-  lineColumn: string;
+  sortBy: SortBy;
+  lineColumns: string[];
+  valueFormats: Record<string, ValueFormat>;
+  valueCurrencies: Record<string, CurrencyCode>;
   targetColumn: string;
   goodDirection: GoodDirection;
   showTrendline: boolean;
@@ -156,7 +164,10 @@ const BLANK: Draft = {
   groupByColumn: "",
   seriesColumn: "",
   seriesMode: "grouped",
-  lineColumn: "",
+  sortBy: "value",
+  lineColumns: [],
+  valueFormats: {},
+  valueCurrencies: {},
   targetColumn: "",
   goodDirection: "higher",
   showTrendline: false,
@@ -170,6 +181,18 @@ const BLANK: Draft = {
   limit: 10,
 };
 
+function legacyFormats(w: WidgetDefinition): Record<string, ValueFormat> {
+  const column = w.metricColumn ?? w.metricColumns?.[0];
+  if (!w.isCurrency || !column) return {};
+  return { [column]: "currency" };
+}
+
+function legacyCurrencies(w: WidgetDefinition): Record<string, CurrencyCode> {
+  const column = w.metricColumn ?? w.metricColumns?.[0];
+  if (!w.isCurrency || !column) return {};
+  return { [column]: w.currency ?? "IDR" };
+}
+
 function draftFrom(widget: WidgetDefinition | null): Draft {
   if (!widget) return BLANK;
   return {
@@ -182,7 +205,11 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     groupByColumn: widget.groupByColumn ?? "",
     seriesColumn: widget.seriesColumn ?? "",
     seriesMode: widget.seriesMode ?? "grouped",
-    lineColumn: widget.lineColumn ?? "",
+    sortBy: widget.sortBy ?? defaultSortBy(widget.type),
+    lineColumns:
+      widget.lineColumns ?? (widget.lineColumn ? [widget.lineColumn] : []),
+    valueFormats: widget.valueFormats ?? legacyFormats(widget),
+    valueCurrencies: widget.valueCurrencies ?? legacyCurrencies(widget),
     targetColumn: widget.targetColumn ?? "",
     goodDirection: widget.goodDirection ?? "higher",
     showTrendline: widget.showTrendline ?? false,
@@ -276,8 +303,10 @@ const VALIDATION_RULES: readonly ValidationRule[] = [
   },
   {
     fails: ({ draft, caps, picked }) =>
-      caps.combo && !picked.includes(draft.lineColumn),
-    messageKey: "validate.lineColumn",
+      caps.combo &&
+      (draft.lineColumns.filter((c) => picked.includes(c)).length === 0 ||
+        picked.every((c) => draft.lineColumns.includes(c))),
+    messageKey: "validate.lineColumns",
   },
   {
     fails: ({ draft, caps }) => caps.table && draft.tableColumns.length === 0,
@@ -320,7 +349,10 @@ function axisFields(
   | "groupByColumn"
   | "seriesColumn"
   | "seriesMode"
-  | "lineColumn"
+  | "sortBy"
+  | "lineColumns"
+  | "valueFormats"
+  | "valueCurrencies"
   | "targetColumn"
   | "goodDirection"
   | "showTrendline"
@@ -332,7 +364,14 @@ function axisFields(
     groupByColumn: caps.group ? draft.groupByColumn : undefined,
     seriesColumn: series ? draft.seriesColumn || undefined : undefined,
     seriesMode: caps.stack ? draft.seriesMode : undefined,
-    lineColumn: caps.combo ? draft.lineColumn : undefined,
+    sortBy: caps.group ? draft.sortBy : undefined,
+    lineColumns: caps.combo ? draft.lineColumns : undefined,
+    valueFormats:
+      Object.keys(draft.valueFormats).length > 0 ? draft.valueFormats : undefined,
+    valueCurrencies:
+      Object.keys(draft.valueCurrencies).length > 0
+        ? draft.valueCurrencies
+        : undefined,
     targetColumn: target ? draft.targetColumn || undefined : undefined,
     goodDirection:
       target && draft.targetColumn ? draft.goodDirection : undefined,
@@ -355,7 +394,6 @@ function contentFields(
   | "unit"
 > {
   const { draft, caps } = ctx;
-  const money = caps.money && draft.isCurrency;
   const untilDate = caps.date && draft.dateMode === "untilDate";
   return {
     filters: caps.filter && filters.length > 0 ? filters : undefined,
@@ -363,9 +401,9 @@ function contentFields(
     dateMode: caps.date ? draft.dateMode : undefined,
     targetDate: untilDate ? draft.targetDate : undefined,
     limit: caps.limit ? draft.limit : undefined,
-    isCurrency: money,
-    currency: money ? draft.currency : undefined,
-    unit: caps.unit && !money ? draft.unit.trim() || undefined : undefined,
+    isCurrency: undefined,
+    currency: undefined,
+    unit: caps.unit ? draft.unit.trim() || undefined : undefined,
   };
 }
 
@@ -421,7 +459,8 @@ export default function WidgetBuilderSidebar({
         seriesColumn: nextCaps.series ? current.seriesColumn : "",
         targetColumn: nextCaps.target ? current.targetColumn : "",
         goodDirection: nextCaps.target ? current.goodDirection : "higher",
-        lineColumn: nextCaps.combo ? current.lineColumn : "",
+        lineColumns: nextCaps.combo ? current.lineColumns : [],
+        sortBy: defaultSortBy(next),
         showTrendline: nextCaps.trend ? current.showTrendline : false,
         limit: limitFor(next, current.limit),
       };
@@ -464,6 +503,12 @@ export default function WidgetBuilderSidebar({
   }
 
   const buildContext: BuildContext = { draft, caps, isCount, picked, multiValue };
+
+  const formatTargets = useMemo(() => {
+    const names = picked.length > 0 ? picked : [draft.metricColumn];
+    const extra = draft.targetColumn ? [draft.targetColumn] : [];
+    return [...new Set([...names, ...extra])].filter(Boolean) as string[];
+  }, [picked, draft.metricColumn, draft.targetColumn]);
 
   const problem =
     VALIDATION_RULES.find((rule) => rule.fails(buildContext))?.messageKey ?? null;
@@ -610,9 +655,10 @@ export default function WidgetBuilderSidebar({
                             onChange={() => {
                               const next = toggle(picked, c.name);
                               set("metricColumns", next);
-                              if (draft.lineColumn && !next.includes(draft.lineColumn)) {
-                                set("lineColumn", "");
-                              }
+                              set(
+                                "lineColumns",
+                                draft.lineColumns.filter((n) => next.includes(n))
+                              );
                             }}
                           />
                           <span>{c.label || c.name}</span>
@@ -660,17 +706,37 @@ export default function WidgetBuilderSidebar({
               )}
 
               {caps.combo && picked.length > 0 && (
+                <div className="builder-field">
+                  <span className="builder-label">{t("builder.asLines")}</span>
+                  <p className="builder-field-desc">{t("builder.asLinesDesc")}</p>
+                  <div className="builder-checklist">
+                    {picked.map((name) => (
+                      <label key={name} className="builder-check">
+                        <input
+                          type="checkbox"
+                          checked={draft.lineColumns.includes(name)}
+                          onChange={() =>
+                            set("lineColumns", toggle(draft.lineColumns, name))
+                          }
+                        />
+                        <span>{labelOf(name)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {caps.group && draft.groupByColumn && (
                 <label className="builder-field">
-                  <span className="builder-label">{t("builder.asLine")}</span>
+                  <span className="builder-label">{t("builder.sortBy")}</span>
                   <select
-                    value={draft.lineColumn}
-                    onChange={(e) => set("lineColumn", e.target.value)}
+                    value={draft.sortBy}
+                    onChange={(e) => set("sortBy", e.target.value as SortBy)}
                     className="builder-input"
                   >
-                    <option value="">{t("builder.pickColumn")}</option>
-                    {picked.map((name) => (
-                      <option key={name} value={name}>
-                        {labelOf(name)}
+                    {(Object.keys(SORT_BY_KEY) as SortBy[]).map((k) => (
+                      <option key={k} value={k}>
+                        {t(SORT_BY_KEY[k])}
                       </option>
                     ))}
                   </select>
@@ -926,37 +992,67 @@ export default function WidgetBuilderSidebar({
               <section className="builder-section">
                 <span className="builder-section-title">{t("builder.displayFormat")}</span>
 
-                {caps.money && (
-                  <label className="builder-check">
-                    <input
-                      type="checkbox"
-                      checked={draft.isCurrency}
-                      onChange={(e) => set("isCurrency", e.target.checked)}
-                    />
-                    <span>{t("builder.formatAsCurrency")}</span>
-                  </label>
-                )}
-
-                {caps.money && draft.isCurrency && (
-                  <div className="builder-dependent-field">
-                    <label className="builder-field">
-                      <span className="builder-label">{t("builder.currency")}</span>
-                      <select
-                        value={draft.currency}
-                        onChange={(e) => set("currency", e.target.value as CurrencyCode)}
-                        className="builder-input"
-                      >
-                        {(Object.keys(CURRENCY_KEY) as CurrencyCode[]).map((code) => (
-                          <option key={code} value={code}>
-                            {t(CURRENCY_KEY[code])}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                {caps.values !== "none" && !isCount && formatTargets.length > 0 && (
+                  <div className="builder-field">
+                    <span className="builder-label">{t("builder.dataFormat")}</span>
+                    <ul className="builder-formats">
+                      {formatTargets.map((name) => {
+                        const fmt = draft.valueFormats[name] ?? "general";
+                        return (
+                          <li key={name}>
+                            <div className="builder-format-row">
+                              <span className="builder-format-col" title={labelOf(name)}>
+                                {labelOf(name)}
+                              </span>
+                              <select
+                              className="builder-input"
+                              value={fmt}
+                              aria-label={`${t("builder.dataFormat")} ${labelOf(name)}`}
+                              onChange={(e) => {
+                                const next = { ...draft.valueFormats };
+                                if (e.target.value === "general") delete next[name];
+                                else next[name] = e.target.value as ValueFormat;
+                                set("valueFormats", next);
+                              }}
+                            >
+                              {(Object.keys(VALUE_FORMAT_KEY) as ValueFormat[]).map((f) => (
+                                <option key={f} value={f}>
+                                  {t(VALUE_FORMAT_KEY[f])}
+                                </option>
+                              ))}
+                              </select>
+                            </div>
+                            {fmt === "currency" && (
+                              <select
+                                className="builder-input builder-format-currency"
+                                value={draft.valueCurrencies[name] ?? "IDR"}
+                                aria-label={t("builder.currencyFor", {
+                                  name: labelOf(name),
+                                })}
+                                onChange={(e) =>
+                                  set("valueCurrencies", {
+                                    ...draft.valueCurrencies,
+                                    [name]: e.target.value as CurrencyCode,
+                                  })
+                                }
+                              >
+                                {(Object.keys(CURRENCY_SHORT_KEY) as CurrencyCode[]).map(
+                                  (code) => (
+                                    <option key={code} value={code}>
+                                      {t(CURRENCY_SHORT_KEY[code])}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
 
-                {caps.unit && !draft.isCurrency && (
+                {caps.unit && (
                   <label className="builder-field">
                     <span className="builder-label">{t("builder.unit")}</span>
                     <input

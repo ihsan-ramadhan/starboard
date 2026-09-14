@@ -8,27 +8,29 @@ import {
   type ReactNode,
 } from "react";
 import { api, peekWidgetData, type WidgetQuery } from "../../lib/api";
+import { defaultSortBy, resolveFormat } from "../../types";
 import type {
   ChartDataPoint,
   CurrencyCode,
   DatasetColumn,
   SeriesMode,
+  ValueFormat,
   ValueLabelMap,
   WidgetDefinition,
   WidgetFilter,
   WidgetQueryResult,
 } from "../../types";
 import type { WideRow } from "../../lib/series";
-import type { SeriesLabeller } from "./chartParts";
+import type { SeriesLabeller, ValueFormatter } from "./chartParts";
 import { buildColorMap } from "../../lib/palette";
 import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
-import { formatCount } from "../../lib/format";
+import { formatCount, formatValueAs } from "../../lib/format";
 import { foldOthers, pivotSeries, scaleMismatch, seriesLabeller } from "../../lib/series";
 import KpiCard from "./KpiCard";
 import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
-import { useT } from "../../lib/i18n";
+import { useLang, useT } from "../../lib/i18n";
 const BarChartWidget = lazy(() => import("./BarChartWidget"));
 const LineChartWidget = lazy(() => import("./LineChartWidget"));
 const AreaChartWidget = lazy(() => import("./AreaChartWidget"));
@@ -101,7 +103,7 @@ function buildQuery(
     groupByColumn: widget.groupByColumn,
     seriesColumn: multi ? undefined : widget.seriesColumn,
     limit: widget.limit ?? 10,
-    orderByKey: widget.type === "line" || widget.type === "area",
+    orderByKey: (widget.sortBy ?? defaultSortBy(widget.type)) === "key",
     filters: usableFilters(widget, global),
   };
 }
@@ -146,6 +148,7 @@ type KpiWidgetProps = {
   readonly result: WidgetQueryResult;
   readonly columnLabel: SeriesLabeller;
   readonly currency?: CurrencyCode;
+  readonly format?: ValueFormat;
   readonly reloadNonce: number;
 };
 
@@ -154,6 +157,7 @@ function KpiWidgetView({
   result,
   columnLabel,
   currency,
+  format,
   reloadNonce,
 }: KpiWidgetProps) {
   const targetColumn = widget.targetColumn;
@@ -168,6 +172,7 @@ function KpiWidgetView({
       targetLabel={targetColumn ? columnLabel(targetColumn) : undefined}
       unit={widget.unit}
       currency={currency}
+      format={format}
       goodDirection={widget.goodDirection}
       reloadNonce={reloadNonce}
     />
@@ -181,6 +186,7 @@ type SeriesChartProps = {
   readonly lineKeys: readonly string[];
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
+  readonly formatValue: ValueFormatter;
   readonly stacking: SeriesMode;
   readonly currency?: CurrencyCode;
   readonly reloadNonce: number;
@@ -195,6 +201,7 @@ function SeriesChart({
   lineKeys,
   colors,
   labelOf,
+  formatValue,
   stacking,
   currency,
   reloadNonce,
@@ -207,6 +214,7 @@ function SeriesChart({
     seriesKeys,
     colors,
     labelOf,
+    formatValue,
     unit: widget.unit,
     currency,
     reloadNonce,
@@ -233,6 +241,7 @@ function WidgetRender({
   valueLabels,
 }: WidgetRenderProps) {
   const t = useT();
+  const lang = useLang();
   const spec = buildQuery(widget, globalFilters);
   const specKey = spec ? JSON.stringify(spec) : "";
   const query = useMemo(() => spec, [specKey, reloadNonce]);
@@ -289,7 +298,25 @@ function WidgetRender({
   }, [raw, groupLabels]);
 
   const warningHidden = useScaleWarningHidden();
-  const currency = widget.isCurrency ? widget.currency ?? "IDR" : undefined;
+
+  const primaryColumn = widget.metricColumn ?? widget.metricColumns?.[0];
+  const primary = resolveFormat(widget, primaryColumn);
+  const metricFormat = primary.format;
+  const currency = primary.currency;
+
+  const formatValue = useMemo(() => {
+    return (series: string, value: number) => {
+      const { format, currency: cur } = resolveFormat(widget, series);
+      return formatValueAs(value, format, cur, widget.unit);
+    };
+  }, [
+    widget.valueFormats,
+    widget.valueCurrencies,
+    widget.isCurrency,
+    widget.currency,
+    widget.unit,
+    lang,
+  ]);
 
   const columnLabel = useMemo(() => seriesLabeller(columns), [columns]);
   const labelOf = useMemo(
@@ -333,8 +360,13 @@ function WidgetRender({
   );
 
   const lineKeys = useMemo(
-    () => (widget.lineColumn ? [widget.lineColumn] : []),
-    [widget.lineColumn]
+    () =>
+      widget.lineColumns?.length
+        ? widget.lineColumns
+        : widget.lineColumn
+          ? [widget.lineColumn]
+          : [],
+    [widget.lineColumns, widget.lineColumn]
   );
 
   const suspend = (node: ReactNode) => (
@@ -391,6 +423,7 @@ function WidgetRender({
         result={result}
         columnLabel={columnLabel}
         currency={currency}
+        format={metricFormat}
         reloadNonce={reloadNonce}
       />
     );
@@ -400,6 +433,7 @@ function WidgetRender({
     return suspend(
       <PieChartWidget
         title={widget.title}
+        format={metricFormat}
         data={slices ?? []}
         colors={sliceColors}
         unit={widget.unit}
@@ -413,6 +447,7 @@ function WidgetRender({
     return suspend(
       <TreemapWidget
         title={widget.title}
+        format={metricFormat}
         data={slices ?? []}
         colors={sliceColors}
         unit={widget.unit}
@@ -434,6 +469,7 @@ function WidgetRender({
         goodDirection={widget.goodDirection}
         unit={widget.unit}
         currency={currency}
+        format={metricFormat}
         reloadNonce={reloadNonce}
       />
     );
@@ -447,6 +483,7 @@ function WidgetRender({
     return suspend(
       <HeatmapWidget
         title={widget.title}
+        format={metricFormat}
         data={data}
         seriesKeys={seriesKeys}
         labelOf={labelOf}
@@ -467,6 +504,7 @@ function WidgetRender({
         data={data}
         seriesKeys={axisPair.length === 2 ? axisPair : seriesKeys}
         labelOf={labelOf}
+        formatValue={formatValue}
         unit={widget.unit}
         currency={currency}
         reloadNonce={reloadNonce}
@@ -495,6 +533,7 @@ function WidgetRender({
       lineKeys={lineKeys}
       colors={colors}
       labelOf={labelOf}
+      formatValue={formatValue}
       stacking={stacking}
       currency={currency}
       reloadNonce={reloadNonce}

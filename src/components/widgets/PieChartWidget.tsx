@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChartDataPoint, CurrencyCode } from "../../types";
-import { formatFullValue } from "../../lib/format";
+import type { ChartDataPoint, CurrencyCode, ValueFormat } from "../../types";
+import { formatValueAs } from "../../lib/format";
 import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
 import type { EChartsOption } from "echarts";
@@ -10,6 +10,7 @@ export type PieChartWidgetProps = {
   readonly title: string;
   readonly data: readonly ChartDataPoint[];
   readonly colors: Record<string, string>;
+  readonly format?: ValueFormat;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -19,6 +20,7 @@ export default function PieChartWidget({
   title,
   data,
   colors,
+  format,
   unit,
   currency,
   reloadNonce,
@@ -56,7 +58,7 @@ export default function PieChartWidget({
           return (
             `<div>` +
             `<div style="font-weight:600;margin-bottom:2px">${marker}${escapeHtml(p.name)}</div>` +
-            `<div style="font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))} (${p.percent}%)</div>` +
+            `<div style="font-variant-numeric:tabular-nums">${escapeHtml(formatValueAs(p.value, format, currency, unit))} (${p.percent}%)</div>` +
             `</div>`
           );
         },
@@ -106,7 +108,7 @@ export default function PieChartWidget({
         <div className="donut-center">
           <span className="donut-center-label">{t("pie.total")}</span>
           <span className="donut-center-value">
-            {formatFullValue(total, currency, unit)}
+            {formatValueAs(total, format, currency, unit)}
           </span>
         </div>
       }

@@ -90,6 +90,17 @@ export type WidgetType =
 
 export type SeriesMode = "grouped" | "stacked" | "stacked100";
 
+export type SortBy = "value" | "key";
+
+export const SORT_BY_KEY: Record<SortBy, TKey> = {
+  value: "sortBy.value",
+  key: "sortBy.key",
+};
+
+export function defaultSortBy(type: WidgetType): SortBy {
+  return type === "line" || type === "area" || type === "combo" ? "key" : "value";
+}
+
 export type FilterOp =
   | "eq"
   | "ne"
@@ -208,12 +219,51 @@ export const GOOD_DIRECTION_KEY: Record<GoodDirection, TKey> = {
   lower: "goodDirection.lower",
 };
 
+export type ValueFormat =
+  | "general"
+  | "whole"
+  | "decimal"
+  | "currency"
+  | "percent"
+  | "scientific";
+
+export const VALUE_FORMAT_KEY: Record<ValueFormat, TKey> = {
+  general: "valueFormat.general",
+  whole: "valueFormat.whole",
+  decimal: "valueFormat.decimal",
+  currency: "valueFormat.currency",
+  percent: "valueFormat.percent",
+  scientific: "valueFormat.scientific",
+};
+
 export type CurrencyCode = "IDR" | "USD";
 
 export const CURRENCY_KEY: Record<CurrencyCode, TKey> = {
   IDR: "currency.IDR",
   USD: "currency.USD",
 };
+
+export const CURRENCY_SHORT_KEY: Record<CurrencyCode, TKey> = {
+  IDR: "currency.IDRshort",
+  USD: "currency.USDshort",
+};
+
+export function resolveFormat(
+  widget: Pick<
+    WidgetDefinition,
+    "valueFormats" | "valueCurrencies" | "isCurrency" | "currency"
+  >,
+  column: string | undefined
+): { format?: ValueFormat; currency?: CurrencyCode } {
+  const key = column ?? "";
+  const format =
+    widget.valueFormats?.[key] ?? (widget.isCurrency ? "currency" : undefined);
+  if (format !== "currency") return { format };
+  return {
+    format,
+    currency: widget.valueCurrencies?.[key] ?? widget.currency ?? "IDR",
+  };
+}
 
 export type WidgetLayout = {
   x: number;
@@ -233,7 +283,9 @@ export type WidgetDefinition = {
   groupByColumn?: string;
   seriesColumn?: string;
   seriesMode?: SeriesMode;
+  sortBy?: SortBy;
   lineColumn?: string;
+  lineColumns?: string[];
   targetColumn?: string;
   showTrendline?: boolean;
   goodDirection?: GoodDirection;
@@ -243,6 +295,8 @@ export type WidgetDefinition = {
   targetDate?: string;
   limit?: number;
   isCurrency?: boolean;
+  valueFormats?: Record<string, ValueFormat>;
+  valueCurrencies?: Record<string, CurrencyCode>;
   currency?: CurrencyCode;
   unit?: string;
   layout?: WidgetLayout;

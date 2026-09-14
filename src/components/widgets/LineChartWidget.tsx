@@ -5,6 +5,7 @@ import {
   ChartFrame,
   baseEChartOption,
   type SeriesLabeller,
+  type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
@@ -19,6 +20,7 @@ export type LineChartWidgetProps = {
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
   readonly showTrendline?: boolean;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -33,6 +35,7 @@ export default function LineChartWidget({
   colors,
   labelOf,
   showTrendline,
+  formatValue,
   unit,
   currency,
   reloadNonce,
@@ -114,7 +117,7 @@ export default function LineChartWidget({
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
               `<span>${marker}${escapeHtml(withTrendLabel(p.seriesName))}</span>` +
-              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))}</span>` +
+              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatValue(p.seriesName, p.value))}</span>` +
               `</div>`
             );
           });
@@ -123,7 +126,7 @@ export default function LineChartWidget({
       },
       series,
     };
-  }, [plotted, seriesKeys, colors, labelOf, showTrendline, unit, currency, multi, trendable, lang]);
+  }, [plotted, seriesKeys, colors, labelOf, formatValue, showTrendline, unit, currency, multi, trendable, lang]);
 
   return (
     <ChartFrame

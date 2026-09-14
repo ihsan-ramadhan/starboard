@@ -5,6 +5,7 @@ import {
   ChartFrame,
   baseEChartOption,
   type SeriesLabeller,
+  type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
@@ -19,6 +20,7 @@ export type AreaChartWidgetProps = {
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
   readonly mode: SeriesMode;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -33,6 +35,7 @@ export default function AreaChartWidget({
   colors,
   labelOf,
   mode,
+  formatValue,
   unit,
   currency,
   reloadNonce,
@@ -100,7 +103,7 @@ export default function AreaChartWidget({
             const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
             const val = isPercent
               ? `${Math.round(p.value * 100)}%`
-              : formatFullValue(p.value, currency, unit);
+              : formatValue(p.seriesName, p.value);
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
               `<span>${marker}${escapeHtml(labelOf(p.seriesName))}</span>` +
@@ -113,7 +116,7 @@ export default function AreaChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, multi, stacked, isPercent, lang]);
+  }, [data, seriesKeys, colors, labelOf, formatValue, mode, unit, currency, multi, stacked, isPercent, lang]);
 
   return (
     <ChartFrame

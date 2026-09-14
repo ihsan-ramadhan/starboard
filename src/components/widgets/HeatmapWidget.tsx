@@ -1,9 +1,9 @@
 import { useMemo } from "react";
-import type { CurrencyCode } from "../../types";
+import type { CurrencyCode, ValueFormat } from "../../types";
 import type { WideRow } from "../../lib/series";
 import { ChartFrame, escapeHtml, type SeriesLabeller } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatValueAs } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 
@@ -12,6 +12,7 @@ export type HeatmapWidgetProps = {
   readonly data: readonly WideRow[];
   readonly seriesKeys: readonly string[];
   readonly labelOf: SeriesLabeller;
+  readonly format?: ValueFormat;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -24,6 +25,7 @@ export default function HeatmapWidget({
   data,
   seriesKeys,
   labelOf,
+  format,
   unit,
   currency,
   reloadNonce,
@@ -67,7 +69,7 @@ export default function HeatmapWidget({
             `<div style="display:flex;justify-content:space-between;gap:12px">` +
             `<span>${escapeHtml(columns[x])}</span>` +
             `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(
-              formatFullValue(value, currency, unit)
+              formatValueAs(value, format, currency, unit)
             )}</span></div>`
           );
         },
@@ -123,7 +125,7 @@ export default function HeatmapWidget({
         },
       ],
     };
-  }, [data, seriesKeys, labelOf, unit, currency, lang]);
+  }, [data, seriesKeys, labelOf, format, unit, currency, lang]);
 
   return (
     <ChartFrame title={title} isEmpty={data.length === 0 || seriesKeys.length === 0}>

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
-import { formatCompactValue } from "../../lib/format";
+import { formatAxisValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useT } from "../../lib/i18n";
 
@@ -60,6 +60,10 @@ export function ChartFrame({
   );
 }
 
+export type ValueFormatter = (series: string, value: number) => string;
+
+export type SingleFormatter = (value: number) => string;
+
 export function baseEChartOption(
   hasLegend: boolean,
   currency?: CurrencyCode,
@@ -118,7 +122,7 @@ export function baseEChartOption(
         color: "#64748b",
         fontSize: 11,
         formatter: (val: number) =>
-          isPercent ? `${Math.round(val * 100)}%` : formatCompactValue(val, currency),
+          isPercent ? `${Math.round(val * 100)}%` : formatAxisValue(val, currency),
       },
     },
     legend: hasLegend

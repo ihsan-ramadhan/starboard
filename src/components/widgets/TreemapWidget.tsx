@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import type { ChartDataPoint, CurrencyCode } from "../../types";
+import type { ChartDataPoint, CurrencyCode, ValueFormat } from "../../types";
 import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatValueAs } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 
@@ -10,6 +10,7 @@ export type TreemapWidgetProps = {
   readonly title: string;
   readonly data: readonly ChartDataPoint[];
   readonly colors: Record<string, string>;
+  readonly format?: ValueFormat;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -19,6 +20,7 @@ export default function TreemapWidget({
   title,
   data,
   colors,
+  format,
   unit,
   currency,
   reloadNonce,
@@ -46,7 +48,7 @@ export default function TreemapWidget({
           return (
             `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(p.name)}</div>` +
             `<div style="font-variant-numeric:tabular-nums">${escapeHtml(
-              formatFullValue(p.value, currency, unit)
+              formatValueAs(p.value, format, currency, unit)
             )} (${share}%)</div>`
           );
         },
@@ -78,7 +80,7 @@ export default function TreemapWidget({
         },
       ],
     };
-  }, [data, colors, unit, currency, lang]);
+  }, [data, colors, format, unit, currency, lang]);
 
   return (
     <ChartFrame title={title} isEmpty={data.length === 0}>

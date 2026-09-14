@@ -100,8 +100,16 @@ struct WidgetPayload {
     series_column: Option<String>,
     #[serde(rename = "seriesMode", default)]
     series_mode: Option<String>,
+    #[serde(rename = "sortBy", default)]
+    sort_by: Option<String>,
     #[serde(rename = "lineColumn", default)]
     line_column: Option<String>,
+    #[serde(rename = "lineColumns", default)]
+    line_columns: Option<Vec<String>>,
+    #[serde(rename = "valueFormats", default)]
+    value_formats: Option<serde_json::Value>,
+    #[serde(rename = "valueCurrencies", default)]
+    value_currencies: Option<serde_json::Value>,
     #[serde(rename = "targetColumn", default)]
     target_column: Option<String>,
     #[serde(rename = "showTrendline", default)]
@@ -542,7 +550,8 @@ async fn login_handler(
     let session_id = uuid::Uuid::new_v4().to_string();
     let token = auth::create_token();
     let expires: chrono::NaiveDateTime =
-        chrono::Utc::now().naive_utc() + chrono::Duration::days(7);
+        chrono::Utc::now().naive_utc()
+            + chrono::Duration::days(auth::SESSION_DAYS as i64);
 
     let _ = client
         .execute(r#"DELETE FROM sessions WHERE "expiresAt" <= now()"#, &[])
