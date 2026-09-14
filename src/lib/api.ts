@@ -122,10 +122,13 @@ export type RowsQuery = {
   sortColumn?: string;
   sortDir?: "asc" | "desc";
   filters?: WidgetFilter[];
+  withTotal?: boolean;
 };
 
 const WIDGET_CACHE_TTL_MS = 30_000;
+const WIDGET_CACHE_MAX = 120;
 const widgetDataCache = new Map<string, { at: number; value: WidgetQueryResult }>();
+const widgetDataInFlight = new Map<string, Promise<WidgetQueryResult>>();
 
 function widgetDataKey(q: WidgetQuery) {
   return [
@@ -143,11 +146,22 @@ function widgetDataKey(q: WidgetQuery) {
   ].join("|");
 }
 
+function rememberWidgetData(key: string, value: WidgetQueryResult) {
+  widgetDataCache.delete(key);
+  widgetDataCache.set(key, { at: Date.now(), value });
+  while (widgetDataCache.size > WIDGET_CACHE_MAX) {
+    const oldest = widgetDataCache.keys().next().value;
+    if (oldest === undefined) break;
+    widgetDataCache.delete(oldest);
+  }
+}
+
 export function peekWidgetData(q: WidgetQuery) {
-  const entry = widgetDataCache.get(widgetDataKey(q));
+  const key = widgetDataKey(q);
+  const entry = widgetDataCache.get(key);
   if (!entry) return undefined;
   if (Date.now() - entry.at > WIDGET_CACHE_TTL_MS) {
-    widgetDataCache.delete(widgetDataKey(q));
+    widgetDataCache.delete(key);
     return undefined;
   }
   return entry.value;
@@ -328,12 +342,24 @@ export const api = {
     const key = widgetDataKey(q);
     const fresh = peekWidgetData(q);
     if (fresh) return fresh;
-    const res = await request<WidgetQueryResult>("/api/analytics/query", {
+
+    const running = widgetDataInFlight.get(key);
+    if (running) return running;
+
+    const pending = request<WidgetQueryResult>("/api/analytics/query", {
       method: "POST",
       body: JSON.stringify(q),
-    });
-    widgetDataCache.set(key, { at: Date.now(), value: res });
-    return res;
+    })
+      .then((res) => {
+        rememberWidgetData(key, res);
+        return res;
+      })
+      .finally(() => {
+        widgetDataInFlight.delete(key);
+      });
+
+    widgetDataInFlight.set(key, pending);
+    return pending;
   },
 
   queryRows(q: RowsQuery) {

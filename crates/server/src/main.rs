@@ -376,6 +376,13 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "slicers" jsonb;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "valueLabels" jsonb;
 
+            DELETE FROM sessions WHERE "expiresAt" <= now();
+            CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_key ON sessions (token);
+            CREATE INDEX IF NOT EXISTS dashboard_widgets_dataset_idx
+                ON dashboard_widgets ("datasetId");
+            CREATE INDEX IF NOT EXISTS dataset_columns_dataset_idx
+                ON dataset_columns ("datasetId");
+
             CREATE TABLE IF NOT EXISTS dataset_source_paths (
                 "datasetId" text NOT NULL
                     REFERENCES dataset_registry(id) ON DELETE CASCADE,
@@ -433,14 +440,17 @@ const REGISTRY_COLUMNS: &str = r#"r.id, r.dept, r.key, r."tableName", r."display
     r."sourceName", r."sourceSize", r."serverPath", r."serverError", r.slicers,
     r."valueLabels",
     sp.path,
-    (SELECT count(*) FROM dataset_source_paths w WHERE w."datasetId" = r.id),
-    to_char((SELECT max(w."lastSeenAt") FROM dataset_source_paths w
-             WHERE w."datasetId" = r.id) AT TIME ZONE 'UTC',
-            'YYYY-MM-DD"T"HH24:MI:SS"Z"')"#;
+    coalesce(agg.watchers, 0),
+    to_char(agg.seen AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')"#;
 
 const REGISTRY_FROM: &str = r#"FROM dataset_registry r
     LEFT JOIN dataset_source_paths sp
-        ON sp."datasetId" = r.id AND sp.machine = $2"#;
+        ON sp."datasetId" = r.id AND sp.machine = $2
+    LEFT JOIN (
+        SELECT "datasetId", count(*) AS watchers, max("lastSeenAt") AS seen
+        FROM dataset_source_paths
+        GROUP BY "datasetId"
+    ) agg ON agg."datasetId" = r.id"#;
 
 fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
     DatasetRegistry {
@@ -533,6 +543,10 @@ async fn login_handler(
     let token = auth::create_token();
     let expires: chrono::NaiveDateTime =
         chrono::Utc::now().naive_utc() + chrono::Duration::days(7);
+
+    let _ = client
+        .execute(r#"DELETE FROM sessions WHERE "expiresAt" <= now()"#, &[])
+        .await;
 
     client
         .execute(

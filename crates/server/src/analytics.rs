@@ -701,13 +701,17 @@ pub async fn execute_rows_query(
         .map(|r| serde_json::Value::Object(row_to_json(r)))
         .collect();
 
-    let count_sql = format!(
-        r#"SELECT count(*)::bigint FROM "{}" {}"#,
-        table, filter_sql
-    );
-    let total: i64 = match client.query_one(&count_sql, &params).await {
-        Ok(r) => r.get(0),
-        Err(_) => 0,
+    let total: i64 = if req.with_total.unwrap_or(true) {
+        let count_sql = format!(
+            r#"SELECT count(*)::bigint FROM "{}" {}"#,
+            table, filter_sql
+        );
+        match client.query_one(&count_sql, &params).await {
+            Ok(r) => r.get(0),
+            Err(_) => 0,
+        }
+    } else {
+        -1
     };
 
     Ok(RowsQueryResult {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
 import type { DatasetColumn, ValueLabelMap, WidgetFilter } from "../../types";
@@ -68,6 +68,14 @@ export default function TableWidget({
     setPage(0);
   }, [datasetId, wanted, limit, filterKey]);
 
+  const scopeKey = `${datasetId}|${wanted?.join(",") ?? ""}|${filterKey}|${limit}|${reloadNonce}`;
+  const countedScope = useRef<string | null>(null);
+  const needTotal = countedScope.current !== scopeKey;
+
+  useEffect(() => {
+    countedScope.current = scopeKey;
+  }, [scopeKey]);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -82,12 +90,13 @@ export default function TableWidget({
         offset: page * limit,
         sortColumn: sort?.column,
         sortDir: sort?.dir,
+        withTotal: needTotal,
       })
       .then((res) => {
         if (!active) return;
         setRows(res.rows.map((data) => ({ key: crypto.randomUUID(), data })));
         setShown(res.columns);
-        setTotal(res.total);
+        if (res.total >= 0) setTotal(res.total);
       })
       .catch((e) => {
         if (!active) return;

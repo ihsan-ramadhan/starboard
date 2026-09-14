@@ -153,6 +153,8 @@ pub struct RowsQueryRequest {
     #[serde(rename = "sortDir")]
     pub sort_dir: Option<String>,
     pub filters: Option<Vec<WidgetFilter>>,
+    #[serde(rename = "withTotal")]
+    pub with_total: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

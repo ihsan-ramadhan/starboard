@@ -244,7 +244,12 @@ export default function App() {
   machineRef.current = machine;
 
   function applyDatasets(list: DatasetRegistry[]) {
-    const signature = JSON.stringify(list);
+    const signature = JSON.stringify(
+      list.map(({ lastSeenAt, ...rest }) => ({
+        ...rest,
+        lastSeenAt: lastSeenAt?.slice(0, 16) ?? null,
+      }))
+    );
     if (signature === datasetsSigRef.current) return false;
     datasetsSigRef.current = signature;
     setDatasets(list);

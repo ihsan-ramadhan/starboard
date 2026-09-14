@@ -32,6 +32,8 @@ import DatasetSourceModal, {
   type SourceAction,
 } from "../components/DatasetSourceModal";
 import WidgetRender from "../components/widgets/WidgetRender";
+import WidgetSkeleton from "../components/widgets/WidgetSkeleton";
+import { useSeenInView } from "../lib/useInView";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
 import SlicerBar from "../components/SlicerBar";
 import { dateLocale, t, useT, type TKey, type Translate } from "../lib/i18n";
@@ -753,13 +755,14 @@ export default function DatasetPage() {
                   const isSelected = editMode && selectedWidgetId === widget.id;
                   return (
                     <div key={widget.id}>
-                      <div
-                        className={`widget-card wrap${isSelected ? " is-selected" : ""}`}
+                      <WidgetCard
+                        selected={isSelected}
                         onPointerDown={() => {
                           if (editMode) {
                             openEditWidget(widget);
                           }
                         }}
+                        skeleton={<WidgetSkeleton widget={widget} />}
                       >
                         {editMode && (
                           <div className="widget-toolbar">
@@ -795,7 +798,7 @@ export default function DatasetPage() {
                           globalFilters={globalFilters}
                           valueLabels={valueLabels}
                         />
-                      </div>
+                      </WidgetCard>
                     </div>
                   );
                 })}
@@ -1034,6 +1037,27 @@ type DatasetDescriptionProps = {
   readonly canEdit: boolean;
   readonly onSave: (next: string) => Promise<void>;
 };
+
+type WidgetCardProps = {
+  readonly selected: boolean;
+  readonly onPointerDown: () => void;
+  readonly skeleton: ReactNode;
+  readonly children: ReactNode;
+};
+
+function WidgetCard({ selected, onPointerDown, skeleton, children }: WidgetCardProps) {
+  const { ref, seen } = useSeenInView<HTMLDivElement>();
+
+  return (
+    <div
+      ref={ref}
+      className={`widget-card wrap${selected ? " is-selected" : ""}`}
+      onPointerDown={onPointerDown}
+    >
+      {seen ? children : skeleton}
+    </div>
+  );
+}
 
 function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps) {
   const t = useT();

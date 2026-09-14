@@ -95,7 +95,13 @@ export function EChart({
     });
     observer.observe(node);
 
+    const hideTip = () => chart.dispatchAction({ type: "hideTip" });
+    node.addEventListener("pointerleave", hideTip);
+    window.addEventListener("scroll", hideTip, true);
+
     return () => {
+      node.removeEventListener("pointerleave", hideTip);
+      window.removeEventListener("scroll", hideTip, true);
       observer.disconnect();
       chart.dispose();
       chartRef.current = null;

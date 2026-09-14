@@ -8,6 +8,30 @@ use crate::types::{ColumnSchema, DetectedSheet};
 
 const PG_IDENT_MAX: usize = 63;
 
+const INDEX_MAX_DISTINCT: usize = 100;
+
+fn worth_indexing(col: &ColumnSchema, rows: &[HashMap<String, String>]) -> bool {
+    if col.r#type == "category" || col.r#type == "date" {
+        return true;
+    }
+    if col.r#type != "numeric" {
+        return false;
+    }
+    let mut seen: HashSet<&str> = HashSet::new();
+    for row in rows {
+        match row.get(&col.slug) {
+            Some(v) if !v.is_empty() => {
+                seen.insert(v.as_str());
+                if seen.len() > INDEX_MAX_DISTINCT {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    !seen.is_empty()
+}
+
 pub fn fit_dataset_key(dept_slug: &str, key: &str) -> String {
     let overhead = dept_slug.len() + "_".len() + "_records".len();
     let budget = PG_IDENT_MAX.saturating_sub(overhead);
@@ -704,6 +728,23 @@ pub async fn execute_import(
                 tx.execute(&insert_sql, &[])
                     .await
                     .map_err(|e| format!("Batch insert error: {}", e))?;
+            }
+        }
+
+        if !reuse_table {
+            for col in &import_cols {
+                if !worth_indexing(col, &rows_data) {
+                    continue;
+                }
+                tx.execute(
+                    &format!(
+                        r#"CREATE INDEX ON "{}" ("{}")"#,
+                        table_name, col.slug
+                    ),
+                    &[],
+                )
+                .await
+                .map_err(|e| format!("Create index error: {}", e))?;
             }
         }
 
