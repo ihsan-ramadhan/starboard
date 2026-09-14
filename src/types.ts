@@ -1,3 +1,5 @@
+import type { TKey } from "./lib/i18n";
+
 export type SessionUser = {
   id: string;
   username: string;
@@ -163,15 +165,15 @@ export function slicerIsActive(
   return slicerToFilters(slicer, value).length > 0;
 }
 
-export const FILTER_OP_LABEL: Record<FilterOp, string> = {
-  in: "salah satu dari",
-  eq: "sama dengan",
-  ne: "tidak sama",
-  gt: "lebih dari",
-  gte: "minimal",
-  lt: "kurang dari",
-  lte: "maksimal",
-  contains: "mengandung",
+export const FILTER_OP_KEY: Record<FilterOp, TKey> = {
+  in: "filterOp.in",
+  eq: "filterOp.eq",
+  ne: "filterOp.ne",
+  gt: "filterOp.gt",
+  gte: "filterOp.gte",
+  lt: "filterOp.lt",
+  lte: "filterOp.lte",
+  contains: "filterOp.contains",
 };
 
 const ORDERED_OPS: FilterOp[] = ["eq", "ne", "gt", "gte", "lt", "lte"];
@@ -187,18 +189,25 @@ export type DateMode =
   | "untilDate"
   | "sinceColumn";
 
-export const DATE_MODE_LABEL: Record<DateMode, string> = {
-  yearRemaining: "Sisa hari tahun ini",
-  quarterRemaining: "Sisa hari kuartal ini",
-  untilDate: "Hitung mundur ke tanggal",
-  sinceColumn: "Hari sejak tanggal terakhir",
+export const DATE_MODE_KEY: Record<DateMode, TKey> = {
+  yearRemaining: "dateMode.yearRemaining",
+  quarterRemaining: "dateMode.quarterRemaining",
+  untilDate: "dateMode.untilDate",
+  sinceColumn: "dateMode.sinceColumn",
+};
+
+export type GoodDirection = "higher" | "lower";
+
+export const GOOD_DIRECTION_KEY: Record<GoodDirection, TKey> = {
+  higher: "goodDirection.higher",
+  lower: "goodDirection.lower",
 };
 
 export type CurrencyCode = "IDR" | "USD";
 
-export const CURRENCY_LABEL: Record<CurrencyCode, string> = {
-  IDR: "Rupiah (Rp)",
-  USD: "Dolar AS ($)",
+export const CURRENCY_KEY: Record<CurrencyCode, TKey> = {
+  IDR: "currency.IDR",
+  USD: "currency.USD",
 };
 
 export type WidgetLayout = {
@@ -222,6 +231,7 @@ export type WidgetDefinition = {
   lineColumn?: string;
   targetColumn?: string;
   showTrendline?: boolean;
+  goodDirection?: GoodDirection;
   filters?: WidgetFilter[];
   tableColumns?: string[];
   dateMode?: DateMode;
@@ -233,13 +243,13 @@ export type WidgetDefinition = {
   layout?: WidgetLayout;
 };
 
-export const WIDGET_TYPE_LABEL: Record<WidgetType, string> = {
-  kpi: "KPI Card",
-  bar: "Bar Chart",
-  line: "Line Chart",
-  area: "Area Chart",
-  combo: "Combo Chart",
-  pie: "Pie / Donut Chart",
-  table: "Tabel",
-  date: "KPI Tanggal",
+export const WIDGET_TYPE_KEY: Record<WidgetType, TKey> = {
+  kpi: "widgetType.kpi",
+  bar: "widgetType.bar",
+  line: "widgetType.line",
+  area: "widgetType.area",
+  combo: "widgetType.combo",
+  pie: "widgetType.pie",
+  table: "widgetType.table",
+  date: "widgetType.date",
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import { api } from "../lib/api";
+import { useT, type TKey, type Translate } from "../lib/i18n";
 import {
   labelForValue,
   slicerIsActive,
@@ -58,20 +59,20 @@ type SlicerBarProps = {
   readonly onValueLabelsChange: (labels: ValueLabelMap) => void;
 };
 
-const TYPE_GROUP: { type: DatasetColumn["type"]; label: string }[] = [
-  { type: "category", label: "Teks" },
-  { type: "date", label: "Tanggal" },
-  { type: "numeric", label: "Angka" },
+const TYPE_GROUP: { type: DatasetColumn["type"]; labelKey: TKey }[] = [
+  { type: "category", labelKey: "slicer.typeText" },
+  { type: "date", labelKey: "slicer.typeDate" },
+  { type: "numeric", labelKey: "slicer.typeNumber" },
 ];
 
 function defaultControl(type: DatasetColumn["type"]): SlicerControl {
   return type === "category" ? "multi" : "both";
 }
 
-const CONTROL_LABEL: Record<SlicerControl, string> = {
-  multi: "Pilih nilai",
-  range: "Rentang",
-  both: "Rentang + pilih nilai",
+const CONTROL_KEY: Record<SlicerControl, TKey> = {
+  multi: "control.multi",
+  range: "control.range",
+  both: "control.both",
 };
 
 const MONTH_NAMES = [
@@ -114,6 +115,7 @@ function ConfigPanel({
   readonly valueLabels: ValueLabelMap | null;
   readonly onValueLabelsChange: (labels: ValueLabelMap) => void;
 }) {
+  const t = useT();
   function toggle(column: DatasetColumn) {
     const existing = slicers.find((s) => s.column === column.name);
     if (existing) {
@@ -138,17 +140,16 @@ function ConfigPanel({
   return (
     <>
       <p className="slicer-note">
-        Filter yang dicentang berlaku untuk semua widget. Tiga pertama tampil di
-        header, sisanya masuk tombol tambahan.
+        {t("slicer.note")}
       </p>
 
-      {TYPE_GROUP.map(({ type, label }) => {
+      {TYPE_GROUP.map(({ type, labelKey }) => {
         const group = columns.filter((c) => c.type === type);
         if (group.length === 0) return null;
 
         return (
           <div key={type} className="slicer-stacked">
-            <p className="slicer-stacked-label">{label}</p>
+            <p className="slicer-stacked-label">{t(labelKey)}</p>
             <ul className="slicer-options">
               {group.map((column) => {
                 const picked = slicers.find((s) => s.column === column.name);
@@ -166,14 +167,14 @@ function ConfigPanel({
                       <select
                         className="slicer-control-select"
                         value={picked.control}
-                        aria-label={`Bentuk filter ${picked.label}`}
+                        aria-label={t("slicer.shapeAria", { name: picked.label })}
                         onChange={(e) =>
                           setControl(picked.id, e.target.value as SlicerControl)
                         }
                       >
-                        <option value="both">{CONTROL_LABEL.both}</option>
-                        <option value="range">{CONTROL_LABEL.range}</option>
-                        <option value="multi">{CONTROL_LABEL.multi}</option>
+                        <option value="both">{t(CONTROL_KEY.both)}</option>
+                        <option value="range">{t(CONTROL_KEY.range)}</option>
+                        <option value="multi">{t(CONTROL_KEY.multi)}</option>
                       </select>
                     )}
                   </li>
@@ -205,6 +206,7 @@ function ValueLabelEditor({
   readonly valueLabels: ValueLabelMap | null;
   readonly onValueLabelsChange: (labels: ValueLabelMap) => void;
 }) {
+  const t = useT();
   const [column, setColumn] = useState("");
   const [options, setOptions] = useState<string[] | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -251,18 +253,18 @@ function ValueLabelEditor({
 
   return (
     <div className="slicer-stacked">
-      <p className="slicer-stacked-label">Nama tampilan nilai</p>
+      <p className="slicer-stacked-label">{t("slicer.valueLabels")}</p>
       <p className="slicer-note">
-        Mengganti tampilan saja. Isi di database dan Excel tidak berubah.
+        {t("slicer.valueLabelsNote")}
       </p>
 
       <select
         className="slicer-control-select is-block"
         value={column}
-        aria-label="Kolom yang namanya diganti"
+        aria-label={t("slicer.renameColumnAria")}
         onChange={(e) => setColumn(e.target.value)}
       >
-        <option value="">Pilih kolom…</option>
+        <option value="">{t("slicer.pickColumn")}</option>
         {columns.map((c) => (
           <option key={c.name} value={c.name}>
             {c.label || c.name}
@@ -272,15 +274,14 @@ function ValueLabelEditor({
       </select>
 
       {error && <p className="slicer-empty">{error}</p>}
-      {column && !options && !error && <p className="slicer-empty">Memuat nilai…</p>}
-      {options?.length === 0 && <p className="slicer-empty">Kolom ini kosong.</p>}
+      {column && !options && !error && <p className="slicer-empty">{t("slicer.loadingValues")}</p>}
+      {options?.length === 0 && <p className="slicer-empty">{t("slicer.emptyColumn")}</p>}
 
       {options && options.length > 0 && (
         <>
           {truncated ? (
             <p className="slicer-note">
-              Kolom ini punya lebih dari 200 nilai unik, terlalu banyak untuk
-              diberi nama satu per satu.
+              {t("slicer.tooManyValues")}
             </p>
           ) : (
             <>
@@ -290,7 +291,7 @@ function ValueLabelEditor({
                   className="slicer-clear"
                   onClick={() => setDraft(preset)}
                 >
-                  Isi nama bulan
+                  {t("slicer.fillMonths")}
                 </button>
               )}
 
@@ -304,7 +305,7 @@ function ValueLabelEditor({
                       type="text"
                       value={draft[raw] ?? ""}
                       placeholder={raw}
-                      aria-label={`Nama tampilan untuk ${raw}`}
+                      aria-label={t("slicer.labelForAria", { raw })}
                       onChange={(e) =>
                         setDraft({ ...draft, [raw]: e.target.value })
                       }
@@ -319,7 +320,7 @@ function ValueLabelEditor({
                 disabled={!dirty}
                 onClick={() => commit(draft)}
               >
-                Simpan nama
+                {t("slicer.saveNames")}
               </button>
             </>
           )}
@@ -330,6 +331,7 @@ function ValueLabelEditor({
 }
 
 function summarize(
+  t: Translate,
   slicer: Slicer,
   value: SlicerValue | undefined,
   labels: ValueLabelMap | null | undefined
@@ -338,15 +340,15 @@ function summarize(
   if (slicerMode(slicer, value) === "multi") {
     const picked = value?.values ?? [];
     if (picked.length === 1) {
-      return `${slicer.label}: ${labelForValue(labels, slicer.column, picked[0])}`;
+      return t("slicer.oneValue", { label: slicer.label, value: labelForValue(labels, slicer.column, picked[0]) });
     }
-    return `${slicer.label}: ${picked.length} dipilih`;
+    return t("slicer.picked", { label: slicer.label, n: picked.length });
   }
   const from = value?.from
     ? labelForValue(labels, slicer.column, value.from)
     : "awal";
   const to = value?.to ? labelForValue(labels, slicer.column, value.to) : "akhir";
-  return `${slicer.label}: ${from} – ${to}`;
+  return t("slicer.rangeSummary", { label: slicer.label, from, to });
 }
 
 function MultiPanel({
@@ -362,6 +364,7 @@ function MultiPanel({
   readonly onChange: (value: SlicerValue) => void;
   readonly valueLabels?: ValueLabelMap | null;
 }) {
+  const t = useT();
   const [options, setOptions] = useState<string[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -394,8 +397,8 @@ function MultiPanel({
   const show = (raw: string) => labelForValue(valueLabels, slicer.column, raw);
 
   if (error) return <p className="slicer-empty">{error}</p>;
-  if (!options) return <p className="slicer-empty">Memuat nilai…</p>;
-  if (options.length === 0) return <p className="slicer-empty">Kolom ini kosong.</p>;
+  if (!options) return <p className="slicer-empty">{t("slicer.loadingValues")}</p>;
+  if (options.length === 0) return <p className="slicer-empty">{t("slicer.emptyColumn")}</p>;
 
   const lowered = needle.toLowerCase();
   const shown = needle
@@ -413,8 +416,8 @@ function MultiPanel({
           className="slicer-search"
           type="search"
           value={needle}
-          placeholder="Cari nilai"
-          aria-label={`Cari nilai ${slicer.label}`}
+          placeholder={t("slicer.searchValue")}
+          aria-label={t("slicer.searchAria", { name: slicer.label })}
           onChange={(e) => setNeedle(e.target.value)}
         />
       )}
@@ -434,10 +437,10 @@ function MultiPanel({
         ))}
       </ul>
 
-      {shown.length === 0 && <p className="slicer-empty">Tidak ada yang cocok.</p>}
+      {shown.length === 0 && <p className="slicer-empty">{t("slicer.noMatch")}</p>}
       {truncated && (
         <p className="slicer-note">
-          Hanya 200 nilai pertama yang ditampilkan. Pakai pencarian untuk mempersempit.
+          {t("slicer.truncated")}
         </p>
       )}
       {picked.length > 0 && (
@@ -446,7 +449,7 @@ function MultiPanel({
           className="slicer-clear"
           onClick={() => onChange({ ...value, mode: "multi", values: [] })}
         >
-          Kosongkan pilihan
+          {t("slicer.clearPicked")}
         </button>
       )}
     </>
@@ -464,13 +467,14 @@ function RangePanel({
   readonly value: SlicerValue | undefined;
   readonly onChange: (value: SlicerValue) => void;
 }) {
+  const t = useT();
   const kind = columns.find((c) => c.name === slicer.column)?.type;
   const inputType = kind === "date" ? "date" : "number";
 
   return (
     <div className="slicer-range">
       <label>
-        <span>Dari</span>
+        <span>{t("slicer.from")}</span>
         <input
           type={inputType}
           value={value?.from ?? ""}
@@ -480,7 +484,7 @@ function RangePanel({
         />
       </label>
       <label>
-        <span>Sampai</span>
+        <span>{t("slicer.to")}</span>
         <input
           type={inputType}
           value={value?.to ?? ""}
@@ -495,7 +499,7 @@ function RangePanel({
           className="slicer-clear"
           onClick={() => onChange({ ...value, mode: "range", from: "", to: "" })}
         >
-          Kosongkan rentang
+          {t("slicer.clearRange")}
         </button>
       )}
     </div>
@@ -517,6 +521,7 @@ function SlicerPanel({
   readonly onChange: (value: SlicerValue) => void;
   readonly valueLabels?: ValueLabelMap | null;
 }) {
+  const t = useT();
   const kind = columns.find((c) => c.name === slicer.column)?.type;
   const mode =
     slicer.control === "both" && !value?.mode && !value?.values?.length
@@ -530,7 +535,7 @@ function SlicerPanel({
   return (
     <>
       {slicer.control === "both" && (
-        <div className="slicer-modes" role="group" aria-label="Bentuk filter">
+        <div className="slicer-modes" role="group" aria-label={t("slicer.modeGroup")}>
           {(["range", "multi"] as const).map((option) => (
             <button
               key={option}
@@ -539,7 +544,7 @@ function SlicerPanel({
               aria-pressed={mode === option}
               onClick={() => setMode(option)}
             >
-              {CONTROL_LABEL[option]}
+              {t(CONTROL_KEY[option])}
             </button>
           ))}
         </div>
@@ -580,6 +585,7 @@ function SlicerChip({
   readonly onChange: (value: SlicerValue) => void;
   readonly valueLabels?: ValueLabelMap | null;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -606,7 +612,7 @@ function SlicerChip({
   return (
     <div className="slicer-chip-wrap" ref={wrapRef}>
       <ChipButton
-        label={summarize(slicer, value, valueLabels)}
+        label={summarize(t, slicer, value, valueLabels)}
         open={open}
         active={active}
         onToggle={() => setOpen((v) => !v)}
@@ -640,6 +646,7 @@ export default function SlicerBar({
   valueLabels,
   onValueLabelsChange,
 }: SlicerBarProps) {
+  const t = useT();
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const overflowRef = useRef<HTMLDivElement>(null);
@@ -703,8 +710,8 @@ export default function SlicerBar({
           <ChipButton
             label={
               hiddenActive > 0
-                ? `+${hidden.length} filter · ${hiddenActive} aktif`
-                : `+${hidden.length} filter`
+                ? t("slicer.moreActive", { n: hidden.length, active: hiddenActive })
+                : t("slicer.more", { n: hidden.length })
             }
             open={overflowOpen}
             active={hiddenActive > 0}
@@ -712,7 +719,7 @@ export default function SlicerBar({
           />
 
           {overflowOpen && (
-            <div className="slicer-panel is-wide" role="dialog" aria-label="Filter lainnya">
+            <div className="slicer-panel is-wide" role="dialog" aria-label={t("slicer.otherFilters")}>
               {hidden.map((slicer) => (
                 <div key={slicer.id} className="slicer-stacked">
                   <p className="slicer-stacked-label">{slicer.label}</p>
@@ -733,20 +740,20 @@ export default function SlicerBar({
 
       {anyActive && (
         <button type="button" className="slicer-reset" onClick={onReset}>
-          Reset
+          {t("slicer.reset")}
         </button>
       )}
 
       {editing && (
         <div className="slicer-chip-wrap" ref={configRef}>
           <ChipButton
-            label="Atur filter"
+            label={t("slicer.configure")}
             open={configOpen}
             onToggle={() => setConfigOpen((v) => !v)}
           />
 
           {configOpen && (
-            <div className="slicer-panel is-wide" role="dialog" aria-label="Atur filter">
+            <div className="slicer-panel is-wide" role="dialog" aria-label={t("slicer.configure")}>
               <ConfigPanel
                 datasetId={datasetId}
                 columns={columns}

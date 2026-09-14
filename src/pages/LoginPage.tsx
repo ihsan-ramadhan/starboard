@@ -4,12 +4,14 @@ import EyeIcon from "../assets/icons/eye.svg?react";
 import EyeOffIcon from "../assets/icons/eye-off.svg?react";
 import AlertCircleIcon from "../assets/icons/alert-circle.svg?react";
 import type { SessionUser } from "../types";
+import { useT } from "../lib/i18n";
 
 export type LoginPageProps = {
   readonly onLoginSuccess: (u: SessionUser) => void;
 };
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
+  const t = useT();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +21,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!identifier.trim() || !password) {
-      setError("Username dan password wajib diisi.");
+      setError(t("login.required"));
       return;
     }
     setError(null);
@@ -33,7 +35,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     } catch (err: any) {
       const raw = err?.message || err?.toString() || "";
       const cleaned = raw.replace(/^Error:\s*/i, "");
-      setError(cleaned || "Akun atau kata sandi tidak valid.");
+      setError(cleaned || t("login.invalid"));
     } finally {
       setLoading(false);
     }
@@ -56,17 +58,17 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           <div className="brand brand-lg">
             <span className="brand-mark">★</span> Starboard
           </div>
-          <p className="login-sub">Masuk dengan akun departemen</p>
+          <p className="login-sub">{t("login.subtitle")}</p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <label>
-            <span>Username atau Email</span>
+            <span>{t("login.identifier")}</span>
             <input
               type="text"
               name="identifier"
               className={error ? "input-error" : ""}
-              placeholder="Nama pengguna atau email"
+              placeholder={t("login.identifierPlaceholder")}
               autoComplete="username"
               value={identifier}
               onChange={(e) => handleIdentifierChange(e.target.value)}
@@ -75,7 +77,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </label>
 
           <label>
-            <span>Password</span>
+            <span>{t("login.password")}</span>
             <div className="login-password-wrapper">
               <input
                 type={showPassword ? "text" : "password"}
@@ -91,7 +93,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 type="button"
                 className="login-password-toggle"
                 onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                aria-label={showPassword ? t("login.hidePassword") : t("login.showPassword")}
                 tabIndex={-1}
               >
                 {showPassword ? <EyeOffIcon width={16} height={16} /> : <EyeIcon width={16} height={16} />}
@@ -110,7 +112,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             className="btn-primary btn-block"
             disabled={loading}
           >
-            {loading ? "Memproses…" : "Masuk"}
+            {loading ? t("common.processing") : t("login.submit")}
           </button>
         </form>
 

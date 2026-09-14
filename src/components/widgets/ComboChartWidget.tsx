@@ -10,6 +10,7 @@ import {
 import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
+import { useLang } from "../../lib/i18n";
 
 export type ComboChartWidgetProps = {
   readonly title: string;
@@ -38,6 +39,7 @@ export default function ComboChartWidget({
   note,
   onHideNote,
 }: ComboChartWidgetProps) {
+  const lang = useLang();
   const barKeys = seriesKeys.filter((key) => !lineKeys.includes(key));
 
   const option = useMemo<EChartsOption>(() => {
@@ -101,7 +103,7 @@ export default function ComboChartWidget({
       },
       series: [...barSeries, ...lineSeries],
     };
-  }, [data, seriesKeys, lineKeys, colors, labelOf, unit, currency]);
+  }, [data, seriesKeys, lineKeys, colors, labelOf, unit, currency, lang]);
 
   return (
     <ChartFrame

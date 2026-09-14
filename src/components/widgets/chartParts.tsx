@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
 import { formatCompactValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
+import { useT } from "../../lib/i18n";
 
 export type SeriesLabeller = (series: string) => string;
 
@@ -31,6 +32,7 @@ export function ChartFrame({
   overlay,
   children,
 }: ChartFrameProps) {
+  const t = useT();
   return (
     <div className="chart-wrapper">
       <h4 className="widget-title" title={title}>
@@ -41,14 +43,14 @@ export function ChartFrame({
           <span>{note}</span>
           {onHideNote && (
             <button type="button" className="chart-note-hide" onClick={onHideNote}>
-              Sembunyikan
+              {t("chart.hideNote")}
             </button>
           )}
         </p>
       )}
       <div className="chart-body">
         {isEmpty ? (
-          <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
+          <div className="widget-empty">{t("chart.noData")}</div>
         ) : (
           children
         )}

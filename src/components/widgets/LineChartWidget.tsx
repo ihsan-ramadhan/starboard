@@ -10,6 +10,7 @@ import {
 import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
+import { useLang, useT } from "../../lib/i18n";
 
 export type LineChartWidgetProps = {
   readonly title: string;
@@ -38,6 +39,8 @@ export default function LineChartWidget({
   note,
   onHideNote,
 }: LineChartWidgetProps) {
+  const lang = useLang();
+  const t = useT();
   const multi = seriesKeys.length > 1;
   const trendable = showTrendline && seriesKeys.length === 1;
   const plotted = useMemo(
@@ -46,7 +49,7 @@ export default function LineChartWidget({
   );
 
   const withTrendLabel: SeriesLabeller = (series) =>
-    series === TREND_KEY ? "Garis tren" : labelOf(series);
+    series === TREND_KEY ? t("chart.trendline") : labelOf(series);
 
   const option = useMemo<EChartsOption>(() => {
     const hasTrend =
@@ -120,7 +123,7 @@ export default function LineChartWidget({
       },
       series,
     };
-  }, [plotted, seriesKeys, colors, labelOf, showTrendline, unit, currency, multi, trendable]);
+  }, [plotted, seriesKeys, colors, labelOf, showTrendline, unit, currency, multi, trendable, lang]);
 
   return (
     <ChartFrame

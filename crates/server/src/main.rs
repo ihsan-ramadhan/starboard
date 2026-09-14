@@ -106,6 +106,8 @@ struct WidgetPayload {
     target_column: Option<String>,
     #[serde(rename = "showTrendline", default)]
     show_trendline: Option<bool>,
+    #[serde(rename = "goodDirection", default)]
+    good_direction: Option<String>,
     #[serde(default)]
     filters: Option<Vec<crate::types::WidgetFilter>>,
     #[serde(rename = "tableColumns", default)]

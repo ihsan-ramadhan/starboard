@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useT } from "../lib/i18n";
 
 export type ConfirmModalProps = {
   readonly isOpen: boolean;
@@ -16,13 +17,16 @@ export default function ConfirmModal({
   isOpen,
   title,
   message,
-  confirmLabel = "Konfirmasi",
-  cancelLabel = "Batal",
+  confirmLabel,
+  cancelLabel,
   isDestructive = false,
   isLoading = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const t = useT();
+  const confirmText = confirmLabel ?? t("common.confirm");
+  const cancelText = cancelLabel ?? t("common.cancel");
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -76,7 +80,7 @@ export default function ConfirmModal({
             onClick={onCancel}
             disabled={isLoading}
           >
-            {cancelLabel}
+            {cancelText}
           </button>
           <button
             type="button"
@@ -84,7 +88,7 @@ export default function ConfirmModal({
             onClick={onConfirm}
             disabled={isLoading}
           >
-            {isLoading ? "Memproses…" : confirmLabel}
+            {isLoading ? t("common.processing") : confirmText}
           </button>
         </div>
       </div>

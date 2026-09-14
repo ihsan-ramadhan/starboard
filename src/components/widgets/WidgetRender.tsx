@@ -28,6 +28,7 @@ import KpiCard from "./KpiCard";
 import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
+import { useT } from "../../lib/i18n";
 const BarChartWidget = lazy(() => import("./BarChartWidget"));
 const LineChartWidget = lazy(() => import("./LineChartWidget"));
 const AreaChartWidget = lazy(() => import("./AreaChartWidget"));
@@ -163,6 +164,7 @@ function KpiWidgetView({
       targetLabel={targetColumn ? columnLabel(targetColumn) : undefined}
       unit={widget.unit}
       currency={currency}
+      goodDirection={widget.goodDirection}
       reloadNonce={reloadNonce}
     />
   );
@@ -223,6 +225,7 @@ function WidgetRender({
   globalFilters = [],
   valueLabels,
 }: WidgetRenderProps) {
+  const t = useT();
   const spec = buildQuery(widget, globalFilters);
   const specKey = spec ? JSON.stringify(spec) : "";
   const query = useMemo(() => spec, [specKey, reloadNonce]);
@@ -283,8 +286,8 @@ function WidgetRender({
 
   const columnLabel = useMemo(() => seriesLabeller(columns), [columns]);
   const labelOf = useMemo(
-    () => (series: string) => (series === "value" ? "Nilai" : columnLabel(series)),
-    [columnLabel]
+    () => (series: string) => (series === "value" ? t("widget.valueSeries") : columnLabel(series)),
+    [columnLabel, t]
   );
 
   const isSeriesChart =
@@ -406,9 +409,11 @@ function WidgetRender({
       : scaleMismatch(data, seriesKeys, SCALE_MISMATCH_RATIO);
   const hideWarning = () => setScaleWarningHidden(true);
   const note = mismatch
-    ? `${labelOf(mismatch.small)} nyaris tak terlihat: skalanya ${formatCount(
-        Math.round(mismatch.ratio)
-      )}× lebih kecil dari ${labelOf(mismatch.large)}. Tampilkan di chart terpisah.`
+    ? t("chart.scaleNote", {
+        small: labelOf(mismatch.small),
+        ratio: formatCount(Math.round(mismatch.ratio)),
+        large: labelOf(mismatch.large),
+      })
     : undefined;
 
   return suspend(

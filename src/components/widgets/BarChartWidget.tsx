@@ -10,6 +10,7 @@ import {
 import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
+import { useLang } from "../../lib/i18n";
 
 export type BarChartWidgetProps = {
   readonly title: string;
@@ -38,6 +39,7 @@ export default function BarChartWidget({
   note,
   onHideNote,
 }: BarChartWidgetProps) {
+  const lang = useLang();
   const stacked = mode !== "grouped" && seriesKeys.length > 1;
   const isPercent = mode === "stacked100" && seriesKeys.length > 1;
   const multi = seriesKeys.length > 1;
@@ -108,7 +110,7 @@ export default function BarChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, stacked, isPercent, multi]);
+  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, stacked, isPercent, multi, lang]);
 
   return (
     <ChartFrame

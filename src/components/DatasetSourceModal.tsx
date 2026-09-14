@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useT } from "../lib/i18n";
 
 export type SourceAction = {
   readonly key: string;
@@ -33,6 +34,7 @@ export default function DatasetSourceModal({
   busy,
   onClose,
 }: DatasetSourceModalProps) {
+  const t = useT();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function DatasetSourceModal({
     >
       <div className="modal-card source-modal">
         <div className="modal-header">
-          <h3 className="modal-title">Sumber data</h3>
+          <h3 className="modal-title">{t("source.title")}</h3>
         </div>
 
         <div className="modal-body">
@@ -68,12 +70,12 @@ export default function DatasetSourceModal({
           </p>
 
           <dl className="source-facts">
-            <dt>Berkas</dt>
-            <dd>{path ?? "Belum ada berkas yang ditunjuk"}</dd>
-            <dt>Diawasi</dt>
+            <dt>{t("source.file")}</dt>
+            <dd>{path ?? t("source.noFile")}</dd>
+            <dt>{t("source.watched")}</dt>
             <dd>{watchedBy}</dd>
-            <dt>Terakhir diperbarui</dt>
-            <dd>{updatedAt ?? "Belum pernah"}</dd>
+            <dt>{t("source.updatedAt")}</dt>
+            <dd>{updatedAt ?? t("source.never")}</dd>
           </dl>
 
           {error && <p className="source-error">{error}</p>}

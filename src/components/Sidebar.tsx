@@ -4,8 +4,11 @@ import { toast } from "sonner";
 import { useApp } from "../App";
 import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
+import SettingsModal from "./SettingsModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
+import SettingsIcon from "../assets/icons/settings.svg?react";
+import { useT } from "../lib/i18n";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
 import { isAdmin, type SessionUser } from "../types";
@@ -75,6 +78,7 @@ function NavItem({
   onFinishRename,
   onDelete,
 }: NavItemProps) {
+  const t = useT();
   const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -116,7 +120,7 @@ function NavItem({
           className="nav-rename"
           defaultValue={item.displayName}
           maxLength={60}
-          aria-label={`Nama menu untuk ${item.displayName}`}
+          aria-label={t("sidebar.renameAria", { name: item.displayName })}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
             if (e.key === "Escape") {
@@ -134,7 +138,7 @@ function NavItem({
             draggable={false}
             aria-current={active ? "page" : undefined}
             onKeyDown={onNudge}
-            title={`${item.displayName} — tekan lama untuk memindahkan, atau Alt + panah atas/bawah`}
+            title={t("sidebar.navHint", { name: item.displayName })}
           >
             <span className="nav-initial">{initials(item.displayName)}</span>
             <span className="nav-label sidebar-hideable">{item.displayName}</span>
@@ -142,8 +146,8 @@ function NavItem({
           <button
             type="button"
             className="nav-rename-btn"
-            aria-label={`Ganti nama ${item.displayName}`}
-            title="Ganti nama menu"
+            aria-label={t("sidebar.renameNamed", { name: item.displayName })}
+            title={t("sidebar.renameMenu")}
             onClick={onStartRename}
           >
             <PencilIcon width={13} height={13} />
@@ -151,8 +155,8 @@ function NavItem({
           <button
             type="button"
             className="nav-del-btn"
-            aria-label={`Hapus dataset ${item.displayName}`}
-            title="Hapus dataset"
+            aria-label={t("sidebar.deleteNamed", { name: item.displayName })}
+            title={t("sidebar.deleteDataset")}
             onClick={onDelete}
           >
             <TrashIcon width={13} height={13} />
@@ -178,7 +182,9 @@ export function Sidebar({
     useApp();
   const admin = isAdmin(user);
   const arranging = admin && editMode;
+  const t = useT();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1"
@@ -244,7 +250,7 @@ export function Sidebar({
       await api.reorderDatasets(user.role, next.map((i) => i.key));
       await refreshDatasets();
     } catch (err) {
-      toast.error("Gagal menyimpan urutan menu: " + String(err));
+      toast.error(t("sidebar.orderFailed") + String(err));
       setItems(datasets);
     }
   }
@@ -262,7 +268,7 @@ export function Sidebar({
       await api.updateDataset(user.role, key, { displayName: name });
       await refreshDatasets();
     } catch (err: unknown) {
-      toast.error("Gagal mengganti nama menu: " + String(err));
+      toast.error(t("sidebar.renameFailed") + String(err));
       setItems((prev) =>
         prev.map((i) => (i.key === key ? { ...i, displayName: previous } : i))
       );
@@ -357,11 +363,11 @@ export function Sidebar({
         return rest;
       });
       await refreshDatasets();
-      toast.success(`Dataset "${datasetToDelete.displayName}" berhasil dihapus.`);
+      toast.success(t("sidebar.deleted", { name: datasetToDelete.displayName }));
       if (activeKey === datasetToDelete.key) navigate("/", { replace: true });
       setDatasetToDelete(null);
     } catch (err) {
-      toast.error("Gagal menghapus dataset: " + String(err));
+      toast.error(t("sidebar.deleteFailed") + String(err));
     } finally {
       setIsDeletingDataset(false);
     }
@@ -386,7 +392,7 @@ export function Sidebar({
   let navNotice: ReactNode = null;
   if (!datasetsLoaded) {
     navNotice = (
-      <div className="sk-nav" aria-busy="true" aria-label="Memuat daftar dataset">
+      <div className="sk-nav" aria-busy="true" aria-label={t("sidebar.loadingList")}>
         {[0, 1, 2].map((i) => (
           <span key={i} className="sk sk-nav-row" />
         ))}
@@ -396,8 +402,8 @@ export function Sidebar({
     navNotice = (
       <span className="nav-empty">
         {admin
-          ? "Belum ada dataset. Mulai dari Import Dataset di bawah."
-          : `Admin ${user.role} belum mengimpor dataset.`}
+          ? t("sidebar.empty")
+          : t("sidebar.adminEmpty", { dept: user.role })}
       </span>
     );
   }
@@ -415,8 +421,8 @@ export function Sidebar({
             className="sidebar-toggle"
             onClick={toggleCollapsed}
             aria-expanded={!collapsed}
-            aria-label={collapsed ? "Buka sidebar" : "Tutup sidebar"}
-            title={collapsed ? "Buka sidebar" : "Tutup sidebar"}
+            aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+            title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
           >
             <ChevronIcon width={16} height={16} />
           </button>
@@ -460,26 +466,16 @@ export function Sidebar({
               to="/import"
               className={`nav-link import${location.pathname === "/import" ? " active" : ""}`}
               aria-current={location.pathname === "/import" ? "page" : undefined}
-              aria-label="Import Dataset"
-              title="Import Dataset"
+              aria-label={t("sidebar.import")}
+              title={t("sidebar.import")}
             >
               <span className="nav-initial">+</span>
-              <span className="nav-label sidebar-hideable">Import Dataset</span>
+              <span className="nav-label sidebar-hideable">{t("sidebar.import")}</span>
             </Link>
           )}
         </nav>
 
         <div className="sidebar-foot">
-          <div className="sidebar-user">
-            <span
-              className="dept-badge"
-              style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
-              title={collapsed ? user.username : undefined}
-            >
-              {user.role}
-            </span>
-            <span className="user-name sidebar-hideable">{user.username}</span>
-          </div>
           {admin && (
             <button
               type="button"
@@ -489,33 +485,60 @@ export function Sidebar({
                 setRenamingKey(null);
                 setEditMode((v) => !v);
               }}
-              title={editMode ? "Keluar dari mode edit" : "Masuk mode edit"}
+              title={editMode ? t("sidebar.exitEdit") : t("sidebar.enterEdit")}
             >
               <PencilIcon width={15} height={15} />
               <span className="sidebar-hideable">
-                {editMode ? "Selesai Edit" : "Mode Edit"}
+                {editMode ? t("sidebar.editDone") : t("sidebar.editMode")}
               </span>
             </button>
           )}
-          <button
-            type="button"
-            className="sidebar-logout"
-            onClick={() => setShowLogoutModal(true)}
-            aria-label="Logout"
-            title={collapsed ? "Logout" : undefined}
-          >
-            <LogoutIcon width={15} height={15} />
-            <span className="sidebar-hideable">Logout</span>
-          </button>
+
+          <div className="sidebar-user">
+            <span
+              className="dept-badge"
+              style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
+              title={collapsed ? user.username : undefined}
+            >
+              {user.role}
+            </span>
+            <span className="user-name sidebar-hideable">{user.username}</span>
+
+            <div className="sidebar-foot-actions">
+              <button
+                type="button"
+                className="sidebar-icon-btn"
+                onClick={() => setShowSettings(true)}
+                aria-label={t("settings.open")}
+                title={t("settings.title")}
+              >
+                <SettingsIcon width={16} height={16} />
+              </button>
+              <button
+                type="button"
+                className="sidebar-icon-btn is-danger"
+                onClick={() => setShowLogoutModal(true)}
+                aria-label={t("sidebar.logout")}
+                title={t("sidebar.logout")}
+              >
+                <LogoutIcon width={16} height={16} />
+              </button>
+            </div>
+          </div>
         </div>
       </aside>
 
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
+
       <ConfirmModal
         isOpen={showLogoutModal}
-        title="Konfirmasi Logout"
-        message="Apakah Anda yakin ingin keluar dari akun Starboard?"
-        confirmLabel="Logout"
-        cancelLabel="Batal"
+        title={t("sidebar.logoutTitle")}
+        message={t("sidebar.logoutMessage")}
+        confirmLabel={t("sidebar.logout")}
+        cancelLabel={t("common.cancel")}
         isDestructive={true}
         isLoading={isLoggingOut}
         onConfirm={handleConfirmLogout}
@@ -524,10 +547,10 @@ export function Sidebar({
 
       <ConfirmModal
         isOpen={datasetToDelete !== null}
-        title="Hapus Dataset"
-        message={`Dataset "${datasetToDelete?.displayName ?? ""}" akan dihapus permanen beserta seluruh baris datanya dan semua widget yang memakainya. Tindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus Dataset"
-        cancelLabel="Batal"
+        title={t("sidebar.deleteTitle")}
+        message={t("sidebar.deleteMessage", { name: datasetToDelete?.displayName ?? "" })}
+        confirmLabel={t("sidebar.deleteTitle")}
+        cancelLabel={t("common.cancel")}
         isDestructive={true}
         isLoading={isDeletingDataset}
         onConfirm={handleDeleteDataset}

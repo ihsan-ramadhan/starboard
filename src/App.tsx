@@ -20,6 +20,7 @@ import {
 import { api, restoreAuthToken, setAuthToken } from "./lib/api";
 import { setWindowFullscreen } from "./lib/desktop";
 import { useExcelSync, useMachineName, type SyncStatuses } from "./lib/excelSync";
+import { useT } from "./lib/i18n";
 import {
   isAdmin,
   type SessionUser,
@@ -206,6 +207,7 @@ function DatasetRoute() {
 }
 
 export default function App() {
+  const t = useT();
   const [user, setUser] = useState<SessionUser | null>(() => {
     const saved = localStorage.getItem("starboard_user");
     if (!saved) return null;
@@ -356,7 +358,7 @@ export default function App() {
   }
 
   if (checking && !user) {
-    return <div className="hint" style={{ padding: 24 }}>Memuat aplikasi…</div>;
+    return <div className="hint" style={{ padding: 24 }}>{t("app.loading")}</div>;
   }
 
   return (

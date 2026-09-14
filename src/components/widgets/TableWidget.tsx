@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
 import type { DatasetColumn, ValueLabelMap, WidgetFilter } from "../../types";
+import { useT } from "../../lib/i18n";
 
 type TableRow = { key: string; data: Record<string, unknown> };
 
@@ -28,6 +29,7 @@ export default function TableWidget({
   reloadNonce,
   valueLabels,
 }: TableWidgetProps) {
+  const t = useT();
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [pageDraft, setPageDraft] = useState("1");
@@ -153,7 +155,7 @@ export default function TableWidget({
     notice = <div className="widget-empty">{error}</div>;
   } else if (rows === null) {
     notice = (
-      <div className="sk-table" aria-busy="true" aria-label={`Memuat ${title}`}>
+      <div className="sk-table" aria-busy="true" aria-label={t("table.loading", { title })}>
         <span className="sk sk-row sk-row-head" />
         {Array.from({ length: Math.min(limit, 6) }, (_, i) => (
           <span key={i} className="sk sk-row" />
@@ -161,7 +163,7 @@ export default function TableWidget({
       </div>
     );
   } else if (rows.length === 0 && total === 0) {
-    notice = <div className="widget-empty">Tidak ada baris untuk ditampilkan</div>;
+    notice = <div className="widget-empty">{t("table.noRows")}</div>;
   }
 
   return (
@@ -192,7 +194,7 @@ export default function TableWidget({
                           type="button"
                           className={`th-sort${active ? " is-active" : ""}`}
                           onClick={() => toggleSort(name)}
-                          title={`Urutkan menurut ${labelOf(name)}`}
+                          title={t("table.sortBy", { name: labelOf(name) })}
                         >
                           <span>{labelOf(name)}</span>
                           <span className="th-sort-arrow">
@@ -223,17 +225,21 @@ export default function TableWidget({
 
           <div className="table-foot">
             <span className="table-range">
-              {firstRow}–{lastRow} dari {formatCount(total)} baris
+              {t("table.range", {
+                from: firstRow,
+                to: lastRow,
+                total: formatCount(total),
+              })}
             </span>
 
             {pageCount > 1 && (
-              <nav className="table-pager" aria-label="Navigasi halaman tabel">
+              <nav className="table-pager" aria-label={t("table.pagination")}>
                 <button
                   type="button"
                   className="table-page-btn"
                   onClick={() => goTo(page - 1)}
                   disabled={page === 0}
-                  aria-label="Halaman sebelumnya"
+                  aria-label={t("table.prevPage")}
                 >
                   ‹
                 </button>
@@ -244,7 +250,7 @@ export default function TableWidget({
                     type="text"
                     inputMode="numeric"
                     value={pageDraft}
-                    aria-label={`Halaman, dari ${pageCount} halaman`}
+                    aria-label={t("table.pageOf", { n: pageCount })}
                     onChange={(e) => setPageDraft(e.target.value.replace(/\D/g, ""))}
                     onBlur={commitPageDraft}
                     onKeyDown={(e) => {
@@ -254,7 +260,7 @@ export default function TableWidget({
                       }
                     }}
                   />
-                  <span>dari {pageCount}</span>
+                  <span>{t("table.ofPages", { n: pageCount })}</span>
                 </span>
 
                 <button
@@ -262,7 +268,7 @@ export default function TableWidget({
                   className="table-page-btn"
                   onClick={() => goTo(page + 1)}
                   disabled={page >= pageCount - 1}
-                  aria-label="Halaman berikutnya"
+                  aria-label={t("table.nextPage")}
                 >
                   ›
                 </button>

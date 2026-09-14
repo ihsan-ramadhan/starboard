@@ -4,6 +4,7 @@ import { formatFullValue } from "../../lib/format";
 import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
 import type { EChartsOption } from "echarts";
+import { useT } from "../../lib/i18n";
 
 export type PieChartWidgetProps = {
   readonly title: string;
@@ -22,6 +23,7 @@ export default function PieChartWidget({
   currency,
   reloadNonce,
 }: PieChartWidgetProps) {
+  const t = useT();
   const [selected, setSelected] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
@@ -101,7 +103,7 @@ export default function PieChartWidget({
       isEmpty={data.length === 0}
       overlay={
         <div className="donut-center">
-          <span className="donut-center-label">Total</span>
+          <span className="donut-center-label">{t("pie.total")}</span>
           <span className="donut-center-value">
             {formatFullValue(total, currency, unit)}
           </span>

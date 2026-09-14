@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type {
   SessionUser,
   DatasetRegistry,
@@ -38,7 +39,7 @@ export function restoreAuthToken() {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_BASE) {
-    throw new Error("VITE_API_BASE belum diset di file .env");
+    throw new Error(t("api.noBaseUrl"));
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -54,7 +55,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
   } catch {
     throw new Error(
-      "Tidak dapat terhubung ke server. Pastikan aplikasi Starboard Server berjalan."
+      t("api.unreachable")
     );
   }
   if (!res.ok) {
@@ -65,7 +66,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 async function upload(bytes: ArrayBuffer): Promise<string> {
   if (!API_BASE) {
-    throw new Error("VITE_API_BASE belum diset di file .env");
+    throw new Error(t("api.noBaseUrl"));
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/octet-stream",
@@ -82,7 +83,7 @@ async function upload(bytes: ArrayBuffer): Promise<string> {
     });
   } catch {
     throw new Error(
-      "Tidak dapat terhubung ke server. Pastikan aplikasi Starboard Server berjalan."
+      t("api.unreachable")
     );
   }
   if (!res.ok) throw new ApiError(await readErrorMessage(res), res.status);

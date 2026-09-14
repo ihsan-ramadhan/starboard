@@ -14,6 +14,7 @@ import {
 } from "../lib/desktop";
 import { formatCount } from "../lib/format";
 import FilePlusIcon from "../assets/icons/file-plus.svg?react";
+import { useT } from "../lib/i18n";
 
 type InferredType = "numeric" | "date" | "category";
 
@@ -116,6 +117,7 @@ export default function ImportWizard({
   setWizardState,
   onImportSuccess,
 }: ImportWizardProps) {
+  const t = useT();
   const { user } = useApp();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -184,7 +186,7 @@ export default function ImportWizard({
         selectedCols: initCols,
       });
     } catch (e: any) {
-      toast.error(e?.toString() || "Gagal menganalisis file Excel.");
+      toast.error(e?.toString() || t("import.analyzeFailed"));
       setWizardState(initialImportWizardState);
     } finally {
       setAnalyzing(false);
@@ -198,7 +200,7 @@ export default function ImportWizard({
 
   async function loadFromPath(path: string) {
     if (!/\.(xlsx|xls)$/i.test(path)) {
-      setError("Hanya file Excel (.xlsx, .xls) yang didukung.");
+      setError(t("import.onlyExcel"));
       return;
     }
     try {
@@ -206,7 +208,7 @@ export default function ImportWizard({
       const source = await readStableSource(path);
       if (!source) {
         setAnalyzing(false);
-        setError("File sedang ditulis aplikasi lain. Coba lagi sebentar.");
+        setError(t("import.fileBusy"));
         return;
       }
       await analyze(source.bytes, fileNameOf(path), {
@@ -215,7 +217,7 @@ export default function ImportWizard({
       });
     } catch (e: any) {
       setAnalyzing(false);
-      toast.error(e?.toString() || "Gagal membuka file.");
+      toast.error(e?.toString() || t("import.openFailed"));
     }
   }
 
@@ -225,7 +227,7 @@ export default function ImportWizard({
       if (!path) return;
       await loadFromPath(path);
     } catch (e: any) {
-      toast.error(e?.toString() || "Gagal membuka file.");
+      toast.error(e?.toString() || t("import.openFailed"));
     }
   }
 
@@ -259,7 +261,7 @@ export default function ImportWizard({
     ) {
       processFile(droppedFile);
     } else {
-      setError("Hanya file Excel (.xlsx, .xls) yang didukung.");
+      setError(t("import.onlyExcel"));
     }
   }
 
@@ -309,7 +311,7 @@ export default function ImportWizard({
 
     if (valid.length === 0) {
       setError(
-        "Pilih minimal satu sheet dengan paling tidak satu kolom untuk diimpor."
+        t("import.pickOneSheet")
       );
       return;
     }
@@ -333,17 +335,20 @@ export default function ImportWizard({
       });
 
       if (!res.primaryKey) {
-        throw new Error("Tidak ada sheet yang berhasil diimpor.");
+        throw new Error(t("import.noSheetImported"));
       }
 
       setWizardState(initialImportWizardState);
       if (onImportSuccess) onImportSuccess();
       toast.success(
-        `${valid.length} sheet berhasil diimpor (${formatCount(res.totalImported)} baris).`
+        t("import.imported", {
+          sheets: valid.length,
+          rows: formatCount(res.totalImported),
+        })
       );
       navigate(`/d/${res.primaryKey}`);
     } catch (e: any) {
-      toast.error(e?.toString() || "Gagal mengimpor file.");
+      toast.error(e?.toString() || t("import.failed"));
       setImporting(false);
     }
   }
@@ -385,12 +390,12 @@ export default function ImportWizard({
               <FilePlusIcon width={32} height={32} />
             </div>
             <div className="dropzone-title">
-              {analyzing ? "Membaca file Excel..." : "Klik atau seret file Excel ke sini"}
+              {analyzing ? t("import.reading") : t("import.dropHint")}
             </div>
             <div className="dropzone-sub">
               {isDesktop()
-                ? "Pilih dari disk atau folder share departemen. Starboard akan mengikuti perubahan file itu."
-                : "Format yang didukung: .xlsx, .xls"}
+                ? t("import.sourceHint")
+                : t("import.formats")}
             </div>
           </div>
         </button>
@@ -399,7 +404,7 @@ export default function ImportWizard({
           <div className="wizard-topbar">
             <div className="wizard-topbar-left">
               <div className="wizard-name-group">
-                <span className="wizard-name-label">Nama Menu Tab:</span>
+                <span className="wizard-name-label">{t("import.menuName")}</span>
                 <input
                   type="text"
                   className="wizard-name-input"
@@ -410,7 +415,7 @@ export default function ImportWizard({
                       displayName: e.target.value,
                     }))
                   }
-                  placeholder={fileName ? cleanInitialName(fileName) : "Contoh: Daywork 2026"}
+                  placeholder={fileName ? cleanInitialName(fileName) : t("import.menuPlaceholder")}
                 />
               </div>
             </div>
@@ -429,8 +434,8 @@ export default function ImportWizard({
                 disabled={importing || selectedCount === 0}
               >
                 {importing
-                  ? "Mengimpor…"
-                  : `Import ${selectedCount} Sheet`}
+                  ? t("import.importing")
+                  : t("builder.importSheets", { n: selectedCount })}
               </button>
             </div>
           </div>
@@ -440,7 +445,7 @@ export default function ImportWizard({
               <div className="panel-header">
                 <input
                   type="text"
-                  placeholder="Cari sheet..."
+                  placeholder={t("import.searchSheet")}
                   value={searchQuery}
                   onChange={(e) =>
                     setWizardState((prev) => ({
@@ -467,7 +472,7 @@ export default function ImportWizard({
                       onChange={(e) => toggleAll(e.target.checked)}
                       className="sheet-check"
                     />
-                    <span>Pilih Semua Sheet</span>
+                    <span>{t("import.selectAllSheets")}</span>
                   </label>
                   <span className="selection-count-badge">
                     {selectedCount}/{sheets.length}
@@ -505,8 +510,11 @@ export default function ImportWizard({
                       <div className="sheet-nav-info">
                         <div className="sheet-nav-title">{s.sheetName}</div>
                         <div className="sheet-nav-meta">
-                          {formatCount(s.rowCount)} baris ·{" "}
-                          {pickedCols.length}/{s.columns.length} kol
+                          {t("import.sheetMeta", {
+                            rows: formatCount(s.rowCount),
+                            picked: pickedCols.length,
+                            cols: s.columns.length,
+                          })}
                         </div>
                       </div>
                     </button>
@@ -524,9 +532,11 @@ export default function ImportWizard({
                         {activeSheet.sheetName}
                       </div>
                       <div className="sheet-detail-meta">
-                        {formatCount(activeSheet.rowCount)} total baris ·{" "}
-                        {activeSheet.columns.length} kolom tersedia · Header baris ke-
-                        {activeSheet.headerRowIndex}
+                        {t("import.sheetDetailMeta", {
+                          rows: formatCount(activeSheet.rowCount),
+                          cols: activeSheet.columns.length,
+                          header: activeSheet.headerRowIndex,
+                        })}
                       </div>
                     </div>
                     <div className="sheet-detail-actions">
@@ -578,7 +588,7 @@ export default function ImportWizard({
                 </div>
               ) : (
                 <div className="sheet-detail-empty">
-                  Pilih sheet dari panel kiri untuk mengatur kolom.
+                  {t("import.pickSheet")}
                 </div>
               )}
             </div>

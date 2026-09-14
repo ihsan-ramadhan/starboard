@@ -10,6 +10,7 @@ import {
 import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
+import { useLang } from "../../lib/i18n";
 
 export type AreaChartWidgetProps = {
   readonly title: string;
@@ -38,6 +39,7 @@ export default function AreaChartWidget({
   note,
   onHideNote,
 }: AreaChartWidgetProps) {
+  const lang = useLang();
   const multi = seriesKeys.length > 1;
   const stacked = mode !== "grouped" && multi;
   const isPercent = mode === "stacked100" && multi;
@@ -111,7 +113,7 @@ export default function AreaChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, multi, stacked, isPercent]);
+  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, multi, stacked, isPercent, lang]);
 
   return (
     <ChartFrame

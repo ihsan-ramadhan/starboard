@@ -34,6 +34,7 @@ import DatasetSourceModal, {
 import WidgetRender from "../components/widgets/WidgetRender";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
 import SlicerBar from "../components/SlicerBar";
+import { dateLocale, t, useT, type TKey, type Translate } from "../lib/i18n";
 import {
   isAdmin,
   slicerToFilters,
@@ -55,11 +56,11 @@ function formatSyncTime(iso: string | null): string | null {
   const at = Date.parse(iso);
   if (Number.isNaN(at)) return null;
   const minutes = Math.floor((Date.now() - at) / 60_000);
-  if (minutes < 1) return "baru saja";
-  if (minutes < 60) return `${minutes} menit lalu`;
+  if (minutes < 1) return t("time.justNow");
+  if (minutes < 60) return t("time.minutesAgo", { n: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} jam lalu`;
-  return new Date(at).toLocaleDateString("id-ID", {
+  if (hours < 24) return t("time.hoursAgo", { n: hours });
+  return new Date(at).toLocaleDateString(dateLocale(), {
     day: "numeric",
     month: "short",
   });
@@ -131,6 +132,7 @@ function applyLayout(
 }
 
 export default function DatasetPage() {
+  const t = useT();
   const {
     user,
     datasets,
@@ -335,7 +337,7 @@ export default function DatasetPage() {
       setWidgetCache((prev) => ({ ...prev, [key]: loaded }));
       setReloadNonce((n) => n + 1);
     } catch (err) {
-      toast.error("Gagal memuat ulang data: " + String(err));
+      toast.error(t("ds.reloadFailed") + String(err));
     } finally {
       setRefreshing(false);
     }
@@ -355,13 +357,13 @@ export default function DatasetPage() {
       await refreshDatasets();
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
-      toast.success("Dataset ini sekarang juga diawasi dari laptop ini.");
+      toast.success(t("ds.alsoWatched"));
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setClaimConflict({ path, size, message: err.message });
         return;
       }
-      toast.error("Gagal mengambil alih pengawasan: " + String(err));
+      toast.error(t("ds.claimFailed") + String(err));
     }
   }
 
@@ -373,16 +375,16 @@ export default function DatasetPage() {
       if (!path) return;
       const source = await readStableSource(path);
       if (!source) {
-        toast.error("File sedang ditulis aplikasi lain. Coba lagi sebentar.");
+        toast.error(t("ds.fileBusy"));
         return;
       }
       await claimWatch(await canonicalPath(path), source.bytes.byteLength, false);
       await refreshDatasets();
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
-      toast.success("Dataset ini sekarang diawasi dari laptop ini.");
+      toast.success(t("ds.nowWatched"));
     } catch (err) {
-      toast.error("Gagal mengambil alih pengawasan: " + String(err));
+      toast.error(t("ds.claimFailed") + String(err));
     } finally {
       setTogglingSync(false);
     }
@@ -396,7 +398,7 @@ export default function DatasetPage() {
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
     } catch (err) {
-      toast.error("Gagal menyimpan filter: " + String(err));
+      toast.error(t("ds.saveSlicersFailed") + String(err));
     }
   }
 
@@ -408,7 +410,7 @@ export default function DatasetPage() {
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
     } catch (err) {
-      toast.error("Gagal menyimpan nama tampilan: " + String(err));
+      toast.error(t("ds.saveLabelsFailed") + String(err));
     }
   }
 
@@ -420,7 +422,7 @@ export default function DatasetPage() {
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
     } catch (err) {
-      toast.error("Gagal menyimpan deskripsi: " + String(err));
+      toast.error(t("ds.saveDescFailed") + String(err));
     }
   }
 
@@ -432,9 +434,9 @@ export default function DatasetPage() {
       await refreshDatasets();
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
-      toast.success("Laptop ini berhenti mengawasi dataset ini.");
+      toast.success(t("ds.released"));
     } catch (err) {
-      toast.error("Gagal melepas pengawasan: " + String(err));
+      toast.error(t("ds.releaseFailed") + String(err));
     } finally {
       setTogglingSync(false);
     }
@@ -451,7 +453,7 @@ export default function DatasetPage() {
       const d = await fetchDatasetDetail(key, true);
       if (d) setDetail(d);
     } catch (err) {
-      toast.error("Gagal mengubah sync: " + String(err));
+      toast.error(t("ds.syncToggleFailed") + String(err));
     } finally {
       setTogglingSync(false);
     }
@@ -478,10 +480,10 @@ export default function DatasetPage() {
     return (
       <main className="content">
         <div className="empty-card">
-          <h2>Dataset tidak ditemukan</h2>
-          <p>Dataset &quot;{key}&quot; belum diimpor untuk {user.role}.</p>
+          <h2>{t("ds.notFound")}</h2>
+          <p>{t("ds.notImported", { key: key ?? "", dept: user.role })}</p>
           <Link to="/import" className="btn-primary">
-            Import Sekarang
+            {t("ds.importNow")}
           </Link>
         </div>
       </main>
@@ -500,7 +502,7 @@ export default function DatasetPage() {
       saveTimerRef.current = null;
       pendingSaveRef.current = null;
       api.saveWidgets(user.role, key, next).catch((err) => {
-        toast.error("Gagal menyimpan layout widget: " + String(err));
+        toast.error(t("ds.layoutFailed") + String(err));
       });
     };
     pendingSaveRef.current = flush;
@@ -523,9 +525,9 @@ export default function DatasetPage() {
       return next;
     });
     if (selectedWidgetId) {
-      toast.success("Widget berhasil diperbarui");
+      toast.success(t("ds.widgetUpdated"));
     } else {
-      toast.success("Widget berhasil ditambahkan");
+      toast.success(t("ds.widgetAdded"));
       setSelectedWidgetId(null);
     }
   }
@@ -540,7 +542,7 @@ export default function DatasetPage() {
       setSelectedWidgetId(null);
     }
     setWidgetToDelete(null);
-    toast.success("Widget berhasil dihapus");
+    toast.success(t("ds.widgetDeleted"));
   }
 
   function openWidgetDeleteConfirm(widget: WidgetDefinition) {
@@ -578,7 +580,7 @@ export default function DatasetPage() {
   const syncKnownPath = reg.serverPath ?? reg.myPath ?? reg.sourcePath;
   const syncState = syncShown
     ? syncView({
-        name: syncKnownPath ? fileNameOf(syncKnownPath) : reg.sourceName ?? "File sumber",
+        name: syncKnownPath ? fileNameOf(syncKnownPath) : reg.sourceName ?? t("ds.sourceFile"),
         when: formatSyncTime(reg.lastSyncedAt),
         enabled: reg.syncEnabled,
         onServer: reg.serverPath !== null,
@@ -586,6 +588,7 @@ export default function DatasetPage() {
         others: syncOthers,
         lastSeenAt: reg.lastSeenAt,
         status: syncStatus,
+        t,
       })
     : null;
 
@@ -599,8 +602,8 @@ export default function DatasetPage() {
   const sourceActions: SourceAction[] = admin
     ? (syncState?.actions ?? []).map((action) => ({
         key: action,
-        label: SYNC_ACTION_LABEL[action],
-        hint: SYNC_ACTION_HINT[action],
+        label: t(SYNC_ACTION_KEY[action]),
+        hint: t(SYNC_HINT_KEY[action]),
         destructive: action === "release",
         run: () => runSyncAction(action),
       }))
@@ -609,7 +612,7 @@ export default function DatasetPage() {
   let dashboardNotice: ReactNode = null;
   if (!widgetsLoaded) {
     dashboardNotice = (
-      <div className="sk-page-grid" aria-busy="true" aria-label="Memuat widget">
+      <div className="sk-page-grid" aria-busy="true" aria-label={t("ds.loadingWidgets")}>
         <span className="sk sk-page-card" />
         <span className="sk sk-page-card" />
       </div>
@@ -617,11 +620,11 @@ export default function DatasetPage() {
   } else if (widgets.length === 0) {
     dashboardNotice = (
       <div className="empty-widgets-card">
-        <p className="empty-widgets-title">Belum ada widget pada dashboard ini.</p>
+        <p className="empty-widgets-title">{t("ds.noWidgets")}</p>
         {admin ? (
           <>
             <p className="empty-widgets-desc">
-              Pilih tipe visual di panel kanan untuk menambahkan widget pertama.
+              {t("ds.firstWidgetHint")}
             </p>
             <button
               type="button"
@@ -636,7 +639,7 @@ export default function DatasetPage() {
           </>
         ) : (
           <p className="empty-widgets-desc">
-            Admin {user.role} belum menyusun dashboard untuk dataset ini.
+            {t("ds.noDashboard", { dept: user.role })}
           </p>
         )}
       </div>
@@ -675,8 +678,8 @@ export default function DatasetPage() {
             className={`btn-ghost btn-icon${refreshing ? " is-spinning" : ""}`}
             onClick={handleRefresh}
             disabled={refreshing}
-            aria-label="Muat ulang data"
-            title="Muat ulang data"
+            aria-label={t("ds.reload")}
+            title={t("ds.reload")}
           >
             <RefreshIcon width={15} height={15} />
           </button>
@@ -685,8 +688,8 @@ export default function DatasetPage() {
               type="button"
               className={`btn-ghost btn-icon tone-${syncState.tone}`}
               onClick={() => setSourceOpen(true)}
-              aria-label={sourceButtonLabel(syncState.tone)}
-              title={sourceButtonLabel(syncState.tone)}
+              aria-label={sourceButtonLabel(t, syncState.tone)}
+              title={sourceButtonLabel(t, syncState.tone)}
             >
               <SettingsIcon width={15} height={15} />
             </button>
@@ -697,12 +700,12 @@ export default function DatasetPage() {
             onClick={() => setFullscreen(!fullscreen)}
             aria-pressed={fullscreen}
             aria-label={
-              fullscreen ? "Keluar dari layar penuh" : "Tampilkan layar penuh"
+              fullscreen ? t("ds.exitFullscreen") : t("ds.enterFullscreen")
             }
             title={
               fullscreen
-                ? "Keluar dari layar penuh (Esc)"
-                : "Layar penuh, tanpa sidebar"
+                ? t("ds.exitFullscreenHint")
+                : t("ds.enterFullscreenHint")
             }
           >
             {fullscreen ? (
@@ -757,7 +760,7 @@ export default function DatasetPage() {
                             <button
                               type="button"
                               className="icon-btn keyboard-only"
-                              aria-label={`Edit widget ${widget.title}`}
+                              aria-label={t("widget.editAria", { title: widget.title })}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openEditWidget(widget);
@@ -768,8 +771,8 @@ export default function DatasetPage() {
                             <button
                               type="button"
                               className="icon-btn danger"
-                              aria-label={`Hapus widget ${widget.title}`}
-                              title="Hapus widget"
+                              aria-label={t("widget.deleteAria", { title: widget.title })}
+                              title={t("ds.deleteWidget")}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openWidgetDeleteConfirm(widget);
@@ -801,7 +804,7 @@ export default function DatasetPage() {
         tone={syncState?.tone ?? "paused"}
         status={syncState?.text ?? ""}
         path={syncKnownPath}
-        watchedBy={watcherSummary(reg.serverPath !== null, syncMine, syncOthers)}
+        watchedBy={watcherSummary(t, reg.serverPath !== null, syncMine, syncOthers)}
         updatedAt={formatSyncTime(reg.lastSyncedAt)}
         error={reg.serverError}
         actions={sourceActions}
@@ -811,10 +814,10 @@ export default function DatasetPage() {
 
       <ConfirmModal
         isOpen={claimConflict !== null}
-        title="File sepertinya berbeda"
+        title={t("ds.claimConflictTitle")}
         message={claimConflict?.message ?? ""}
-        confirmLabel="Tetap pakai file ini"
-        cancelLabel="Batal"
+        confirmLabel={t("ds.claimConflictConfirm")}
+        cancelLabel={t("common.cancel")}
         isDestructive={true}
         onConfirm={() => {
           if (claimConflict) {
@@ -826,10 +829,10 @@ export default function DatasetPage() {
 
       <ConfirmModal
         isOpen={widgetToDelete !== null}
-        title="Hapus Widget"
-        message={`Widget "${widgetToDelete?.title ?? ""}" akan dihapus dari dashboard. Tindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus Widget"
-        cancelLabel="Batal"
+        title={t("ds.deleteWidgetTitle")}
+        message={t("widget.deleteMessage", { title: widgetToDelete?.title ?? "" })}
+        confirmLabel={t("ds.deleteWidgetTitle")}
+        cancelLabel={t("common.cancel")}
         isDestructive={true}
         onConfirm={() => {
           if (widgetToDelete) {
@@ -858,12 +861,12 @@ export default function DatasetPage() {
 
 type SyncAction = "enable" | "claim" | "change" | "release" | "pause";
 
-const SYNC_ACTION_LABEL: Record<SyncAction, string> = {
-  enable: "Aktifkan",
-  claim: "Awasi dari laptop ini",
-  change: "Ganti file",
-  release: "Lepas dari laptop ini",
-  pause: "Jeda",
+const SYNC_ACTION_KEY: Record<SyncAction, TKey> = {
+  enable: "syncAction.enable",
+  claim: "syncAction.claim",
+  change: "syncAction.change",
+  release: "syncAction.release",
+  pause: "syncAction.pause",
 };
 
 const SEEN_FRESH_MS = 5 * 60_000;
@@ -898,6 +901,7 @@ type SyncViewInput = {
   readonly others: number;
   readonly lastSeenAt: string | null;
   readonly status: SyncStatus | undefined;
+  readonly t: Translate;
 };
 
 function syncView({
@@ -909,64 +913,74 @@ function syncView({
   others,
   lastSeenAt,
   status,
+  t,
 }: SyncViewInput): SyncView {
   const mineActions: SyncAction[] = ["change", "release", "pause"];
 
   if (!enabled) {
-    return { tone: "paused", text: `Sync dijeda untuk ${name}`, actions: ["enable"] };
+    return {
+      tone: "paused",
+      text: t("sync.paused", { name }),
+      actions: ["enable"],
+    };
   }
   if (onServer) {
     return {
       tone: "live",
       text: when
-        ? `${name} · dari server · diperbarui ${when}`
-        : `${name} · dari server`,
+        ? t("sync.serverWhen", { name, when })
+        : t("sync.server", { name }),
       actions: ["change", "pause"],
     };
   }
   if (!isDesktop()) {
     return {
       tone: "paused",
-      text: `${name} diikuti dari aplikasi desktop`,
+      text: t("sync.desktopOnly", { name }),
       actions: [],
     };
   }
   if (!mine && others === 0) {
     return {
       tone: "warn",
-      text: `${name} belum diawasi laptop mana pun`,
+      text: t("sync.unwatched", { name }),
       actions: ["claim"],
     };
   }
   if (mine && status?.state === "importing") {
-    return { tone: "busy", text: `Membaca perubahan ${name}…`, actions: ["pause"] };
+    return {
+      tone: "busy",
+      text: t("sync.reading", { name }),
+      actions: ["pause"],
+    };
   }
   if (mine && status?.state === "error") {
     return {
       tone: "error",
-      text: status.error ? `${name}: ${status.error}` : `${name} tidak terbaca`,
+      text: status.error
+        ? t("sync.errorWith", { name, error: status.error })
+        : t("sync.unreadable", { name }),
       actions: mineActions,
     };
   }
   if (mine) {
-    const shared = others > 0 ? ` · ${others} laptop lain juga` : "";
+    const shared = others > 0 ? t("sync.sharedSuffix", { n: others }) : "";
     return {
       tone: "live",
       text: when
-        ? `${name} · dari laptop ini · diperbarui ${when}${shared}`
-        : `${name} · dari laptop ini${shared}`,
+        ? t("sync.mineWhen", { name, when, shared })
+        : t("sync.mine", { name, shared }),
       actions: mineActions,
     };
   }
 
   const tone = watcherTone(lastSeenAt);
-  const laptops = `${others} laptop lain`;
   if (tone === "live") {
     return {
       tone,
       text: when
-        ? `Diikuti dari ${laptops} · diperbarui ${when}`
-        : `Diikuti dari ${laptops}`,
+        ? t("sync.othersWhen", { n: others, when })
+        : t("sync.others", { n: others }),
       actions: ["claim"],
     };
   }
@@ -975,33 +989,38 @@ function syncView({
   return {
     tone,
     text: seen
-      ? `Tidak ada laptop yang memeriksa sejak ${seen} · awasi dari sini agar sync jalan`
-      : `${laptops} terdaftar, tapi tidak ada yang memeriksa`,
+      ? t("sync.staleSince", { when: seen })
+      : t("sync.staleNone", { n: others }),
     actions: ["claim"],
   };
 }
 
-const SYNC_ACTION_HINT: Record<SyncAction, string> = {
-  enable: "Mulai lagi mengikuti perubahan berkas, untuk semua orang.",
-  claim: "Tunjuk berkasnya di laptop ini supaya ikut memeriksa perubahan.",
-  change: "Pilih berkas lain untuk diikuti dataset ini.",
-  release: "Laptop ini berhenti memeriksa. Laptop lain tidak terpengaruh.",
-  pause: "Berhenti mengikuti perubahan berkas, untuk semua orang.",
+const SYNC_HINT_KEY: Record<SyncAction, TKey> = {
+  enable: "syncHint.enable",
+  claim: "syncHint.claim",
+  change: "syncHint.change",
+  release: "syncHint.release",
+  pause: "syncHint.pause",
 };
 
-function sourceButtonLabel(tone: string): string {
-  if (tone === "warn") return "Sumber data: perlu diperiksa";
-  if (tone === "error") return "Sumber data: bermasalah";
-  if (tone === "paused") return "Sumber data: dijeda";
-  return "Sumber data";
+function sourceButtonLabel(t: Translate, tone: string): string {
+  if (tone === "warn") return t("source.buttonWarn");
+  if (tone === "error") return t("source.buttonError");
+  if (tone === "paused") return t("source.buttonPaused");
+  return t("source.button");
 }
 
-function watcherSummary(onServer: boolean, mine: boolean, others: number): string {
-  if (onServer) return "Server";
-  if (mine && others > 0) return `Laptop ini dan ${others} laptop lain`;
-  if (mine) return "Laptop ini";
-  if (others > 0) return `${others} laptop lain`;
-  return "Belum ada";
+function watcherSummary(
+  t: Translate,
+  onServer: boolean,
+  mine: boolean,
+  others: number
+): string {
+  if (onServer) return t("watcher.server");
+  if (mine && others > 0) return t("watcher.thisAndOthers", { n: others });
+  if (mine) return t("watcher.thisLaptop");
+  if (others > 0) return t("watcher.others", { n: others });
+  return t("watcher.none");
 }
 
 type DatasetDescriptionProps = {
@@ -1011,6 +1030,7 @@ type DatasetDescriptionProps = {
 };
 
 function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1038,8 +1058,8 @@ function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps)
         className="dataset-desc-input"
         defaultValue={value ?? ""}
         maxLength={DESCRIPTION_MAX}
-        placeholder="Jelaskan isi dashboard ini dalam satu kalimat"
-        aria-label="Deskripsi dashboard"
+        placeholder={t("ds.descPlaceholder")}
+        aria-label={t("ds.descAria")}
         onBlur={(e) => commit(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -1073,7 +1093,7 @@ function DatasetDescription({ value, canEdit, onSave }: DatasetDescriptionProps)
       type="button"
       className="dataset-desc"
       onClick={() => setEditing(true)}
-      title="Klik untuk mengubah deskripsi"
+      title={t("ds.descEditHint")}
     >
       {value}
     </button>
