@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useApp } from "../App";
 import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
+import DatasetIconModal from "./DatasetIconModal";
 import SettingsModal from "./SettingsModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
@@ -12,11 +13,18 @@ import sigmaLogo from "../assets/sigma-wordmark.webp";
 import sigmaLogoDark from "../assets/sigma-wordmark-dark.webp";
 import { useT } from "../lib/i18n";
 import { useResolvedTheme } from "../lib/theme";
+import ImageIcon from "../assets/icons/image.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
+import { useDatasetIcon } from "../lib/datasetIcon";
 import { isAdmin, type SessionUser } from "../types";
 
-type DatasetTab = { id: string; key: string; displayName: string };
+type DatasetTab = {
+  id: string;
+  key: string;
+  displayName: string;
+  iconVersion: number | null;
+};
 
 const COLLAPSE_KEY = "starboard_sidebar_collapsed";
 
@@ -54,6 +62,16 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+function NavBadge({ item }: { readonly item: DatasetTab }) {
+  const icon = useDatasetIcon(item.key, item.iconVersion);
+  if (!icon) return <span className="nav-initial">{initials(item.displayName)}</span>;
+  return (
+    <span className="nav-initial has-image">
+      <img src={icon} alt="" />
+    </span>
+  );
+}
+
 type NavItemProps = {
   readonly item: DatasetTab;
   readonly arranging: boolean;
@@ -65,6 +83,7 @@ type NavItemProps = {
   readonly onNudge: (e: React.KeyboardEvent<HTMLElement>) => void;
   readonly onStartRename: () => void;
   readonly onFinishRename: (value: string) => void;
+  readonly onPickIcon: () => void;
   readonly onDelete: () => void;
 };
 
@@ -79,6 +98,7 @@ function NavItem({
   onNudge,
   onStartRename,
   onFinishRename,
+  onPickIcon,
   onDelete,
 }: NavItemProps) {
   const t = useT();
@@ -100,7 +120,7 @@ function NavItem({
         aria-label={item.displayName}
         title={item.displayName}
       >
-        <span className="nav-initial">{initials(item.displayName)}</span>
+        <NavBadge item={item} />
         <span className="nav-label sidebar-hideable">{item.displayName}</span>
       </Link>
     );
@@ -143,9 +163,18 @@ function NavItem({
             onKeyDown={onNudge}
             title={t("sidebar.navHint", { name: item.displayName })}
           >
-            <span className="nav-initial">{initials(item.displayName)}</span>
+            <NavBadge item={item} />
             <span className="nav-label sidebar-hideable">{item.displayName}</span>
           </Link>
+          <button
+            type="button"
+            className="nav-icon-btn"
+            aria-label={t("icon.editNamed", { name: item.displayName })}
+            title={t("icon.title")}
+            onClick={onPickIcon}
+          >
+            <ImageIcon width={13} height={13} />
+          </button>
           <button
             type="button"
             className="nav-rename-btn"
@@ -196,6 +225,7 @@ export function Sidebar({
   const [items, setItems] = useState<DatasetTab[]>(datasets);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [datasetToDelete, setDatasetToDelete] = useState<DatasetTab | null>(null);
+  const [iconTarget, setIconTarget] = useState<DatasetTab | null>(null);
   const [isDeletingDataset, setIsDeletingDataset] = useState(false);
 
   const itemsRef = useRef(items);
@@ -457,6 +487,7 @@ export function Sidebar({
                   e.stopPropagation();
                 }}
                 onNudge={(e) => nudge(e, d.key)}
+                onPickIcon={() => setIconTarget(d)}
                 onStartRename={() => setRenamingKey(d.key)}
                 onFinishRename={(value) => {
                   setRenamingKey(null);
@@ -537,6 +568,18 @@ export function Sidebar({
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
+
+      {iconTarget && (
+        <DatasetIconModal
+          isOpen={true}
+          datasetKey={iconTarget.key}
+          displayName={iconTarget.displayName}
+          initials={initials(iconTarget.displayName)}
+          iconVersion={iconTarget.iconVersion}
+          onSaved={refreshDatasets}
+          onClose={() => setIconTarget(null)}
+        />
+      )}
 
       <ConfirmModal
         isOpen={showLogoutModal}

@@ -47,6 +47,7 @@ export type DatasetRegistry = {
   myPath: string | null;
   watcherCount: number;
   lastSeenAt: string | null;
+  iconVersion: number | null;
 };
 
 export type ChartDataPoint = {

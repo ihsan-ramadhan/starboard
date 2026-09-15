@@ -91,6 +91,30 @@ async function upload(bytes: ArrayBuffer): Promise<string> {
   return parsed.uploadId;
 }
 
+async function binary(
+  path: string,
+  init: RequestInit = {}
+): Promise<Response> {
+  if (!API_BASE) {
+    throw new Error(t("api.noBaseUrl"));
+  }
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: { ...headers, ...(init.headers as Record<string, string>) },
+    });
+  } catch {
+    throw new Error(t("api.unreachable"));
+  }
+  if (!res.ok) throw new ApiError(await readErrorMessage(res), res.status);
+  return res;
+}
+
 async function readErrorMessage(res: Response): Promise<string> {
   const text = await res.text();
   if (!text) return `Request failed: ${res.status}`;
@@ -203,6 +227,27 @@ export const api = {
 
   uploadFile(bytes: ArrayBuffer) {
     return upload(bytes);
+  },
+
+  async getDatasetIcon(key: string, version: number) {
+    const res = await binary(
+      `/api/datasets/${encodeURIComponent(key)}/icon?v=${version}`
+    );
+    return res.blob();
+  },
+
+  async setDatasetIcon(key: string, image: Blob) {
+    const res = await binary(`/api/datasets/${encodeURIComponent(key)}/icon`, {
+      method: "PUT",
+      body: image,
+    });
+    return (await res.json()) as number;
+  },
+
+  async clearDatasetIcon(key: string) {
+    await binary(`/api/datasets/${encodeURIComponent(key)}/icon`, {
+      method: "DELETE",
+    });
   },
 
   columnValues(datasetId: string, column: string, limit?: number) {

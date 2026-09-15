@@ -55,6 +55,8 @@ pub struct DatasetRegistry {
     pub watcher_count: i32,
     #[serde(rename = "lastSeenAt")]
     pub last_seen_at: Option<String>,
+    #[serde(rename = "iconVersion")]
+    pub icon_version: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

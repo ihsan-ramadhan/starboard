@@ -7,7 +7,7 @@ mod auth;
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Path, Query, State},
-    http::{Method, StatusCode},
+    http::{header, Method, StatusCode},
     middleware,
     response::IntoResponse,
     routing::{get, post},
@@ -319,6 +319,12 @@ async fn main() {
                 .put(update_sync_settings_handler)
                 .delete(release_watch_handler),
         )
+        .route(
+            "/api/datasets/{key}/icon",
+            get(get_dataset_icon_handler)
+                .put(put_dataset_icon_handler)
+                .delete(delete_dataset_icon_handler),
+        )
         .route("/api/uploads", post(stage_upload_handler))
         .route("/api/sync/heartbeat", post(heartbeat_handler))
         .route("/api/excel/analyze", post(analyze_excel_handler))
@@ -383,6 +389,15 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverError" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "slicers" jsonb;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "valueLabels" jsonb;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "iconVersion" integer;
+
+            CREATE TABLE IF NOT EXISTS dataset_icons (
+                "datasetId" text PRIMARY KEY
+                    REFERENCES dataset_registry(id) ON DELETE CASCADE,
+                mime text NOT NULL,
+                bytes bytea NOT NULL,
+                "updatedAt" timestamptz NOT NULL DEFAULT now()
+            );
 
             DELETE FROM sessions WHERE "expiresAt" <= now();
             CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_key ON sessions (token);
@@ -449,7 +464,8 @@ const REGISTRY_COLUMNS: &str = r#"r.id, r.dept, r.key, r."tableName", r."display
     r."valueLabels",
     sp.path,
     coalesce(agg.watchers, 0),
-    to_char(agg.seen AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')"#;
+    to_char(agg.seen AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    r."iconVersion""#;
 
 const REGISTRY_FROM: &str = r#"FROM dataset_registry r
     LEFT JOIN dataset_source_paths sp
@@ -484,6 +500,7 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         my_path: r.get(19),
         watcher_count: r.get::<_, i64>(20) as i32,
         last_seen_at: r.get(21),
+        icon_version: r.get(22),
     }
 }
 
@@ -1164,6 +1181,151 @@ async fn save_widgets_handler(
     tx.commit()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Commit error: {}", e)))?;
+
+    Ok(Json(true))
+}
+
+const ICON_MAX_BYTES: usize = 256 * 1024;
+
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
+    }
+    if bytes.starts_with(b"\xff\xd8\xff") {
+        return Some("image/jpeg");
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    None
+}
+
+async fn get_dataset_icon_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"SELECT i.mime, i.bytes
+               FROM dataset_icons i
+               JOIN dataset_registry r ON r.id = i."datasetId"
+               WHERE r.dept = $1 AND r.key = $2"#,
+            &[&auth.role, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Icon error: {}", e)))?
+        .ok_or((StatusCode::NOT_FOUND, "Gambar menu tidak ditemukan.".to_string()))?;
+
+    let mime: String = row.get(0);
+    let bytes: Vec<u8> = row.get(1);
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (
+                header::CACHE_CONTROL,
+                "private, max-age=31536000, immutable".to_string(),
+            ),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; sandbox".to_string(),
+            ),
+        ],
+        bytes,
+    ))
+}
+
+async fn put_dataset_icon_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    body: Bytes,
+) -> Result<Json<i32>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if body.len() > ICON_MAX_BYTES {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Gambar menu maksimal 256 KB.".to_string(),
+        ));
+    }
+    let mime = sniff_image_mime(&body).ok_or((
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "Format gambar tidak dikenali. Gunakan PNG, JPEG, atau WebP.".to_string(),
+    ))?;
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"WITH target AS (
+                   SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2
+               ), saved AS (
+                   INSERT INTO dataset_icons ("datasetId", mime, bytes)
+                   SELECT id, $3, $4 FROM target
+                   ON CONFLICT ("datasetId") DO UPDATE
+                       SET mime = excluded.mime,
+                           bytes = excluded.bytes,
+                           "updatedAt" = now()
+                   RETURNING "datasetId"
+               )
+               UPDATE dataset_registry
+               SET "iconVersion" = coalesce("iconVersion", 0) + 1
+               WHERE id = (SELECT "datasetId" FROM saved)
+               RETURNING "iconVersion""#,
+            &[&auth.role, &key, &mime, &body.as_ref()],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Icon error: {}", e)))?
+        .ok_or((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()))?;
+
+    Ok(Json(row.get(0)))
+}
+
+async fn delete_dataset_icon_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"WITH target AS (
+                   SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2
+               ), gone AS (
+                   DELETE FROM dataset_icons
+                   WHERE "datasetId" = (SELECT id FROM target)
+               )
+               UPDATE dataset_registry
+               SET "iconVersion" = NULL
+               WHERE id = (SELECT id FROM target)
+               RETURNING id"#,
+            &[&auth.role, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Icon error: {}", e)))?;
+
+    if row.is_none() {
+        return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
+    }
 
     Ok(Json(true))
 }
