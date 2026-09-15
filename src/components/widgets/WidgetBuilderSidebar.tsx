@@ -23,7 +23,6 @@ import {
   type ValueFormat,
 } from "../../types";
 import { useT, type TKey } from "../../lib/i18n";
-import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
 import BarChartIcon from "../../assets/icons/chart-bar.svg?react";
 import LineChartIcon from "../../assets/icons/chart-line.svg?react";
 import AreaChartIcon from "../../assets/icons/chart-area.svg?react";
@@ -418,7 +417,6 @@ export default function WidgetBuilderSidebar({
 }: WidgetBuilderSidebarProps) {
   const t = useT();
   const [draft, setDraft] = useState<Draft>(BLANK);
-  const warningHidden = useScaleWarningHidden();
 
   useEffect(() => {
     setDraft(draftFrom(editing));
@@ -1066,21 +1064,6 @@ export default function WidgetBuilderSidebar({
                 )}
               </section>
             )}
-
-            <section className="builder-section">
-              <span className="builder-section-title">{t("builder.allWidgetPrefs")}</span>
-              <label className="builder-check">
-                <input
-                  type="checkbox"
-                  checked={warningHidden}
-                  onChange={(e) => setScaleWarningHidden(e.target.checked)}
-                />
-                <span>{t("builder.hideScaleWarning")}</span>
-              </label>
-              <p className="builder-field-desc">
-                {t("builder.scaleWarningDesc")}
-              </p>
-            </section>
           </div>
 
           <div className="builder-sidebar-footer">

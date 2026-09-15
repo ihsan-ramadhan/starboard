@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import type { ChartDataPoint, CurrencyCode, ValueFormat } from "../../types";
 import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatValueAs } from "../../lib/format";
+import { compactValueAs, formatValueAs } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 import { chartChrome, useResolvedTheme } from "../../lib/theme";
@@ -28,6 +29,7 @@ export default function TreemapWidget({
 }: TreemapWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const c = chartChrome(theme);
 
   const option = useMemo<EChartsOption>(() => {
@@ -74,6 +76,10 @@ export default function TreemapWidget({
             fontSize: 12,
             fontWeight: 600,
             overflow: "truncate",
+            formatter: labels
+              ? (p: any) =>
+                  `${p.name}\n${compactValueAs(p.value, format, currency, unit)}`
+              : undefined,
           },
           data: data.map((d) => ({
             name: d.groupKey,
@@ -83,7 +89,7 @@ export default function TreemapWidget({
         },
       ],
     };
-  }, [data, colors, format, unit, currency, lang, theme]);
+  }, [data, colors, format, unit, currency, lang, theme, labels]);
 
   return (
     <ChartFrame title={title} isEmpty={data.length === 0}>

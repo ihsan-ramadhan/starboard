@@ -3,7 +3,8 @@ import type { CurrencyCode, ValueFormat } from "../../types";
 import type { WideRow } from "../../lib/series";
 import { ChartFrame, escapeHtml, type SeriesLabeller } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatValueAs } from "../../lib/format";
+import { compactValueAs, formatValueAs } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 import { chartChrome, useResolvedTheme } from "../../lib/theme";
@@ -31,6 +32,7 @@ export default function HeatmapWidget({
 }: HeatmapWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const c = chartChrome(theme);
 
   const option = useMemo<EChartsOption>(() => {
@@ -46,6 +48,24 @@ export default function HeatmapWidget({
         cells.push([x, y, value]);
       });
     });
+
+    const cellIsDark = (ratio: number) =>
+      theme === "dark" ? ratio < 0.4 : ratio >= 0.6;
+    const cellData = labels
+      ? cells.map((cell) => {
+          const onDark = cellIsDark(max > 0 ? cell[2] / max : 0);
+          return {
+            value: cell,
+            label: {
+              color: onDark ? "#ffffff" : "#0f172a",
+              textBorderColor: onDark
+                ? "rgba(0,0,0,0.55)"
+                : "rgba(255,255,255,0.75)",
+              textBorderWidth: 2,
+            },
+          };
+        })
+      : cells;
 
     return {
       animation: true,
@@ -117,8 +137,20 @@ export default function HeatmapWidget({
       series: [
         {
           type: "heatmap",
-          data: cells,
+          data: cellData,
           progressive: 0,
+          label: labels
+            ? {
+                show: true,
+                fontSize: 10,
+                fontWeight: 600,
+                formatter: (p: any) => {
+                  const cell = (p.value as [number, number, number])[2];
+                  if (!cell) return "";
+                  return compactValueAs(cell, format, currency, unit);
+                },
+              }
+            : { show: false },
           itemStyle: { borderColor: c.panel, borderWidth: 1 },
           emphasis: {
             itemStyle: { borderColor: c.text, borderWidth: 1 },
@@ -126,7 +158,7 @@ export default function HeatmapWidget({
         },
       ],
     };
-  }, [data, seriesKeys, labelOf, format, unit, currency, lang, theme]);
+  }, [data, seriesKeys, labelOf, format, unit, currency, lang, theme, labels]);
 
   return (
     <ChartFrame title={title} isEmpty={data.length === 0 || seriesKeys.length === 0}>

@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
 import { LANGUAGES, setLang, useLang, useT, type Lang } from "../lib/i18n";
+import {
+  setDataLabelsShown,
+  setScaleWarningHidden,
+  useDataLabelsShown,
+  useScaleWarningHidden,
+} from "../lib/prefs";
 import { setTheme, useTheme, type ThemeChoice } from "../lib/theme";
 
 export type SettingsModalProps = {
@@ -11,6 +17,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lang = useLang();
   const theme = useTheme();
+  const dataLabels = useDataLabelsShown();
+  const warningHidden = useScaleWarningHidden();
   const t = useT();
 
   useEffect(() => {
@@ -69,6 +77,34 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </select>
             <span className="settings-hint">{t("settings.themeHint")}</span>
           </label>
+
+          <section className="settings-group">
+            <h4 className="settings-group-title">{t("settings.widgets")}</h4>
+
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={dataLabels}
+                onChange={(e) => setDataLabelsShown(e.target.checked)}
+              />
+              <span className="settings-check-text">
+                <span className="settings-label">{t("settings.dataLabels")}</span>
+                <span className="settings-hint">{t("settings.dataLabelsHint")}</span>
+              </span>
+            </label>
+
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={warningHidden}
+                onChange={(e) => setScaleWarningHidden(e.target.checked)}
+              />
+              <span className="settings-check-text">
+                <span className="settings-label">{t("settings.hideScaleWarning")}</span>
+                <span className="settings-hint">{t("settings.scaleWarningHint")}</span>
+              </span>
+            </label>
+          </section>
         </div>
 
         <div className="modal-actions">

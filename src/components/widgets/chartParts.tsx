@@ -63,13 +63,63 @@ export function ChartFrame({
 
 export type ValueFormatter = (series: string, value: number) => string;
 
+export type DataLabelSpot = "top" | "right" | "inside";
+
+export const HIDE_OVERLAP = { hideOverlap: true } as const;
+
+export function blankWhenEmpty(
+  format: (value: number) => string
+): (params: any) => string {
+  return (params: any) => {
+    const raw = params.value;
+    if (raw === null || raw === undefined) return "";
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value === 0) return "";
+    return format(value);
+  };
+}
+
+export function edgeAwareLabels(count: number) {
+  return (params: any) => ({
+    hideOverlap: true,
+    dx:
+      params.dataIndex === 0
+        ? 16
+        : params.dataIndex === count - 1
+          ? -16
+          : 0,
+  });
+}
+
+export function dataLabel(
+  show: boolean,
+  theme: Resolved,
+  spot: DataLabelSpot,
+  formatter: (params: any) => string
+) {
+  if (!show) return undefined;
+  const c = chartChrome(theme);
+  const onFill = spot === "inside";
+  return {
+    show: true,
+    position: spot,
+    distance: onFill ? undefined : 4,
+    fontSize: 10,
+    fontWeight: 600 as const,
+    color: onFill ? "#ffffff" : c.text,
+    textBorderColor: onFill ? "rgba(0,0,0,0.5)" : undefined,
+    textBorderWidth: onFill ? 2 : 0,
+    formatter,
+  };
+}
+
 export type SingleFormatter = (value: number) => string;
 
 export function baseEChartOption(
   hasLegend: boolean,
   currency?: CurrencyCode,
   isPercent = false,
-  opts: { boundaryGap?: boolean; theme?: Resolved } = {}
+  opts: { boundaryGap?: boolean; theme?: Resolved; dataLabels?: boolean } = {}
 ): EChartsOption {
   const c = chartChrome(opts.theme ?? "light");
   return {
@@ -79,7 +129,7 @@ export function baseEChartOption(
     animationDurationUpdate: 400,
     animationEasingUpdate: "cubicOut",
     grid: {
-      top: 14,
+      top: opts.dataLabels ? 28 : 14,
       right: 14,
       bottom: hasLegend ? 32 : 12,
       left: 8,

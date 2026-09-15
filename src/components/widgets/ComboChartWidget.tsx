@@ -4,12 +4,16 @@ import type { WideRow } from "../../lib/series";
 import {
   ChartFrame,
   baseEChartOption,
+  dataLabel,
+  blankWhenEmpty,
+  HIDE_OVERLAP,
   type SeriesLabeller,
   type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatAxisValue, formatFullValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 import { useResolvedTheme } from "../../lib/theme";
@@ -45,15 +49,23 @@ export default function ComboChartWidget({
 }: ComboChartWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const barKeys = seriesKeys.filter((key) => !lineKeys.includes(key));
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(true, currency, false, { theme });
+    const base = baseEChartOption(true, currency, false, {
+      theme,
+      dataLabels: labels,
+    });
     const categories = data.map((d) => String(d.groupKey ?? ""));
+
+    const labelText = blankWhenEmpty((value) => formatAxisValue(value, currency));
 
     const barSeries = barKeys.map((key, index) => ({
       name: key,
       type: "bar" as const,
+      label: dataLabel(labels, theme, "top", labelText),
+      labelLayout: HIDE_OVERLAP,
       animationDuration: 750,
       animationEasing: "cubicOut" as const,
       animationDelay: (idx: number) => idx * 25 + index * 40,
@@ -67,6 +79,8 @@ export default function ComboChartWidget({
     const lineSeries = lineKeys.map((key, index) => ({
       name: key,
       type: "line" as const,
+      label: dataLabel(labels, theme, "top", labelText),
+      labelLayout: HIDE_OVERLAP,
       smooth: true,
       symbol: "circle",
       symbolSize: 6,
@@ -108,7 +122,7 @@ export default function ComboChartWidget({
       },
       series: [...barSeries, ...lineSeries],
     };
-  }, [data, seriesKeys, lineKeys, colors, labelOf, formatValue, unit, currency, lang, theme]);
+  }, [data, seriesKeys, lineKeys, colors, labelOf, formatValue, unit, currency, lang, theme, labels]);
 
   return (
     <ChartFrame

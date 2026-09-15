@@ -4,12 +4,16 @@ import type { WideRow } from "../../lib/series";
 import {
   ChartFrame,
   baseEChartOption,
+  dataLabel,
+  blankWhenEmpty,
+  HIDE_OVERLAP,
   type SeriesLabeller,
   type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatAxisValue, formatFullValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 import { chartChrome, useResolvedTheme } from "../../lib/theme";
@@ -47,12 +51,16 @@ export default function BarChartWidget({
 }: BarChartWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const stacked = mode !== "grouped" && seriesKeys.length > 1;
   const isPercent = mode === "stacked100" && seriesKeys.length > 1;
   const multi = seriesKeys.length > 1;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent, { theme });
+    const base = baseEChartOption(multi, currency, isPercent, {
+      theme,
+      dataLabels: labels,
+    });
     const rows = horizontal ? [...data].reverse() : data;
     const categories = rows.map((d) => String(d.groupKey ?? ""));
 
@@ -62,11 +70,20 @@ export default function BarChartWidget({
         )
       : [];
 
+    const labelSpot = stacked ? "inside" : horizontal ? "right" : "top";
+    const labelText = blankWhenEmpty((value) =>
+      isPercent
+        ? `${Math.round(value * 100)}%`
+        : formatAxisValue(value, currency)
+    );
+
     const series = seriesKeys.map((key, index) => {
       const isTop = !stacked || index === seriesKeys.length - 1;
       return {
         name: key,
         type: "bar" as const,
+        label: dataLabel(labels, theme, labelSpot, labelText),
+        labelLayout: HIDE_OVERLAP,
         stack: stacked ? "total" : undefined,
         animationDuration: 750,
         animationEasing: "cubicOut" as const,
@@ -142,6 +159,7 @@ export default function BarChartWidget({
     multi,
     lang,
     theme,
+    labels,
   ]);
 
   return (

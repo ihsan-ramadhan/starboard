@@ -4,11 +4,13 @@ import type { WideRow } from "../../lib/series";
 import {
   ChartFrame,
   escapeHtml,
+  HIDE_OVERLAP,
   type SeriesLabeller,
   type ValueFormatter,
 } from "./chartParts";
 import { EChart } from "./EChart";
 import { formatAxisValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import { singleSeriesColor } from "../../lib/palette";
 import type { EChartsOption } from "echarts";
 import { useLang, useT } from "../../lib/i18n";
@@ -37,6 +39,7 @@ export default function ScatterWidget({
 }: ScatterWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const c = chartChrome(theme);
   const t = useT();
   const [xKey, yKey] = seriesKeys;
@@ -108,12 +111,24 @@ export default function ScatterWidget({
           type: "scatter",
           data: points,
           symbolSize: 12,
+          label: labels
+            ? {
+                show: true,
+                position: "top",
+                distance: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                color: c.text,
+                formatter: (p: any) => String(p.name ?? ""),
+              }
+            : { show: false },
+          labelLayout: HIDE_OVERLAP,
           itemStyle: { color: singleSeriesColor(theme), opacity: 0.8 },
           emphasis: { itemStyle: { opacity: 1, borderColor: c.text, borderWidth: 1 } },
         },
       ],
     };
-  }, [data, xKey, yKey, labelOf, formatValue, unit, currency, lang, theme]);
+  }, [data, xKey, yKey, labelOf, formatValue, unit, currency, lang, theme, labels]);
 
   if (!ready) {
     return (

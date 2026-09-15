@@ -4,12 +4,16 @@ import { TREND_KEY, withTrendline, type WideRow } from "../../lib/series";
 import {
   ChartFrame,
   baseEChartOption,
+  dataLabel,
+  blankWhenEmpty,
+  edgeAwareLabels,
   type SeriesLabeller,
   type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatAxisValue, formatFullValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang, useT } from "../../lib/i18n";
 import { chartChrome, useResolvedTheme } from "../../lib/theme";
@@ -45,6 +49,7 @@ export default function LineChartWidget({
 }: LineChartWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const t = useT();
   const multi = seriesKeys.length > 1;
   const trendable = showTrendline && seriesKeys.length === 1;
@@ -60,12 +65,20 @@ export default function LineChartWidget({
     const hasTrend =
       Boolean(trendable) && plotted.some((d) => d[TREND_KEY] != null);
     const hasLegend = Boolean(multi || hasTrend);
-    const base = baseEChartOption(hasLegend, currency, false, { boundaryGap: false, theme });
+    const base = baseEChartOption(hasLegend, currency, false, {
+      boundaryGap: false,
+      theme,
+      dataLabels: labels,
+    });
     const categories = plotted.map((d) => String(d.groupKey ?? ""));
+
+    const labelText = blankWhenEmpty((value) => formatAxisValue(value, currency));
 
     const series: any[] = seriesKeys.map((key, index) => ({
       name: key,
       type: "line" as const,
+      label: dataLabel(labels, theme, "top", labelText),
+      labelLayout: edgeAwareLabels(plotted.length),
       smooth: true,
       symbol: "circle",
       symbolSize: 6,
@@ -128,7 +141,7 @@ export default function LineChartWidget({
       },
       series,
     };
-  }, [plotted, seriesKeys, colors, labelOf, formatValue, showTrendline, unit, currency, multi, trendable, lang, theme]);
+  }, [plotted, seriesKeys, colors, labelOf, formatValue, showTrendline, unit, currency, multi, trendable, lang, theme, labels]);
 
   return (
     <ChartFrame

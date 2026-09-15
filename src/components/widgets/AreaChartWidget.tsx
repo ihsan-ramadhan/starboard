@@ -4,12 +4,16 @@ import type { WideRow } from "../../lib/series";
 import {
   ChartFrame,
   baseEChartOption,
+  dataLabel,
+  blankWhenEmpty,
+  edgeAwareLabels,
   type SeriesLabeller,
   type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatAxisValue, formatFullValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 import { useResolvedTheme } from "../../lib/theme";
@@ -45,12 +49,17 @@ export default function AreaChartWidget({
 }: AreaChartWidgetProps) {
   const lang = useLang();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const multi = seriesKeys.length > 1;
   const stacked = mode !== "grouped" && multi;
   const isPercent = mode === "stacked100" && multi;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent, { boundaryGap: false, theme });
+    const base = baseEChartOption(multi, currency, isPercent, {
+      boundaryGap: false,
+      theme,
+      dataLabels: labels,
+    });
     const categories = data.map((d) => String(d.groupKey ?? ""));
 
     const rowSums = isPercent
@@ -59,11 +68,21 @@ export default function AreaChartWidget({
         )
       : [];
 
+    const labelText = blankWhenEmpty((value) =>
+      isPercent
+        ? `${Math.round(value * 100)}%`
+        : formatAxisValue(value, currency)
+    );
+
     const series = seriesKeys.map((key, index) => ({
       name: key,
       type: "line" as const,
+      label: dataLabel(labels, theme, "top", labelText),
+      labelLayout: edgeAwareLabels(data.length),
       smooth: true,
-      symbol: "none",
+      symbol: "circle",
+      symbolSize: labels ? 5 : 0,
+      showSymbol: labels,
       stack: stacked ? "total" : undefined,
       animationDuration: 850,
       animationEasing: "cubicOut" as const,
@@ -118,7 +137,7 @@ export default function AreaChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, formatValue, mode, unit, currency, multi, stacked, isPercent, lang, theme]);
+  }, [data, seriesKeys, colors, labelOf, formatValue, mode, unit, currency, multi, stacked, isPercent, lang, theme, labels]);
 
   return (
     <ChartFrame

@@ -1,16 +1,25 @@
 import { useSyncExternalStore } from "react";
 
-const SCALE_WARNING_KEY = "starboard_hide_scale_warning";
+const KEYS = {
+  scaleWarningHidden: "starboard_hide_scale_warning",
+  dataLabelsShown: "starboard_show_data_labels",
+} as const;
 
-function readStored(): boolean {
+type PrefName = keyof typeof KEYS;
+
+function readStored(name: PrefName): boolean {
   try {
-    return localStorage.getItem(SCALE_WARNING_KEY) === "1";
+    return localStorage.getItem(KEYS[name]) === "1";
   } catch {
     return false;
   }
 }
 
-let scaleWarningHidden = readStored();
+const values: Record<PrefName, boolean> = {
+  scaleWarningHidden: readStored("scaleWarningHidden"),
+  dataLabelsShown: readStored("dataLabelsShown"),
+};
+
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void) {
@@ -20,21 +29,37 @@ function subscribe(listener: () => void) {
   };
 }
 
-function snapshot() {
-  return scaleWarningHidden;
-}
-
-export function setScaleWarningHidden(next: boolean) {
-  if (scaleWarningHidden === next) return;
-  scaleWarningHidden = next;
+function set(name: PrefName, next: boolean) {
+  if (values[name] === next) return;
+  values[name] = next;
   try {
-    localStorage.setItem(SCALE_WARNING_KEY, next ? "1" : "0");
+    localStorage.setItem(KEYS[name], next ? "1" : "0");
   } catch {
     void 0;
   }
   for (const listener of listeners) listener();
 }
 
+function usePref(name: PrefName) {
+  return useSyncExternalStore(
+    subscribe,
+    () => values[name],
+    () => values[name]
+  );
+}
+
+export function setScaleWarningHidden(next: boolean) {
+  set("scaleWarningHidden", next);
+}
+
 export function useScaleWarningHidden() {
-  return useSyncExternalStore(subscribe, snapshot, snapshot);
+  return usePref("scaleWarningHidden");
+}
+
+export function setDataLabelsShown(next: boolean) {
+  set("dataLabelsShown", next);
+}
+
+export function useDataLabelsShown() {
+  return usePref("dataLabelsShown");
 }

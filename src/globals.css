@@ -568,6 +568,7 @@ a {
   color: var(--danger-strong);
 }
 
+.sidebar.collapsed .nav-icon-btn,
 .sidebar.collapsed .nav-rename-btn,
 .sidebar.collapsed .nav-del-btn {
   display: none;
@@ -1828,6 +1829,50 @@ a {
   color: var(--fg-subtle);
 }
 
+.settings-group {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-group-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.settings-check + .settings-check {
+  margin-top: 12px;
+}
+
+.settings-check input {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.settings-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-check .settings-label {
+  font-weight: 500;
+}
+
 .icon-modal {
   max-width: 420px;
 }
@@ -2153,8 +2198,6 @@ a {
 .kpi-wrapper .kpi-label {
   font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--fg-dim);
   margin-bottom: 6px;
 }
@@ -2809,14 +2852,6 @@ button.dataset-desc:focus-visible,
     transition: none !important;
     animation: none !important;
   }
-}
-
-.kpi-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--fg-subtle);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
 }
 
 .kpi-value {

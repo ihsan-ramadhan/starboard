@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChartDataPoint, CurrencyCode, ValueFormat } from "../../types";
-import { formatValueAs } from "../../lib/format";
+import { compactValueAs, formatValueAs } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
 import type { EChartsOption } from "echarts";
@@ -28,6 +29,7 @@ export default function PieChartWidget({
 }: PieChartWidgetProps) {
   const t = useT();
   const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const c = chartChrome(theme);
   const [selected, setSelected] = useState<Record<string, boolean> | null>(null);
 
@@ -76,7 +78,7 @@ export default function PieChartWidget({
       series: [
         {
           type: "pie",
-          radius: ["52%", "78%"],
+          radius: labels ? ["44%", "66%"] : ["52%", "78%"],
           center: ["50%", "45%"],
           avoidLabelOverlap: true,
           animationType: "scale",
@@ -87,7 +89,21 @@ export default function PieChartWidget({
             borderColor: c.panel,
             borderWidth: 2,
           },
-          label: { show: false },
+          label: labels
+            ? {
+                show: true,
+                position: "outside",
+                fontSize: 10,
+                fontWeight: 600,
+                color: c.text,
+                formatter: (p: any) =>
+                  compactValueAs(p.value, format, currency, unit),
+              }
+            : { show: false },
+          labelLine: labels
+            ? { show: true, length: 6, length2: 6, lineStyle: { color: c.axis } }
+            : { show: false },
+          labelLayout: { hideOverlap: true },
           emphasis: {
             scale: true,
             scaleSize: 5,
@@ -100,7 +116,7 @@ export default function PieChartWidget({
         },
       ],
     }),
-    [data, colors, currency, unit, format, theme]
+    [data, colors, currency, unit, format, theme, labels]
   );
 
   return (
