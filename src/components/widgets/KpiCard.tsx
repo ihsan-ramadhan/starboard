@@ -1,6 +1,7 @@
 import type { CurrencyCode, GoodDirection, ValueFormat } from "../../types";
 import { compactValueAs, formatValueAs } from "../../lib/format";
 import { useT } from "../../lib/i18n";
+import { WidgetSubtitle } from "./chartParts";
 
 export type KpiCardProps = {
   readonly label: string;
@@ -37,6 +38,7 @@ export default function KpiCard({
   return (
     <div className="kpi-wrapper">
       <div className="kpi-label">{label}</div>
+      <WidgetSubtitle />
       <div className="kpi-value">
         {value === null ? "…" : compactValueAs(value, format, currency)}
         {unit && !currency && <span className="kpi-unit"> {unit}</span>}

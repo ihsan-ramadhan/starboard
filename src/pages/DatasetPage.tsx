@@ -24,6 +24,7 @@ import { useMachineName, type SyncStatus } from "../lib/excelSync";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
+import CopyIcon from "../assets/icons/copy.svg?react";
 import ExpandIcon from "../assets/icons/expand.svg?react";
 import ShrinkIcon from "../assets/icons/shrink.svg?react";
 import SettingsIcon from "../assets/icons/settings.svg?react";
@@ -32,6 +33,7 @@ import DatasetSourceModal, {
   type SourceAction,
 } from "../components/DatasetSourceModal";
 import WidgetRender from "../components/widgets/WidgetRender";
+import { WidgetDescriptionProvider } from "../components/widgets/chartParts";
 import WidgetSkeleton from "../components/widgets/WidgetSkeleton";
 import { useSeenInView } from "../lib/useInView";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
@@ -108,6 +110,8 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
       return { ...base, w: 6, h: 6 };
     case "table":
       return { ...base, w: 12, h: 7 };
+    case "section":
+      return { ...base, w: 12, h: 1 };
     case "line":
     case "area":
     case "combo":
@@ -540,6 +544,23 @@ export default function DatasetPage() {
     }
   }
 
+  function handleDuplicateWidget(widget: WidgetDefinition) {
+    const size = widget.layout ?? defaultLayoutFor(widget.type);
+    const copy: WidgetDefinition = {
+      ...widget,
+      id: `w_${crypto.randomUUID()}`,
+      title: t("ds.copySuffix", { title: widget.title }),
+      layout: {
+        ...size,
+        ...findFreeSlot(widgets.map(toLayoutItem), size.w, size.h),
+      },
+    };
+    const next = [...widgets, copy];
+    setWidgets(next);
+    persistWidgets(next);
+    toast.success(t("ds.widgetDuplicated"));
+  }
+
   function handleDeleteWidget(id: string) {
     setWidgets((prev) => {
       const next = prev.filter((w) => w.id !== id);
@@ -753,20 +774,9 @@ export default function DatasetPage() {
               >
                 {widgets.map((widget) => {
                   const isSelected = editMode && selectedWidgetId === widget.id;
-                  return (
-                    <div key={widget.id}>
-                      <WidgetCard
-                        selected={isSelected}
-                        onPointerDown={() => {
-                          if (editMode) {
-                            openEditWidget(widget);
-                          }
-                        }}
-                        skeleton={<WidgetSkeleton widget={widget} />}
-                      >
-                        {editMode && (
-                          <div className="widget-toolbar">
-                            <button
+                  const actions = editMode ? (
+                    <div className="widget-toolbar">
+                      <button
                               type="button"
                               className="icon-btn keyboard-only"
                               aria-label={t("widget.editAria", { title: widget.title })}
@@ -779,25 +789,73 @@ export default function DatasetPage() {
                             </button>
                             <button
                               type="button"
-                              className="icon-btn danger"
-                              aria-label={t("widget.deleteAria", { title: widget.title })}
-                              title={t("ds.deleteWidget")}
+                              className="icon-btn"
+                              aria-label={t("widget.duplicateAria", { title: widget.title })}
+                              title={t("ds.duplicateWidget")}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openWidgetDeleteConfirm(widget);
+                                handleDuplicateWidget(widget);
                               }}
                             >
-                              <TrashIcon width={15} height={15} />
+                              <CopyIcon width={15} height={15} />
                             </button>
-                          </div>
-                        )}
-                        <WidgetRender
-                          widget={widget}
-                          columns={columns}
-                          reloadNonce={reloadNonce}
-                          globalFilters={globalFilters}
-                          valueLabels={valueLabels}
-                        />
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        aria-label={t("widget.deleteAria", { title: widget.title })}
+                        title={t("ds.deleteWidget")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openWidgetDeleteConfirm(widget);
+                        }}
+                      >
+                        <TrashIcon width={15} height={15} />
+                      </button>
+                    </div>
+                  ) : null;
+
+                  if (widget.type === "section") {
+                    return (
+                      <div key={widget.id}>
+                        <div
+                          className={`widget-card is-bare${isSelected ? " is-selected" : ""}`}
+                          onPointerDown={() => {
+                            if (editMode) openEditWidget(widget);
+                          }}
+                        >
+                          {actions}
+                          <h3 className="section-heading">{widget.title}</h3>
+                          {widget.description && (
+                            <p className="widget-subtitle" title={widget.description}>
+                              {widget.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={widget.id}>
+                      <WidgetCard
+                        selected={isSelected}
+                        onPointerDown={() => {
+                          if (editMode) {
+                            openEditWidget(widget);
+                          }
+                        }}
+                        skeleton={<WidgetSkeleton widget={widget} />}
+                      >
+                        {actions}
+                        <WidgetDescriptionProvider value={widget.description}>
+                          <WidgetRender
+                            widget={widget}
+                            columns={columns}
+                            reloadNonce={reloadNonce}
+                            globalFilters={globalFilters}
+                            valueLabels={valueLabels}
+                          />
+                        </WidgetDescriptionProvider>
                       </WidgetCard>
                     </div>
                   );

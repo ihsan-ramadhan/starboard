@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
 import { formatAxisValue } from "../../lib/format";
 import { chartChrome, type Resolved } from "../../lib/theme";
@@ -14,6 +14,32 @@ export function escapeHtml(value: string | number | null | undefined): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+const DescriptionContext = createContext<string | undefined>(undefined);
+
+export function WidgetDescriptionProvider({
+  value,
+  children,
+}: {
+  readonly value?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <DescriptionContext.Provider value={value}>
+      {children}
+    </DescriptionContext.Provider>
+  );
+}
+
+export function WidgetSubtitle() {
+  const text = useContext(DescriptionContext);
+  if (!text) return null;
+  return (
+    <p className="widget-subtitle" title={text}>
+      {text}
+    </p>
+  );
 }
 
 export type ChartFrameProps = {
@@ -39,6 +65,7 @@ export function ChartFrame({
       <h4 className="widget-title" title={title}>
         {title}
       </h4>
+      <WidgetSubtitle />
       {note && !isEmpty && (
         <p className="chart-note">
           <span>{note}</span>

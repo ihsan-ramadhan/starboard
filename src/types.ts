@@ -87,7 +87,8 @@ export type WidgetType =
   | "heatmap"
   | "scatter"
   | "table"
-  | "date";
+  | "date"
+  | "section";
 
 export type SeriesMode = "grouped" | "stacked" | "stacked100";
 
@@ -277,6 +278,7 @@ export type WidgetDefinition = {
   id: string;
   type: WidgetType;
   title: string;
+  description?: string;
   datasetId: string;
   metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
   metricColumn?: string;
@@ -317,4 +319,5 @@ export const WIDGET_TYPE_KEY: Record<WidgetType, TKey> = {
   scatter: "widgetType.scatter",
   table: "widgetType.table",
   date: "widgetType.date",
+  section: "widgetType.section",
 };

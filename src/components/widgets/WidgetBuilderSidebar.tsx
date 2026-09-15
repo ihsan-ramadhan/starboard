@@ -36,6 +36,7 @@ import ScatterIcon from "../../assets/icons/chart-scatter.svg?react";
 import TreemapIcon from "../../assets/icons/chart-treemap.svg?react";
 import TableIcon from "../../assets/icons/table.svg?react";
 import CalendarIcon from "../../assets/icons/calendar-clock.svg?react";
+import HeadingIcon from "../../assets/icons/heading.svg?react";
 import TrashIcon from "../../assets/icons/trash.svg?react";
 
 export type WidgetBuilderSidebarProps = {
@@ -98,6 +99,7 @@ const CAPS: Record<WidgetType, Caps> = {
   scatter: { ...NO_CAPS, values: "many", group: true, limit: true, money: true, unit: true, filter: true },
   table: { ...NO_CAPS, table: true, limit: true, filter: true },
   date: { ...NO_CAPS, date: true },
+  section: { ...NO_CAPS },
 };
 
 const VISUAL_TYPES: {
@@ -118,6 +120,7 @@ const VISUAL_TYPES: {
   { type: "gauge", labelKey: "visual.gauge", icon: GaugeIcon },
   { type: "table", labelKey: "visual.table", icon: TableIcon },
   { type: "date", labelKey: "visual.date", icon: CalendarIcon },
+  { type: "section", labelKey: "visual.section", icon: HeadingIcon },
 ];
 
 const SERIES_MODE_KEY: Record<SeriesMode, TKey> = {
@@ -131,6 +134,7 @@ type DraftFilter = WidgetFilter & { readonly id: string };
 type Draft = {
   type: WidgetType;
   title: string;
+  description: string;
   metric: WidgetDefinition["metric"];
   metricColumn: string;
   metricColumns: string[];
@@ -157,6 +161,7 @@ type Draft = {
 const BLANK: Draft = {
   type: "bar",
   title: "",
+  description: "",
   metric: "SUM",
   metricColumn: "",
   metricColumns: [],
@@ -197,6 +202,7 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
   return {
     type: widget.type,
     title: widget.title,
+    description: widget.description ?? "",
     metric: widget.metric,
     metricColumn: widget.metricColumn ?? "",
     metricColumns:
@@ -523,6 +529,7 @@ export default function WidgetBuilderSidebar({
       id: editing?.id ?? createId(),
       type: draft.type,
       title: draft.title.trim(),
+      description: draft.description.trim() || undefined,
       datasetId: editing?.datasetId ?? datasetId,
       ...metricFields(buildContext),
       ...axisFields(buildContext),
@@ -598,6 +605,19 @@ export default function WidgetBuilderSidebar({
                   className="builder-input"
                   required
                 />
+              </label>
+
+              <label className="builder-field">
+                <span className="builder-label">{t("builder.widgetDescription")}</span>
+                <textarea
+                  value={draft.description}
+                  onChange={(e) => set("description", e.target.value)}
+                  placeholder={t("builder.descriptionPlaceholder")}
+                  className="builder-input builder-textarea"
+                  rows={2}
+                  maxLength={280}
+                />
+                <p className="builder-field-desc">{t("builder.descriptionHint")}</p>
               </label>
 
               {caps.values !== "none" && (

@@ -2208,6 +2208,38 @@ a {
   user-select: none;
 }
 
+.widget-card.is-bare {
+  position: relative;
+  background: transparent;
+  border-color: transparent;
+  padding: 0 4px;
+  justify-content: center;
+}
+
+.charts-grid.edit-mode .widget-card.is-bare {
+  border-color: var(--border-light);
+  border-style: dashed;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.section-heading::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 .charts-grid.edit-mode .widget-card {
   cursor: grab;
   border-style: dashed;
@@ -2294,6 +2326,24 @@ a {
   align-items: center;
 }
 
+.widget-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpi-wrapper .widget-subtitle {
+  margin: 0 0 6px;
+}
+
+.widget-card.is-bare .widget-subtitle {
+  margin-top: 4px;
+}
+
 .widget-title {
   font-size: 14px;
   font-weight: 600;
@@ -2333,6 +2383,8 @@ a {
   transition: opacity 0.12s ease, background 0.12s ease,
     border-color 0.12s ease, color 0.12s ease;
 }
+
+
 
 .widget-card:hover .widget-toolbar .icon-btn,
 .widget-toolbar .icon-btn:focus-visible {
@@ -2750,6 +2802,12 @@ a {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.builder-textarea {
+  resize: vertical;
+  min-height: 52px;
+  line-height: 1.45;
 }
 
 .builder-input:focus {

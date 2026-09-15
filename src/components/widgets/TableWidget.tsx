@@ -3,6 +3,7 @@ import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
 import type { DatasetColumn, ValueLabelMap, WidgetFilter } from "../../types";
 import { useT } from "../../lib/i18n";
+import { WidgetSubtitle } from "./chartParts";
 
 type TableRow = { key: string; data: Record<string, unknown> };
 
@@ -180,6 +181,7 @@ export default function TableWidget({
       <h4 className="widget-title" title={title}>
         {title}
       </h4>
+      <WidgetSubtitle />
 
       {notice ?? (
         <>

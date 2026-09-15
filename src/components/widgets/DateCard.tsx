@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { DateMode } from "../../types";
 import { formatCount } from "../../lib/format";
 import { dateLocale, t, useLang } from "../../lib/i18n";
+import { WidgetSubtitle } from "./chartParts";
 
 export type DateCardProps = {
   readonly label: string;
@@ -158,6 +159,7 @@ export default function DateCard({
   return (
     <div className="kpi-wrapper">
       <div className="kpi-label">{label}</div>
+      <WidgetSubtitle />
       <div className="kpi-value">
         {reading.value === null ? "—" : formatCount(reading.value)}
         {reading.unit && <span className="kpi-unit"> {reading.unit}</span>}
