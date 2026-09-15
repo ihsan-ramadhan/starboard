@@ -3,7 +3,7 @@ import { LANGUAGES, setLang, useLang, useT, type Lang } from "../lib/i18n";
 import {
   setDataLabelsShown,
   setScaleWarningHidden,
-  useDataLabelsShown,
+  useGlobalDataLabels,
   useScaleWarningHidden,
 } from "../lib/prefs";
 import { setTheme, useTheme, type ThemeChoice } from "../lib/theme";
@@ -17,7 +17,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lang = useLang();
   const theme = useTheme();
-  const dataLabels = useDataLabelsShown();
+  const dataLabels = useGlobalDataLabels();
   const warningHidden = useScaleWarningHidden();
   const t = useT();
 

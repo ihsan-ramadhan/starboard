@@ -34,6 +34,15 @@ import DatasetSourceModal, {
 } from "../components/DatasetSourceModal";
 import WidgetRender from "../components/widgets/WidgetRender";
 import { WidgetDescriptionProvider } from "../components/widgets/chartParts";
+import { buildQuery } from "../components/widgets/WidgetRender";
+import WidgetFocusModal from "../components/WidgetFocusModal";
+import WidgetMenu from "../components/WidgetMenu";
+import {
+  DataLabelsProvider,
+  setDataLabelsOverride,
+  useDataLabelsOverrides,
+  useGlobalDataLabels,
+} from "../lib/prefs";
 import WidgetSkeleton from "../components/widgets/WidgetSkeleton";
 import { useSeenInView } from "../lib/useInView";
 import WidgetBuilderSidebar from "../components/widgets/WidgetBuilderSidebar";
@@ -53,6 +62,19 @@ import {
 } from "../types";
 
 const GRID_COLS = 12;
+
+const HAS_CANVAS = new Set<WidgetType>([
+  "bar",
+  "barh",
+  "line",
+  "area",
+  "combo",
+  "pie",
+  "treemap",
+  "heatmap",
+  "scatter",
+  "gauge",
+]);
 const DESCRIPTION_MAX = 160;
 
 function formatSyncTime(iso: string | null): string | null {
@@ -170,6 +192,9 @@ export default function DatasetPage() {
 
   const [loading, setLoading] = useState(!detail);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
+  const [focusWidget, setFocusWidget] = useState<WidgetDefinition | null>(null);
+  const globalDataLabels = useGlobalDataLabels();
+  const labelOverrides = useDataLabelsOverrides();
   const [widgets, setWidgets] = useState<WidgetDefinition[]>(
     () => (key ? widgetCache[key] : undefined) ?? []
   );
@@ -544,6 +569,86 @@ export default function DatasetPage() {
     }
   }
 
+  function toggleDataLabels(id: string) {
+    const effective = labelOverrides[id] ?? globalDataLabels;
+    const next = !effective;
+    setDataLabelsOverride(id, next === globalDataLabels ? undefined : next);
+  }
+
+  async function copyWidgetImage(widget: WidgetDefinition) {
+    const card = document.querySelector(`[data-widget-id="${widget.id}"]`);
+    const source = card?.querySelector("canvas");
+    const shell = card?.querySelector(".widget-card");
+    if (!source || !shell) {
+      toast.error(t("widget.copyImageUnsupported"));
+      return;
+    }
+
+    const dpr = source.width / Math.max(source.clientWidth, 1);
+    const pad = Math.round(16 * dpr);
+    const titleBand = Math.round(30 * dpr);
+    const out = document.createElement("canvas");
+    out.width = source.width + pad * 2;
+    out.height = source.height + pad * 2 + titleBand;
+
+    const ctx = out.getContext("2d");
+    if (!ctx) {
+      toast.error(t("widget.copyImageFailed"));
+      return;
+    }
+
+    const shellStyle = getComputedStyle(shell);
+    ctx.fillStyle = shellStyle.backgroundColor;
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.fillStyle = shellStyle.color;
+    ctx.font = `600 ${Math.round(14 * dpr)}px ${shellStyle.fontFamily}`;
+    ctx.textBaseline = "top";
+    ctx.fillText(widget.title, pad, pad);
+    ctx.drawImage(source, pad, pad + titleBand);
+
+    try {
+      const blob = await new Promise<Blob | null>((resolve) =>
+        out.toBlob(resolve, "image/png")
+      );
+      if (!blob) throw new Error("encode failed");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success(t("widget.imageCopied"));
+    } catch {
+      toast.error(t("widget.copyImageFailed"));
+    }
+  }
+
+  async function copyWidgetData(widget: WidgetDefinition) {
+    const query = buildQuery(widget, globalFilters);
+    if (!query) {
+      toast.error(t("widget.copyUnsupported"));
+      return;
+    }
+    try {
+      const res = await api.queryWidgetData(query);
+      const rows = res.rows as Record<string, unknown>[];
+      if (rows.length === 0) {
+        if (res.scalarValue === undefined && !res.scalarText) {
+          toast.error(t("chart.noData"));
+          return;
+        }
+        await navigator.clipboard.writeText(
+          String(res.scalarText ?? res.scalarValue)
+        );
+        toast.success(t("widget.copied", { n: 1 }));
+        return;
+      }
+      const headers = Object.keys(rows[0]);
+      const body = rows
+        .map((row) => headers.map((h) => String(row[h] ?? "")).join("\t"))
+        .join("\n");
+      await navigator.clipboard.writeText(`${headers.join("\t")}\n${body}`);
+      toast.success(t("widget.copied", { n: rows.length }));
+    } catch {
+      toast.error(t("widget.copyFailed"));
+    }
+  }
+
   function handleDuplicateWidget(widget: WidgetDefinition) {
     const size = widget.layout ?? defaultLayoutFor(widget.type);
     const copy: WidgetDefinition = {
@@ -812,7 +917,21 @@ export default function DatasetPage() {
                         <TrashIcon width={15} height={15} />
                       </button>
                     </div>
-                  ) : null;
+                  ) : widget.type === "section" ? null : (
+                    <div className="widget-toolbar">
+                      <WidgetMenu
+                        label={widget.title}
+                        dataLabels={
+                          labelOverrides[widget.id] ?? globalDataLabels
+                        }
+                        onFocus={() => setFocusWidget(widget)}
+                        onCopyData={() => copyWidgetData(widget)}
+                        canCopyImage={HAS_CANVAS.has(widget.type)}
+                        onCopyImage={() => copyWidgetImage(widget)}
+                        onToggleDataLabels={() => toggleDataLabels(widget.id)}
+                      />
+                    </div>
+                  );
 
                   if (widget.type === "section") {
                     return (
@@ -836,7 +955,7 @@ export default function DatasetPage() {
                   }
 
                   return (
-                    <div key={widget.id}>
+                    <div key={widget.id} data-widget-id={widget.id}>
                       <WidgetCard
                         selected={isSelected}
                         onPointerDown={() => {
@@ -848,6 +967,7 @@ export default function DatasetPage() {
                       >
                         {actions}
                         <WidgetDescriptionProvider value={widget.description}>
+                          <DataLabelsProvider value={labelOverrides[widget.id]}>
                           <WidgetRender
                             widget={widget}
                             columns={columns}
@@ -855,6 +975,7 @@ export default function DatasetPage() {
                             globalFilters={globalFilters}
                             valueLabels={valueLabels}
                           />
+                          </DataLabelsProvider>
                         </WidgetDescriptionProvider>
                       </WidgetCard>
                     </div>
@@ -921,6 +1042,15 @@ export default function DatasetPage() {
         onDelete={openWidgetDeleteConfirm}
       />
     )}
+
+    <WidgetFocusModal
+      widget={focusWidget}
+      dataLabels={focusWidget ? labelOverrides[focusWidget.id] : undefined}
+      columns={columns}
+      globalFilters={globalFilters}
+      valueLabels={valueLabels}
+      onClose={() => setFocusWidget(null)}
+    />
   </div>
 );
 }

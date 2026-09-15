@@ -79,7 +79,7 @@ function usableFilters(
   return all.length > 0 ? all : undefined;
 }
 
-function buildQuery(
+export function buildQuery(
   widget: WidgetDefinition,
   global: readonly WidgetFilter[]
 ): WidgetQuery | null {
