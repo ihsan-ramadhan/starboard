@@ -5,6 +5,7 @@ import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
 import type { EChartsOption } from "echarts";
 import { useT } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type PieChartWidgetProps = {
   readonly title: string;
@@ -26,6 +27,8 @@ export default function PieChartWidget({
   reloadNonce,
 }: PieChartWidgetProps) {
   const t = useT();
+  const theme = useResolvedTheme();
+  const c = chartChrome(theme);
   const [selected, setSelected] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
@@ -46,13 +49,13 @@ export default function PieChartWidget({
       tooltip: {
         trigger: "item",
         appendToBody: true,
-        backgroundColor: "#ffffff",
-        borderColor: "#e2e8f0",
+        backgroundColor: c.panel,
+        borderColor: c.panelBorder,
         borderWidth: 1,
         padding: [8, 12],
-        textStyle: { color: "#0f172a", fontSize: 12 },
+        textStyle: { color: c.text, fontSize: 12 },
         extraCssText:
-          "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+          `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
         formatter: (p: any) => {
           const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
           return (
@@ -68,7 +71,7 @@ export default function PieChartWidget({
         icon: "circle",
         itemWidth: 8,
         itemHeight: 8,
-        textStyle: { color: "#475569", fontSize: 11 },
+        textStyle: { color: c.axis, fontSize: 11 },
       },
       series: [
         {
@@ -81,7 +84,7 @@ export default function PieChartWidget({
           animationEasing: "cubicOut",
           itemStyle: {
             borderRadius: 3,
-            borderColor: "#ffffff",
+            borderColor: c.panel,
             borderWidth: 2,
           },
           label: { show: false },
@@ -97,7 +100,7 @@ export default function PieChartWidget({
         },
       ],
     }),
-    [data, colors, currency, unit]
+    [data, colors, currency, unit, format, theme]
   );
 
   return (

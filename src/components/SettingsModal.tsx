@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { LANGUAGES, setLang, useLang, useT, type Lang } from "../lib/i18n";
+import { setTheme, useTheme, type ThemeChoice } from "../lib/theme";
 
 export type SettingsModalProps = {
   readonly isOpen: boolean;
@@ -9,6 +10,7 @@ export type SettingsModalProps = {
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lang = useLang();
+  const theme = useTheme();
   const t = useT();
 
   useEffect(() => {
@@ -52,6 +54,20 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               ))}
             </select>
             <span className="settings-hint">{t("settings.languageHint")}</span>
+          </label>
+
+          <label className="settings-field">
+            <span className="settings-label">{t("settings.theme")}</span>
+            <select
+              className="settings-input"
+              value={theme}
+              onChange={(e) => setTheme(e.target.value as ThemeChoice)}
+            >
+              <option value="system">{t("theme.system")}</option>
+              <option value="light">{t("theme.light")}</option>
+              <option value="dark">{t("theme.dark")}</option>
+            </select>
+            <span className="settings-hint">{t("settings.themeHint")}</span>
           </label>
         </div>
 

@@ -12,6 +12,7 @@ import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type BarChartWidgetProps = {
   readonly title: string;
@@ -45,12 +46,13 @@ export default function BarChartWidget({
   onHideNote,
 }: BarChartWidgetProps) {
   const lang = useLang();
+  const theme = useResolvedTheme();
   const stacked = mode !== "grouped" && seriesKeys.length > 1;
   const isPercent = mode === "stacked100" && seriesKeys.length > 1;
   const multi = seriesKeys.length > 1;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent);
+    const base = baseEChartOption(multi, currency, isPercent, { theme });
     const rows = horizontal ? [...data].reverse() : data;
     const categories = rows.map((d) => String(d.groupKey ?? ""));
 
@@ -88,7 +90,7 @@ export default function BarChartWidget({
       ...(base.xAxis as any),
       data: categories,
       axisLabel: horizontal
-        ? { color: "#64748b", fontSize: 11, overflow: "truncate", width: 120 }
+        ? { color: chartChrome(theme).axis, fontSize: 11, overflow: "truncate", width: 120 }
         : (base.xAxis as any).axisLabel,
     };
 
@@ -139,6 +141,7 @@ export default function BarChartWidget({
     isPercent,
     multi,
     lang,
+    theme,
   ]);
 
   return (

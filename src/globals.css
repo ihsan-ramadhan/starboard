@@ -17,9 +17,101 @@
   --success-bg: #f0fdf4;
   --success-border: #bbf7d0;
   --mpma: #16a34a;
+  --danger-strong: #b91c1c;
+  --accent-soft: #eff6ff;
+  --accent-strong: #1e3a8a;
+  --control-border: #cbd5e1;
+  --info-bg: #e0f2fe;
+  --info-fg: #0369a1;
+  --warning-bg: #fef3c7;
+  --warning-fg: #92400e;
+  --shadow-panel: rgba(15, 23, 42, 0.18);
+  --success-strong: #15803d;
+  --skeleton: #e8edf4;
+  --skeleton-strong: #dbe3ec;
+  --accent-hint: #93c5fd;
+  --on-accent: #ffffff;
+  --on-danger: #ffffff;
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 10px;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #17140f;
+  --surface: #201c16;
+  --surface-elev: #262019;
+  --border: #332c22;
+  --border-light: #2b2620;
+  --fg: #f5f1ea;
+  --fg-dim: #b8ae9f;
+  --fg-subtle: #8d8577;
+  --accent: #d9a441;
+  --accent-hover: #e8bd63;
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --danger-bg: #2c1a18;
+  --danger-border: #5c2b28;
+  --success: #4ade80;
+  --success-bg: #16281c;
+  --success-border: #2c5238;
+  --mpma: #4ade80;
+  --danger-strong: #fca5a5;
+  --accent-soft: #2c2415;
+  --accent-strong: #f0d49a;
+  --control-border: #4a4033;
+  --info-bg: #17293a;
+  --info-fg: #7dd3fc;
+  --warning-bg: #2e2412;
+  --warning-fg: #fcd34d;
+  --shadow-panel: rgba(0, 0, 0, 0.6);
+  --success-strong: #4ade80;
+  --skeleton: #2b2620;
+  --skeleton-strong: #3a332a;
+  --accent-hint: #8a6f33;
+  --on-accent: #17140f;
+  --on-danger: #17140f;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17140f;
+    --surface: #201c16;
+    --surface-elev: #262019;
+    --border: #332c22;
+    --border-light: #2b2620;
+    --fg: #f5f1ea;
+    --fg-dim: #b8ae9f;
+    --fg-subtle: #8d8577;
+    --accent: #d9a441;
+    --accent-hover: #e8bd63;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --danger-bg: #2c1a18;
+    --danger-border: #5c2b28;
+    --success: #4ade80;
+    --success-bg: #16281c;
+    --success-border: #2c5238;
+    --mpma: #4ade80;
+    --danger-strong: #fca5a5;
+    --accent-soft: #2c2415;
+    --accent-strong: #f0d49a;
+    --control-border: #4a4033;
+    --info-bg: #17293a;
+    --info-fg: #7dd3fc;
+    --warning-bg: #2e2412;
+    --warning-fg: #fcd34d;
+    --shadow-panel: rgba(0, 0, 0, 0.6);
+    --success-strong: #4ade80;
+    --skeleton: #2b2620;
+    --skeleton-strong: #3a332a;
+    --accent-hint: #8a6f33;
+  --on-accent: #17140f;
+    --on-danger: #17140f;
+    color-scheme: dark;
+  }
 }
 
 * {
@@ -27,8 +119,8 @@
 }
 
 ::selection {
-  background-color: #bfdbfe;
-  color: #1e3a8a;
+  background-color: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 html,
@@ -62,9 +154,9 @@ input[type="checkbox"] {
   height: 16px;
   margin: 0;
   flex-shrink: 0;
-  border: 1.5px solid #cbd5e1;
+  border: 1.5px solid var(--control-border);
   border-radius: 4px;
-  background-color: #ffffff;
+  background-color: var(--bg);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -75,8 +167,8 @@ input[type="checkbox"] {
 }
 
 input[type="checkbox"]:hover:not(:disabled) {
-  border-color: #94a3b8;
-  background-color: #f8fafc;
+  border-color: var(--fg-subtle);
+  background-color: var(--surface);
 }
 
 input[type="checkbox"]:disabled {
@@ -100,7 +192,7 @@ input[type="checkbox"]:checked::after {
   display: block;
   width: 4.5px;
   height: 8.5px;
-  border: solid #ffffff;
+  border: solid var(--on-accent);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   margin-top: -2px;
@@ -123,7 +215,7 @@ input[type="checkbox"]:indeterminate::after {
   display: block;
   width: 8px;
   height: 2px;
-  background-color: #ffffff;
+  background-color: var(--on-accent);
   border-radius: 1px;
 }
 
@@ -184,38 +276,31 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
-  height: 56px;
-  min-height: 56px;
+  gap: 8px;
+  padding: 0 14px;
+  height: 84px;
+  min-height: 84px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
 }
 
+.brand-logo {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  height: 48px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.sidebar.collapsed .brand-logo {
+  display: none;
+}
+
 .sidebar.collapsed .sidebar-head {
   justify-content: center;
   padding: 0;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.sidebar.collapsed .brand {
-  width: 0;
-  opacity: 0;
-  margin: 0;
-  pointer-events: none;
-}
-
-.brand-mark {
-  color: var(--accent);
 }
 
 .sidebar-toggle {
@@ -308,10 +393,9 @@ a {
   color: var(--accent);
 }
 
-/* Same specificity as the .import rule above, so order decides: active wins. */
 .nav-link.active .nav-initial {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .nav-empty {
@@ -441,7 +525,7 @@ a {
 
 .nav-del-btn:hover {
   background: var(--danger-bg);
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 .sidebar.collapsed .nav-rename-btn,
@@ -515,7 +599,7 @@ a {
 
 .sidebar-icon-btn.is-danger:hover {
   background: var(--danger-bg);
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 .sidebar-icon-btn:focus-visible {
@@ -530,12 +614,10 @@ a {
   padding: 3px 10px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   white-space: nowrap;
 }
 
-/* role is an unconstrained String (departments.code); the base rule pins
-   flex-shrink to 0, so the rail has to let it shrink and ellipsize. */
 .sidebar.collapsed .dept-badge {
   padding: 3px 8px;
   font-size: 11px;
@@ -556,7 +638,6 @@ a {
   display: block;
 }
 
-/* red-700, not --danger: #dc2626 on --danger-bg is 4.41:1, under AA */
 .sidebar-edit {
   display: flex;
   align-items: center;
@@ -586,13 +667,13 @@ a {
 .sidebar-edit.on {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .sidebar-edit.on:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .sidebar.collapsed .sidebar-edit {
@@ -653,7 +734,7 @@ a {
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   padding: 7px 16px;
   border: none;
@@ -683,7 +764,6 @@ a {
   border-color: var(--fg-dim);
 }
 
-/* Icon-only variant. 34px square so it lines up with the text buttons beside it. */
 .btn-icon {
   width: 34px;
   height: 34px;
@@ -710,7 +790,7 @@ a {
 .btn-danger-outline {
   background: transparent;
   border: 1px solid var(--danger-border);
-  color: #b91c1c;
+  color: var(--danger-strong);
   padding: 6px 14px;
   font-weight: 500;
   transition: background 0.12s ease, border-color 0.12s ease;
@@ -723,7 +803,7 @@ a {
 
 .btn-danger {
   background: var(--danger);
-  color: #ffffff;
+  color: var(--on-danger);
   border: 1px solid var(--danger);
   padding: 6px 14px;
   font-weight: 600;
@@ -770,7 +850,21 @@ a {
 .widget-card .icon-btn.danger:hover {
   background: var(--danger-bg);
   border-color: var(--danger-border);
-  color: #b91c1c;
+  color: var(--danger-strong);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.brand-mark {
+  color: var(--accent);
 }
 
 .login-screen {
@@ -941,12 +1035,12 @@ a {
 
 .dropzone-card:hover {
   border-color: var(--accent);
-  background: #f8faff;
+  background: var(--accent-soft);
 }
 
 .dropzone-card.dragging {
   border-color: var(--accent);
-  background: #eff6ff;
+  background: var(--accent-soft);
   transform: scale(1.01);
 }
 
@@ -967,7 +1061,7 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eff6ff;
+  background: var(--accent-soft);
   width: 56px;
   height: 56px;
   border-radius: var(--radius-lg);
@@ -1252,7 +1346,7 @@ a {
 }
 
 .col-item-card.on {
-  background: #f8faff;
+  background: var(--accent-soft);
   border-color: var(--accent);
 }
 
@@ -1277,7 +1371,7 @@ a {
 
 .col-item-card.on .col-letter {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .col-item-name {
@@ -1377,7 +1471,7 @@ a {
 
 .slicer-chip.is-active {
   border-color: var(--accent);
-  background: #eff6ff;
+  background: var(--accent-soft);
   color: var(--accent-hover);
   font-weight: 500;
 }
@@ -1662,6 +1756,10 @@ a {
   gap: 6px;
 }
 
+.settings-field + .settings-field {
+  margin-top: 18px;
+}
+
 .settings-label {
   font-size: 13px;
   font-weight: 600;
@@ -1727,7 +1825,7 @@ a {
   border-radius: var(--radius-sm);
   background: var(--danger-bg);
   border: 1px solid var(--danger-border);
-  color: #b91c1c;
+  color: var(--danger-strong);
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -1803,6 +1901,17 @@ a {
 }
 
 .charts-grid.edit-mode .react-grid-item.resizing,
+.charts-grid .react-grid-item.react-grid-placeholder {
+  background: var(--accent);
+  opacity: 0.18;
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+}
+
+.charts-grid:not(.edit-mode) .react-grid-item.react-grid-placeholder {
+  display: none;
+}
+
 .charts-grid.edit-mode .react-grid-item.react-draggable-dragging {
   transition: none;
 }
@@ -1827,7 +1936,7 @@ a {
 }
 
 .charts-grid.edit-mode .widget-card:hover {
-  border-color: #93c5fd;
+  border-color: var(--accent-hint);
 }
 
 .charts-grid.edit-mode .widget-card.is-selected {
@@ -2010,7 +2119,6 @@ a {
   line-height: 1.5;
 }
 
-/* Dataset page layout with right sidebar */
 .dataset-page-layout {
   display: flex;
   flex-direction: row;
@@ -2040,7 +2148,6 @@ a {
   margin-bottom: 14px;
 }
 
-/* Power BI style builder sidebar */
 .builder-sidebar {
   width: 320px;
   flex-shrink: 0;
@@ -2123,8 +2230,8 @@ a {
 }
 
 .builder-sidebar-text-btn:hover {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
 }
 
 .builder-sidebar-form {
@@ -2228,13 +2335,13 @@ a {
 }
 
 .visual-tile:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: var(--border-light);
+  border-color: var(--control-border);
 }
 
 .visual-tile.is-active {
   border-color: var(--accent);
-  background: #eff6ff;
+  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
@@ -2313,7 +2420,7 @@ a {
 .btn-sidebar-delete:focus-visible {
   background: var(--danger-bg);
   border-color: var(--danger-border);
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 @keyframes slideInRight {
@@ -2510,11 +2617,11 @@ button.dataset-desc:focus-visible,
 }
 
 .btn-icon.tone-warn {
-  color: #92400e;
+  color: var(--warning-fg);
 }
 
 .btn-icon.tone-error {
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 @keyframes sync-pulse {
@@ -2602,18 +2709,18 @@ button.dataset-desc:focus-visible,
 }
 
 .col-numeric {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--info-bg);
+  color: var(--info-fg);
 }
 
 .col-date {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--warning-bg);
+  color: var(--warning-fg);
 }
 
 .col-category {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--border-light);
+  color: var(--fg-dim);
 }
 
 .table-header-row {
@@ -2660,7 +2767,7 @@ button.dataset-desc:focus-visible,
 }
 
 .data-table tbody tr:hover {
-  background: #f8fafc;
+  background: var(--surface);
 }
 .data-table th.cell-num,
 .data-table td.cell-num {
@@ -2677,18 +2784,18 @@ button.dataset-desc:focus-visible,
 }
 
 .chip-numeric {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--info-bg);
+  color: var(--info-fg);
 }
 
 .chip-date {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--warning-bg);
+  color: var(--warning-fg);
 }
 
 .chip-category {
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--border-light);
+  color: var(--fg-dim);
 }
 
 dialog.modal-native {
@@ -2891,11 +2998,11 @@ dialog.modal-native::backdrop {
 }
 
 .kpi-meter-fill.is-good {
-  background: #15803d;
+  background: var(--success-strong);
 }
 
 .kpi-meter-fill.is-bad {
-  background: #b91c1c;
+  background: var(--danger-strong);
 }
 
 .kpi-target-row {
@@ -2921,11 +3028,11 @@ dialog.modal-native::backdrop {
 }
 
 .kpi-delta.is-good {
-  color: #15803d;
+  color: var(--success-strong);
 }
 
 .kpi-delta.is-bad {
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 .kpi-caption {
@@ -3042,7 +3149,7 @@ dialog.modal-native::backdrop {
 }
 
 .table-page-btn:hover:not(:disabled) {
-  border-color: #cbd5e1;
+  border-color: var(--control-border);
   background: var(--surface);
   color: var(--fg);
 }
@@ -3097,7 +3204,7 @@ dialog.modal-native::backdrop {
 .builder-problem {
   margin: 0;
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 .builder-footer-row .btn-primary:disabled {
@@ -3113,8 +3220,8 @@ dialog.modal-native::backdrop {
   margin: 6px 0 0;
   padding: 5px 8px;
   border-radius: var(--radius-sm);
-  background: #fffbeb;
-  color: #92400e;
+  background: var(--warning-bg);
+  color: var(--warning-fg);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -3126,13 +3233,13 @@ dialog.modal-native::backdrop {
   background: transparent;
   font: inherit;
   font-weight: 600;
-  color: #92400e;
+  color: var(--warning-fg);
   text-decoration: underline;
   cursor: pointer;
 }
 
 .chart-note-hide:hover {
-  color: #78350f;
+  color: var(--warning-fg);
 }
 
 .builder-filter {
@@ -3177,7 +3284,7 @@ dialog.modal-native::backdrop {
 .builder-filter-remove:hover {
   background: var(--danger-bg);
   border-color: var(--danger-border);
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 .builder-filter-add {
@@ -3206,7 +3313,7 @@ dialog.modal-native::backdrop {
   justify-content: center;
   height: 100%;
   padding: 0 16px;
-  color: #b91c1c;
+  color: var(--danger-strong);
   font-size: 12px;
   line-height: 1.5;
   text-align: center;
@@ -3214,7 +3321,7 @@ dialog.modal-native::backdrop {
 
 .sk {
   display: block;
-  background: #e8edf4;
+  background: var(--skeleton);
   border-radius: 4px;
   animation: sk-pulse 1.6s ease-in-out infinite;
 }
@@ -3306,7 +3413,7 @@ dialog.modal-native::backdrop {
   max-width: 60%;
   border-radius: 50%;
   background: transparent;
-  border: 22px solid #e8edf4;
+  border: 22px solid var(--skeleton);
 }
 
 .sk-legend {
@@ -3329,7 +3436,7 @@ dialog.modal-native::backdrop {
 
 .sk-row-head {
   height: 19px;
-  background: #dbe3ec;
+  background: var(--skeleton-strong);
 }
 
 .sk-page-title {

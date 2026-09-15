@@ -12,6 +12,7 @@ import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang, useT } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type LineChartWidgetProps = {
   readonly title: string;
@@ -43,6 +44,7 @@ export default function LineChartWidget({
   onHideNote,
 }: LineChartWidgetProps) {
   const lang = useLang();
+  const theme = useResolvedTheme();
   const t = useT();
   const multi = seriesKeys.length > 1;
   const trendable = showTrendline && seriesKeys.length === 1;
@@ -58,7 +60,7 @@ export default function LineChartWidget({
     const hasTrend =
       Boolean(trendable) && plotted.some((d) => d[TREND_KEY] != null);
     const hasLegend = Boolean(multi || hasTrend);
-    const base = baseEChartOption(hasLegend, currency, false, { boundaryGap: false });
+    const base = baseEChartOption(hasLegend, currency, false, { boundaryGap: false, theme });
     const categories = plotted.map((d) => String(d.groupKey ?? ""));
 
     const series: any[] = seriesKeys.map((key, index) => ({
@@ -85,8 +87,8 @@ export default function LineChartWidget({
         symbolSize: 0,
         animationDuration: 600,
         animationDelay: 300,
-        itemStyle: { color: "#94a3b8" },
-        lineStyle: { width: 2, color: "#94a3b8", type: "dashed" },
+        itemStyle: { color: chartChrome(theme).axis },
+        lineStyle: { width: 2, color: chartChrome(theme).axis, type: "dashed" },
         data: plotted.map((d) =>
           d[TREND_KEY] == null ? null : Number(d[TREND_KEY])
         ),
@@ -126,7 +128,7 @@ export default function LineChartWidget({
       },
       series,
     };
-  }, [plotted, seriesKeys, colors, labelOf, formatValue, showTrendline, unit, currency, multi, trendable, lang]);
+  }, [plotted, seriesKeys, colors, labelOf, formatValue, showTrendline, unit, currency, multi, trendable, lang, theme]);
 
   return (
     <ChartFrame

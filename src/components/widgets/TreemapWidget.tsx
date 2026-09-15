@@ -5,6 +5,7 @@ import { EChart } from "./EChart";
 import { formatValueAs } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type TreemapWidgetProps = {
   readonly title: string;
@@ -26,6 +27,8 @@ export default function TreemapWidget({
   reloadNonce,
 }: TreemapWidgetProps) {
   const lang = useLang();
+  const theme = useResolvedTheme();
+  const c = chartChrome(theme);
 
   const option = useMemo<EChartsOption>(() => {
     const total = data.reduce((sum, d) => sum + d.value, 0);
@@ -36,13 +39,13 @@ export default function TreemapWidget({
       tooltip: {
         trigger: "item",
         appendToBody: true,
-        backgroundColor: "#ffffff",
-        borderColor: "#e2e8f0",
+        backgroundColor: c.panel,
+        borderColor: c.panelBorder,
         borderWidth: 1,
         padding: [8, 12],
-        textStyle: { color: "#0f172a", fontSize: 12 },
+        textStyle: { color: c.text, fontSize: 12 },
         extraCssText:
-          "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+          `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
         formatter: (p: any) => {
           const share = total > 0 ? Math.round((p.value / total) * 100) : 0;
           return (
@@ -65,9 +68,9 @@ export default function TreemapWidget({
           left: 0,
           right: 0,
           bottom: 4,
-          itemStyle: { borderColor: "#ffffff", borderWidth: 2, gapWidth: 2 },
+          itemStyle: { borderColor: c.panel, borderWidth: 2, gapWidth: 2 },
           label: {
-            color: "#ffffff",
+            color: c.panel,
             fontSize: 12,
             fontWeight: 600,
             overflow: "truncate",
@@ -80,7 +83,7 @@ export default function TreemapWidget({
         },
       ],
     };
-  }, [data, colors, format, unit, currency, lang]);
+  }, [data, colors, format, unit, currency, lang, theme]);
 
   return (
     <ChartFrame title={title} isEmpty={data.length === 0}>

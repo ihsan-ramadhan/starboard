@@ -6,6 +6,7 @@ import { EChart } from "./EChart";
 import { formatValueAs } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type HeatmapWidgetProps = {
   readonly title: string;
@@ -18,8 +19,6 @@ export type HeatmapWidgetProps = {
   readonly reloadNonce?: number;
 };
 
-const RAMP = ["#eff6ff", "#bfdbfe", "#60a5fa", "#2563eb", "#1e3a8a"];
-
 export default function HeatmapWidget({
   title,
   data,
@@ -31,6 +30,8 @@ export default function HeatmapWidget({
   reloadNonce,
 }: HeatmapWidgetProps) {
   const lang = useLang();
+  const theme = useResolvedTheme();
+  const c = chartChrome(theme);
 
   const option = useMemo<EChartsOption>(() => {
     const columns = data.map((d) => String(d.groupKey ?? ""));
@@ -53,13 +54,13 @@ export default function HeatmapWidget({
       tooltip: {
         trigger: "item",
         appendToBody: true,
-        backgroundColor: "#ffffff",
-        borderColor: "#e2e8f0",
+        backgroundColor: c.panel,
+        borderColor: c.panelBorder,
         borderWidth: 1,
         padding: [8, 12],
-        textStyle: { color: "#0f172a", fontSize: 12 },
+        textStyle: { color: c.text, fontSize: 12 },
         extraCssText:
-          "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+          `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
         formatter: (p: any) => {
           const [x, y, value] = p.value as [number, number, number];
           return (
@@ -78,10 +79,10 @@ export default function HeatmapWidget({
         type: "category",
         data: columns,
         splitArea: { show: true },
-        axisLine: { lineStyle: { color: "#e2e8f0" } },
+        axisLine: { lineStyle: { color: c.panelBorder } },
         axisTick: { show: false },
         axisLabel: {
-          color: "#64748b",
+          color: c.axis,
           fontSize: 11,
           rotate: 30,
           overflow: "truncate",
@@ -95,7 +96,7 @@ export default function HeatmapWidget({
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
-          color: "#64748b",
+          color: c.axis,
           fontSize: 11,
           overflow: "truncate",
           width: 110,
@@ -110,22 +111,22 @@ export default function HeatmapWidget({
         bottom: 2,
         itemWidth: 10,
         itemHeight: 90,
-        textStyle: { color: "#64748b", fontSize: 11 },
-        inRange: { color: RAMP },
+        textStyle: { color: c.axis, fontSize: 11 },
+        inRange: { color: [...c.heatRamp] },
       },
       series: [
         {
           type: "heatmap",
           data: cells,
           progressive: 0,
-          itemStyle: { borderColor: "#ffffff", borderWidth: 1 },
+          itemStyle: { borderColor: c.panel, borderWidth: 1 },
           emphasis: {
-            itemStyle: { borderColor: "#0f172a", borderWidth: 1 },
+            itemStyle: { borderColor: c.text, borderWidth: 1 },
           },
         },
       ],
     };
-  }, [data, seriesKeys, labelOf, format, unit, currency, lang]);
+  }, [data, seriesKeys, labelOf, format, unit, currency, lang, theme]);
 
   return (
     <ChartFrame title={title} isEmpty={data.length === 0 || seriesKeys.length === 0}>

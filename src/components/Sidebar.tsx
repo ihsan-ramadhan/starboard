@@ -8,7 +8,10 @@ import SettingsModal from "./SettingsModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
 import SettingsIcon from "../assets/icons/settings.svg?react";
+import sigmaLogo from "../assets/sigma-wordmark.webp";
+import sigmaLogoDark from "../assets/sigma-wordmark-dark.webp";
 import { useT } from "../lib/i18n";
+import { useResolvedTheme } from "../lib/theme";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
 import { isAdmin, type SessionUser } from "../types";
@@ -183,6 +186,7 @@ export function Sidebar({
   const admin = isAdmin(user);
   const arranging = admin && editMode;
   const t = useT();
+  const theme = useResolvedTheme();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -412,10 +416,11 @@ export function Sidebar({
     <>
       <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
         <div className="sidebar-head">
-          <div className="brand">
-            <span className="brand-mark">★</span>
-            <span className="sidebar-hideable"> Starboard</span>
-          </div>
+          <img
+            className="brand-logo"
+            src={theme === "dark" ? sigmaLogoDark : sigmaLogo}
+            alt="SIGMA"
+          />
           <button
             type="button"
             className="sidebar-toggle"

@@ -31,6 +31,7 @@ import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
 import { useLang, useT } from "../../lib/i18n";
+import { useResolvedTheme } from "../../lib/theme";
 const BarChartWidget = lazy(() => import("./BarChartWidget"));
 const LineChartWidget = lazy(() => import("./LineChartWidget"));
 const AreaChartWidget = lazy(() => import("./AreaChartWidget"));
@@ -242,6 +243,7 @@ function WidgetRender({
 }: WidgetRenderProps) {
   const t = useT();
   const lang = useLang();
+  const theme = useResolvedTheme();
   const spec = buildQuery(widget, globalFilters);
   const specKey = spec ? JSON.stringify(spec) : "";
   const query = useMemo(() => spec, [specKey, reloadNonce]);
@@ -342,8 +344,8 @@ function WidgetRender({
   );
 
   const seriesColors = useMemo(
-    () => buildColorMap(pivot?.seriesKeys ?? []),
-    [pivot]
+    () => buildColorMap(pivot?.seriesKeys ?? [], theme),
+    [pivot, theme]
   );
 
   const slices = useMemo(
@@ -355,8 +357,8 @@ function WidgetRender({
   );
 
   const sliceColors = useMemo(
-    () => buildColorMap((slices ?? []).map((s) => s.groupKey)),
-    [slices]
+    () => buildColorMap((slices ?? []).map((s) => s.groupKey), theme),
+    [slices, theme]
   );
 
   const lineKeys = useMemo(

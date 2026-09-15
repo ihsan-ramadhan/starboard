@@ -12,6 +12,7 @@ import { EChart } from "./EChart";
 import { formatFullValue } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
+import { useResolvedTheme } from "../../lib/theme";
 
 export type AreaChartWidgetProps = {
   readonly title: string;
@@ -43,12 +44,13 @@ export default function AreaChartWidget({
   onHideNote,
 }: AreaChartWidgetProps) {
   const lang = useLang();
+  const theme = useResolvedTheme();
   const multi = seriesKeys.length > 1;
   const stacked = mode !== "grouped" && multi;
   const isPercent = mode === "stacked100" && multi;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent, { boundaryGap: false });
+    const base = baseEChartOption(multi, currency, isPercent, { boundaryGap: false, theme });
     const categories = data.map((d) => String(d.groupKey ?? ""));
 
     const rowSums = isPercent
@@ -116,7 +118,7 @@ export default function AreaChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, formatValue, mode, unit, currency, multi, stacked, isPercent, lang]);
+  }, [data, seriesKeys, colors, labelOf, formatValue, mode, unit, currency, multi, stacked, isPercent, lang, theme]);
 
   return (
     <ChartFrame

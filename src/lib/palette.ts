@@ -1,3 +1,4 @@
+import type { Resolved } from "./theme";
 export const OTHER_SERIES = "Lainnya";
 
 const SERIES_COLORS = [
@@ -11,22 +12,53 @@ const SERIES_COLORS = [
   "#e34948",
 ] as const;
 
-const OTHER_COLOR = "#94a3b8";
+const SERIES_COLORS_DARK = [
+  "#5c9ded",
+  "#f4915f",
+  "#35c893",
+  "#f0b93a",
+  "#f09cba",
+  "#48b348",
+  "#8b7ae0",
+  "#ef7170",
+] as const;
 
-export function buildColorMap(series: readonly string[]): Record<string, string> {
+const OTHER_COLOR = "#94a3b8";
+const OTHER_COLOR_DARK = "#8d8577";
+
+const SINGLE_LIGHT = "#2563eb";
+const SINGLE_DARK = "#d9a441";
+
+export function singleSeriesColor(theme: Resolved): string {
+  return theme === "dark" ? SINGLE_DARK : SINGLE_LIGHT;
+}
+
+export function buildColorMap(
+  series: readonly string[],
+  theme: Resolved = "light"
+): Record<string, string> {
+  const dark = theme === "dark";
   const stable = series
     .filter((name) => name !== OTHER_SERIES)
     .slice()
     .sort((a, b) => a.localeCompare(b, "id-ID"));
 
-  const map: Record<string, string> = { [OTHER_SERIES]: OTHER_COLOR };
+  if (stable.length === 1) {
+    return {
+      [OTHER_SERIES]: dark ? OTHER_COLOR_DARK : OTHER_COLOR,
+      [stable[0]]: singleSeriesColor(theme),
+    };
+  }
+
+  const palette = dark ? SERIES_COLORS_DARK : SERIES_COLORS;
+  const map: Record<string, string> = {
+    [OTHER_SERIES]: dark ? OTHER_COLOR_DARK : OTHER_COLOR,
+  };
   stable.forEach((name, index) => {
-    map[name] = SERIES_COLORS[index] ?? OTHER_COLOR;
+    map[name] = palette[index] ?? (dark ? OTHER_COLOR_DARK : OTHER_COLOR);
   });
   return map;
 }
-
-export const SINGLE_SERIES_COLOR = SERIES_COLORS[0];
 
 export const AXIS_COLOR = "#64748b";
 export const GRID_COLOR = "#f1f5f9";

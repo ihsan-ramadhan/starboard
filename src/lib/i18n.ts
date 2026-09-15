@@ -368,6 +368,11 @@ const id = {
   "builder.sortBy": "Urutan Kategori",
   "sortBy.value": "Nilai terbesar dulu",
   "sortBy.key": "Ikut urutan kategori",
+  "settings.theme": "Tampilan",
+  "settings.themeHint": "Ikut sistem berarti mengikuti setelan terang/gelap di Windows.",
+  "theme.system": "Ikut sistem",
+  "theme.light": "Terang",
+  "theme.dark": "Gelap",
 } as const;
 
 export type TKey = keyof typeof id;
@@ -731,6 +736,11 @@ const en: Record<TKey, string> = {
   "builder.sortBy": "Category order",
   "sortBy.value": "Largest value first",
   "sortBy.key": "Follow category order",
+  "settings.theme": "Appearance",
+  "settings.themeHint": "Follow system uses your Windows light/dark setting.",
+  "theme.system": "Follow system",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
 };
 
 const DICT: Record<Lang, Record<TKey, string>> = { id, en };
@@ -739,9 +749,7 @@ function read(): Lang {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === "id" || raw === "en") return raw;
-  } catch {
-    // storage blocked; fall through to the default
-  }
+  } catch {}
   return "id";
 }
 
@@ -758,9 +766,7 @@ export function setLang(next: Lang) {
   current = next;
   try {
     localStorage.setItem(STORAGE_KEY, next);
-  } catch {
-    // storage blocked; the choice still applies for this session
-  }
+  } catch {}
   document.documentElement.lang = next;
   for (const notify of listeners) notify();
 }

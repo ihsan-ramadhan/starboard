@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
 import { formatAxisValue } from "../../lib/format";
+import { chartChrome, type Resolved } from "../../lib/theme";
 import type { EChartsOption } from "echarts";
 import { useT } from "../../lib/i18n";
 
@@ -68,8 +69,9 @@ export function baseEChartOption(
   hasLegend: boolean,
   currency?: CurrencyCode,
   isPercent = false,
-  opts: { boundaryGap?: boolean } = {}
+  opts: { boundaryGap?: boolean; theme?: Resolved } = {}
 ): EChartsOption {
+  const c = chartChrome(opts.theme ?? "light");
   return {
     animation: true,
     animationDuration: 800,
@@ -86,24 +88,24 @@ export function baseEChartOption(
     tooltip: {
       trigger: "axis",
       appendToBody: true,
-      backgroundColor: "#ffffff",
-      borderColor: "#e2e8f0",
+      backgroundColor: c.panel,
+      borderColor: c.panelBorder,
       borderWidth: 1,
       padding: [8, 12],
-      textStyle: { color: "#0f172a", fontSize: 12 },
-      extraCssText: "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+      textStyle: { color: c.text, fontSize: 12 },
+      extraCssText: `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
       axisPointer: {
         type: "shadow",
-        shadowStyle: { color: "rgba(148, 163, 184, 0.12)" },
+        shadowStyle: { color: c.splitArea },
       },
     },
     xAxis: {
       type: "category",
       boundaryGap: opts.boundaryGap ?? true,
-      axisLine: { lineStyle: { color: "#e2e8f0" } },
+      axisLine: { lineStyle: { color: c.axisLine } },
       axisTick: { show: false },
       axisLabel: {
-        color: "#64748b",
+        color: c.axis,
         fontSize: 11,
         rotate: 30,
         interval: "auto",
@@ -116,10 +118,10 @@ export function baseEChartOption(
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: {
-        lineStyle: { color: "#f1f5f9", type: "dashed" },
+        lineStyle: { color: c.grid, type: "dashed" },
       },
       axisLabel: {
-        color: "#64748b",
+        color: c.axis,
         fontSize: 11,
         formatter: (val: number) =>
           isPercent ? `${Math.round(val * 100)}%` : formatAxisValue(val, currency),
@@ -131,7 +133,7 @@ export function baseEChartOption(
           icon: "circle",
           itemWidth: 8,
           itemHeight: 8,
-          textStyle: { color: "#475569", fontSize: 11 },
+          textStyle: { color: c.axis, fontSize: 11 },
         }
       : undefined,
   };

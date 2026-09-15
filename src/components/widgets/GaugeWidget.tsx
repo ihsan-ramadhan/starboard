@@ -5,6 +5,7 @@ import { EChart } from "./EChart";
 import { compactValueAs } from "../../lib/format";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type GaugeWidgetProps = {
   readonly title: string;
@@ -17,10 +18,6 @@ export type GaugeWidgetProps = {
   readonly reloadNonce?: number;
 };
 
-const GOOD = "#15803d";
-const BAD = "#b91c1c";
-const TRACK = "#e2e8f0";
-
 export default function GaugeWidget({
   title,
   value,
@@ -32,6 +29,8 @@ export default function GaugeWidget({
   reloadNonce,
 }: GaugeWidgetProps) {
   const lang = useLang();
+  const theme = useResolvedTheme();
+  const c = chartChrome(theme);
 
   const option = useMemo<EChartsOption>(() => {
     const ceiling = max && max > 0 ? max : Math.max(value ?? 0, 1);
@@ -56,11 +55,11 @@ export default function GaugeWidget({
             show: true,
             width: 14,
             roundCap: true,
-            itemStyle: { color: good ? GOOD : BAD },
+            itemStyle: { color: good ? c.good : c.bad },
           },
           axisLine: {
             roundCap: true,
-            lineStyle: { width: 14, color: [[1, TRACK]] },
+            lineStyle: { width: 14, color: [[1, c.track]] },
           },
           pointer: { show: false },
           axisTick: { show: false },
@@ -72,14 +71,14 @@ export default function GaugeWidget({
             offsetCenter: [0, "-2%"],
             fontSize: 26,
             fontWeight: 700,
-            color: "#0f172a",
+            color: c.text,
             formatter: () => compactValueAs(current, format, currency, unit),
           },
           data: [{ value: Math.min(current, ceiling) }],
         },
       ],
     };
-  }, [value, max, goodDirection, format, unit, currency, lang]);
+  }, [value, max, goodDirection, format, unit, currency, lang, theme]);
 
   return (
     <ChartFrame title={title} isEmpty={value === null}>
