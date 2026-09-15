@@ -16,6 +16,7 @@ const id = {
   "settings.languageHint":
     "Mengubah teks antarmuka. Nama dataset, label kolom, dan angka tidak ikut berubah.",
   "settings.close": "Tutup",
+  "login.artAlt": "SIGMA — Stargate Integrated Dashboard & Management Analytics",
   "settings.widgets": "Widget",
   "settings.dataLabels": "Tampilkan nilai di chart",
   "settings.dataLabelsHint": "Angka ditulis langsung di batang, titik, dan potongan chart, jadi tidak perlu diarahkan kursor dulu. Berlaku untuk semua widget di perangkat ini.",
@@ -143,7 +144,6 @@ const id = {
   "sidebar.deleteTitle": "Hapus Dataset",
   "login.required": "Username dan password wajib diisi.",
   "login.invalid": "Akun atau kata sandi tidak valid.",
-  "login.subtitle": "Masuk dengan akun departemen",
   "login.identifier": "Username atau Email",
   "login.identifierPlaceholder": "Nama pengguna atau email",
   "login.password": "Password",
@@ -401,6 +401,7 @@ const en: Record<TKey, string> = {
   "settings.languageHint":
     "Changes interface text. Dataset names, column labels, and numbers stay as they are.",
   "settings.close": "Close",
+  "login.artAlt": "SIGMA — Stargate Integrated Dashboard & Management Analytics",
   "settings.widgets": "Widgets",
   "settings.dataLabels": "Show values on charts",
   "settings.dataLabelsHint": "Numbers are drawn on the bars, points, and slices themselves, so you do not have to hover first. Applies to every widget on this device.",
@@ -528,7 +529,6 @@ const en: Record<TKey, string> = {
   "sidebar.deleteTitle": "Delete dataset",
   "login.required": "Username and password are required.",
   "login.invalid": "Invalid account or password.",
-  "login.subtitle": "Sign in with your department account",
   "login.identifier": "Username or email",
   "login.identifierPlaceholder": "Username or email address",
   "login.password": "Password",

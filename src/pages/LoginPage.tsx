@@ -5,6 +5,7 @@ import EyeOffIcon from "../assets/icons/eye-off.svg?react";
 import AlertCircleIcon from "../assets/icons/alert-circle.svg?react";
 import type { SessionUser } from "../types";
 import { useT } from "../lib/i18n";
+import loginBackdrop from "../assets/login-sigma.webp";
 
 export type LoginPageProps = {
   readonly onLoginSuccess: (u: SessionUser) => void;
@@ -53,14 +54,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <div className="login-screen">
-      <div className="login-card">
-        <div className="login-header">
-          <div className="brand brand-lg">
-            <span className="brand-mark">★</span> Starboard
-          </div>
-          <p className="login-sub">{t("login.subtitle")}</p>
-        </div>
+      <img className="login-wash" src={loginBackdrop} alt="" aria-hidden="true" />
+      <img className="login-art" src={loginBackdrop} alt={t("login.artAlt")} />
+      <div className="login-scrim" aria-hidden="true" />
 
+      <div className="login-card">
         <form onSubmit={handleSubmit}>
           <label>
             <span>{t("login.identifier")}</span>
