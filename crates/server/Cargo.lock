@@ -1187,6 +1187,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "sigma-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bcrypt",
+ "calamine",
+ "chrono",
+ "deadpool-postgres",
+ "dotenvy",
+ "lazy_static",
+ "regex",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+ "tower-http",
+ "uuid",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1228,27 +1249,6 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys",
-]
-
-[[package]]
-name = "starboard-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "bcrypt",
- "calamine",
- "chrono",
- "deadpool-postgres",
- "dotenvy",
- "lazy_static",
- "regex",
- "rust_decimal",
- "serde",
- "serde_json",
- "tokio",
- "tokio-postgres",
- "tower-http",
- "uuid",
 ]
 
 [[package]]

@@ -31,7 +31,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     try {
       const res = await api.login(identifier.trim(), password);
       setAuthToken(res.token);
-      localStorage.setItem("starboard_user", JSON.stringify(res.user));
+      localStorage.setItem("sigma_user", JSON.stringify(res.user));
       onLoginSuccess(res.user);
     } catch (err: any) {
       const raw = err?.message || err?.toString() || "";

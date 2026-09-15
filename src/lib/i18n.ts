@@ -7,7 +7,7 @@ export const LANGUAGES: readonly { code: Lang; name: string }[] = [
   { code: "en", name: "English" },
 ];
 
-const STORAGE_KEY = "starboard_lang";
+const STORAGE_KEY = "sigma_lang";
 
 const id = {
   "settings.title": "Pengaturan",
@@ -139,7 +139,7 @@ const id = {
   "sidebar.editMode": "Mode Edit",
   "sidebar.logout": "Logout",
   "sidebar.logoutTitle": "Konfirmasi Logout",
-  "sidebar.logoutMessage": "Apakah Anda yakin ingin keluar dari akun Starboard?",
+  "sidebar.logoutMessage": "Apakah Anda yakin ingin keluar dari akun SIGMA?",
   "common.cancel": "Batal",
   "sidebar.deleteTitle": "Hapus Dataset",
   "login.required": "Username dan password wajib diisi.",
@@ -209,7 +209,7 @@ const id = {
   "date.lastSeen": "Terakhir {date}",
   "chart.hideNote": "Sembunyikan",
   "api.noBaseUrl": "VITE_API_BASE belum diset di file .env",
-  "api.unreachable": "Tidak dapat terhubung ke server. Pastikan aplikasi Starboard Server berjalan.",
+  "api.unreachable": "Tidak dapat terhubung ke server. Pastikan aplikasi SIGMA Server berjalan.",
   "import.analyzeFailed": "Gagal menganalisis file Excel.",
   "import.onlyExcel": "Hanya file Excel (.xlsx, .xls) yang didukung.",
   "import.fileBusy": "File sedang ditulis aplikasi lain. Coba lagi sebentar.",
@@ -219,7 +219,7 @@ const id = {
   "import.failed": "Gagal mengimpor file.",
   "import.reading": "Membaca file Excel...",
   "import.dropHint": "Klik atau seret file Excel ke sini",
-  "import.sourceHint": "Pilih dari disk atau folder share departemen. Starboard akan mengikuti perubahan file itu.",
+  "import.sourceHint": "Pilih dari disk atau folder share departemen. SIGMA akan mengikuti perubahan file itu.",
   "import.formats": "Format yang didukung: .xlsx, .xls",
   "import.menuName": "Nama Menu Tab:",
   "import.menuPlaceholder": "Contoh: Daywork 2026",
@@ -524,7 +524,7 @@ const en: Record<TKey, string> = {
   "sidebar.editMode": "Edit mode",
   "sidebar.logout": "Log out",
   "sidebar.logoutTitle": "Confirm log out",
-  "sidebar.logoutMessage": "Are you sure you want to log out of Starboard?",
+  "sidebar.logoutMessage": "Are you sure you want to log out of SIGMA?",
   "common.cancel": "Cancel",
   "sidebar.deleteTitle": "Delete dataset",
   "login.required": "Username and password are required.",
@@ -594,7 +594,7 @@ const en: Record<TKey, string> = {
   "date.lastSeen": "Last on {date}",
   "chart.hideNote": "Hide",
   "api.noBaseUrl": "VITE_API_BASE is not set in the .env file",
-  "api.unreachable": "Cannot reach the server. Make sure Starboard Server is running.",
+  "api.unreachable": "Cannot reach the server. Make sure SIGMA Server is running.",
   "import.analyzeFailed": "Could not analyse the Excel file.",
   "import.onlyExcel": "Only Excel files (.xlsx, .xls) are supported.",
   "import.fileBusy": "Another application is writing to the file. Try again shortly.",
@@ -604,7 +604,7 @@ const en: Record<TKey, string> = {
   "import.failed": "Could not import the file.",
   "import.reading": "Reading the Excel file…",
   "import.dropHint": "Click or drag an Excel file here",
-  "import.sourceHint": "Pick it from disk or a department share. Starboard will follow changes to that file.",
+  "import.sourceHint": "Pick it from disk or a department share. SIGMA will follow changes to that file.",
   "import.formats": "Supported formats: .xlsx, .xls",
   "import.menuName": "Menu tab name:",
   "import.menuPlaceholder": "Example: Daywork 2026",

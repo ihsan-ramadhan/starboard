@@ -346,7 +346,7 @@ async fn main() {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!(">>> Starboard Backend running on http://{}", addr);
+    println!(">>> SIGMA Backend running on http://{}", addr);
 
     match tokio::net::TcpListener::bind(addr).await {
         Ok(listener) => {
@@ -507,7 +507,7 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
 async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "ok",
-        service: "starboard-backend",
+        service: "sigma-backend",
     })
 }
 

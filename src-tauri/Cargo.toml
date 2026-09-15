@@ -1,12 +1,12 @@
 [package]
-name = "starboard"
+name = "sigma"
 version = "0.1.0"
-description = "Starboard Desktop Dashboard"
+description = "SIGMA — Stargate Integrated Dashboard & Management Analytics"
 authors = ["PT Stargate Pacific Resources"]
 edition = "2021"
 
 [lib]
-name = "starboard_lib"
+name = "sigma_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

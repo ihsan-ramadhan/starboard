@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 
 const KEYS = {
-  scaleWarningHidden: "starboard_hide_scale_warning",
-  dataLabelsShown: "starboard_show_data_labels",
+  scaleWarningHidden: "sigma_hide_scale_warning",
+  dataLabelsShown: "sigma_show_data_labels",
 } as const;
 
 type PrefName = keyof typeof KEYS;

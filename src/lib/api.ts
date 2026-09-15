@@ -13,7 +13,7 @@ import type { DetectedSheet } from "../components/ImportWizard";
 const API_BASE = import.meta.env.VITE_API_BASE;
 let authToken: string | null = null;
 
-const AUTH_STORAGE_KEY = "starboard_token";
+const AUTH_STORAGE_KEY = "sigma_token";
 
 export class ApiError extends Error {
   readonly status: number;

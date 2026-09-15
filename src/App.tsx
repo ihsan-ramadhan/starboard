@@ -58,7 +58,7 @@ type AppContextType = {
 
 const REGISTRY_POLL_MS = 20_000;
 
-const WIDGET_CACHE_KEY = "starboard_widget_layout";
+const WIDGET_CACHE_KEY = "sigma_widget_layout";
 
 function readWidgetCache(): Record<string, WidgetDefinition[]> {
   try {
@@ -209,18 +209,18 @@ function DatasetRoute() {
 export default function App() {
   const t = useT();
   const [user, setUser] = useState<SessionUser | null>(() => {
-    const saved = localStorage.getItem("starboard_user");
+    const saved = localStorage.getItem("sigma_user");
     if (!saved) return null;
     try {
       const parsed = JSON.parse(saved) as SessionUser;
 
       if (!parsed?.accessLevel) {
-        localStorage.removeItem("starboard_user");
+        localStorage.removeItem("sigma_user");
         return null;
       }
       return parsed;
     } catch {
-      localStorage.removeItem("starboard_user");
+      localStorage.removeItem("sigma_user");
       return null;
     }
   });
@@ -358,7 +358,7 @@ export default function App() {
     setDatasetCache({});
     setImportState(initialImportWizardState);
     setWidgetCache({});
-    localStorage.removeItem("starboard_user");
+    localStorage.removeItem("sigma_user");
     localStorage.removeItem(WIDGET_CACHE_KEY);
   }
 

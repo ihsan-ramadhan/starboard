@@ -26,7 +26,7 @@ type DatasetTab = {
   iconVersion: number | null;
 };
 
-const COLLAPSE_KEY = "starboard_sidebar_collapsed";
+const COLLAPSE_KEY = "sigma_sidebar_collapsed";
 
 const LONG_PRESS_MS = 150;
 const MOVE_TOLERANCE = 6;
@@ -417,7 +417,7 @@ export function Sidebar({
       setIsLoggingOut(false);
       setAuthToken(null);
       setShowLogoutModal(false);
-      localStorage.removeItem("starboard_user");
+      localStorage.removeItem("sigma_user");
       if (onLogout) onLogout();
       navigate("/login");
     }

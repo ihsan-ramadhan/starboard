@@ -131,11 +131,14 @@ export function primeDatasetIcon(key: string, version: number, dataUrl: string) 
   cache.set(`${key}:${version}`, Promise.resolve(dataUrl));
 }
 
-export function useDatasetIcon(key: string, version: number | null): string | null {
+export function useDatasetIcon(
+  key: string,
+  version: number | null | undefined
+): string | null {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (version === null) {
+    if (version == null) {
       setUrl(null);
       return;
     }

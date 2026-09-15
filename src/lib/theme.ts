@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 export type ThemeChoice = "system" | "light" | "dark";
 export type Resolved = "light" | "dark";
 
-const STORAGE_KEY = "starboard_theme";
+const STORAGE_KEY = "sigma_theme";
 
 function read(): ThemeChoice {
   try {

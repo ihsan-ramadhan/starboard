@@ -1,10 +1,13 @@
-# Starboard
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="src/assets/sigma-wordmark-dark.webp">
+  <img src="src/assets/sigma-wordmark.webp" alt="SIGMA" width="260">
+</picture>
 
-Desktop dashboard for operational reporting at PT Stargate Pacific Resources, a
-nickel mining site. Each department keeps its figures in master Excel workbooks;
-Starboard turns those into dashboards the team arranges themselves. Import a
-workbook, pick the sheets and columns you want, drag the charts where you want
-them. Nobody writes SQL.
+Stargate Integrated Dashboard & Management Analytics — the operational reporting
+desktop app for PT Stargate Pacific Resources, a nickel mining site. Each
+department keeps its figures in master Excel workbooks; SIGMA turns those into
+dashboards the team arranges themselves. Import a workbook, pick the sheets and
+columns you want, drag the charts where you want them. Nobody writes SQL.
 
 Nothing in the app is tied to one department. Departments are rows in a
 `departments` table, and every dataset, dashboard, and login is scoped by
@@ -35,16 +38,30 @@ npm run tauri build
 
 - **Import.** Bring in an `.xlsx`. The server finds the header row, infers a
   type for every column, and creates one Postgres table per sheet you selected.
-- **Stay in sync.** Point a dataset at a file on disk and Starboard re-imports
-  it whenever the file changes, checking every 20 seconds. An import that parses
-  to zero rows is refused rather than replacing good data with nothing.
-- **Dashboard.** Build bar, line, area, combo, and pie charts, KPI cards with a
-  plan-versus-actual meter, date countdown cards, and paginated tables — then
-  drag and resize them on a grid. Layout is saved per dataset.
-- **Slice it.** Filter any widget by column, operator, and value. Group by one
-  column and split into series by another.
+  Columns worth indexing get an index after the bulk insert.
+- **Stay in sync.** Point a dataset at a file on disk and SIGMA re-imports it
+  whenever the file changes, checking every 20 seconds. An import that parses to
+  zero rows is refused rather than replacing good data with nothing.
+- **Dashboard.** Thirteen widget types: KPI card with a plan-versus-actual
+  meter, gauge, vertical and horizontal bar, line, area, combo (bars and lines
+  on one grid), pie, treemap, heatmap, scatter, paginated table, and date
+  countdown. Drag and resize them on a grid; layout is saved per dataset.
+- **Format the numbers.** Per field, choose whole, decimal, percent,
+  scientific, or currency — and for currency, Rupiah or US dollar. Sort a chart
+  by value or by category. Say which direction is good so a KPI knows whether
+  being over target is a win.
+- **Slice it.** Filter any widget by column, operator, and value. Date and
+  numeric slicers offer both a range and a pick-from-values list. Values can
+  carry custom display names — `1` shows as `Januari` without touching the
+  database or the workbook.
+- **Make it yours.** Give each sidebar menu its own image, cropped to taste, or
+  leave it on the initials it derives from the name.
+- **Light and dark.** Follows the system theme by default; Settings has an
+  explicit override, plus language (Indonesian or English) and two widget
+  preferences — always-on data labels, and hiding the shared-axis scale warning.
 - **Departments.** Your login decides what you see. Each department's datasets
-  and dashboards stay separate.
+  and dashboards stay separate. Sessions last seven days and renew themselves
+  while you keep using the app.
 - **Desktop.** The whole thing packages as a Windows `.exe`.
 
 ## Deploying the backend
@@ -53,9 +70,9 @@ npm run tauri build
 ./deploy.sh
 ```
 
-Cross-compiles for Windows, stops the `StarboardBackend` service over SSH,
-copies the binary, starts it again. Host, path, and service name are hardcoded
-in the script.
+Cross-compiles for Windows, stops the backend service over SSH, copies the
+binary, starts it again. Host, path, and service name are hardcoded in the
+script.
 
 The server re-reads watched workbooks itself every 20 seconds, so a laptop no
 longer has to be running for a dataset to stay current. Two optional settings
