@@ -20,7 +20,7 @@ import {
   pickExcelPath,
   readStableSource,
 } from "../lib/desktop";
-import { useMachineName, type SyncStatus } from "../lib/excelSync";
+import { type SyncStatus } from "../lib/excelSync";
 import RefreshIcon from "../assets/icons/refresh.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
@@ -76,6 +76,38 @@ const HAS_CANVAS = new Set<WidgetType>([
   "gauge",
 ]);
 const DESCRIPTION_MAX = 160;
+const GROUP_PADDING = 12;
+const GROUP_PADDING_TOP = 6;
+const GROUP_HEADER = 30;
+const ROW_HEIGHT = 60;
+const GRID_MARGIN = 16;
+
+function memberOf(
+  widgets: readonly WidgetDefinition[],
+  groupId: string
+): WidgetDefinition[] {
+  return widgets.filter((w) => (w.groupId ?? "") === groupId);
+}
+
+function colWidth(containerWidth: number): number {
+  return (containerWidth - GRID_MARGIN * (GRID_COLS - 1)) / GRID_COLS;
+}
+
+function groupRowsNeeded(members: readonly WidgetDefinition[]): number {
+  if (members.length === 0) return 3;
+  const rows = members.reduce((bottomRow, w) => {
+    const l = w.layout ?? defaultLayoutFor(w.type);
+    return Math.max(bottomRow, l.y + l.h);
+  }, 0);
+  const inner = rows * ROW_HEIGHT + (rows - 1) * GRID_MARGIN;
+  const needed = GROUP_PADDING_TOP + GROUP_HEADER + inner + GROUP_PADDING;
+  return Math.max(2, Math.ceil((needed + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN)));
+}
+
+function groupInnerWidth(containerWidth: number, cols: number): number {
+  const width = cols * colWidth(containerWidth) + (cols - 1) * GRID_MARGIN;
+  return Math.max(width - GROUP_PADDING * 2, colWidth(containerWidth));
+}
 
 function formatSyncTime(iso: string | null): string | null {
   if (!iso) return null;
@@ -134,6 +166,8 @@ function defaultLayoutFor(type: WidgetType): WidgetLayout {
       return { ...base, w: 12, h: 7 };
     case "section":
       return { ...base, w: 12, h: 1 };
+    case "group":
+      return { ...base, w: 12, h: 6 };
     case "line":
     case "area":
     case "combo":
@@ -182,7 +216,6 @@ export default function DatasetPage() {
     setFullscreen,
   } = useApp();
   const admin = isAdmin(user);
-  const machine = useMachineName();
   const { key } = useParams<{ key: string }>();
 
 
@@ -193,6 +226,11 @@ export default function DatasetPage() {
   const [loading, setLoading] = useState(!detail);
   const [widgetToDelete, setWidgetToDelete] = useState<WidgetDefinition | null>(null);
   const [focusWidget, setFocusWidget] = useState<WidgetDefinition | null>(null);
+  const [hoverZone, setHoverZone] = useState<string | null>(null);
+  const draggingRef = useRef<string | null>(null);
+  const zonesRef = useRef<
+    { id: string; left: number; top: number; right: number; bottom: number; area: number }[]
+  >([]);
   const globalDataLabels = useGlobalDataLabels();
   const labelOverrides = useDataLabelsOverrides();
   const [widgets, setWidgets] = useState<WidgetDefinition[]>(
@@ -341,6 +379,7 @@ export default function DatasetPage() {
       if (!target) return;
       if (
         target.closest(".widget-card") ||
+        target.closest(".widget-group") ||
         target.closest(".builder-sidebar") ||
         target.closest("dialog") ||
         target.closest(".ctx-menu")
@@ -549,11 +588,23 @@ export default function DatasetPage() {
   function handleSaveWidget(widget: WidgetDefinition) {
     setWidgets((prev) => {
       const existing = prev.find((w) => w.id === widget.id);
-      const size = defaultLayoutFor(widget.type);
+      const moved =
+        existing !== undefined && (existing.groupId ?? "") !== (widget.groupId ?? "");
+      const kept = moved ? undefined : widget.layout ?? existing?.layout;
+      const size =
+        kept ?? existing?.layout ?? widget.layout ?? defaultLayoutFor(widget.type);
       const layout =
-        widget.layout ??
-        existing?.layout ??
-        { ...size, ...findFreeSlot(prev.map(toLayoutItem), size.w, size.h) };
+        kept ??
+        {
+          ...size,
+          ...findFreeSlot(
+            memberOf(prev, widget.groupId ?? "")
+              .filter((w) => w.id !== widget.id)
+              .map(toLayoutItem),
+            size.w,
+            size.h
+          ),
+        };
       const withLayout = { ...widget, layout };
       const next = existing
         ? prev.map((w) => (w.id === widget.id ? withLayout : w))
@@ -657,7 +708,11 @@ export default function DatasetPage() {
       title: t("ds.copySuffix", { title: widget.title }),
       layout: {
         ...size,
-        ...findFreeSlot(widgets.map(toLayoutItem), size.w, size.h),
+        ...findFreeSlot(
+          memberOf(widgets, widget.groupId ?? "").map(toLayoutItem),
+          size.w,
+          size.h
+        ),
       },
     };
     const next = [...widgets, copy];
@@ -700,7 +755,274 @@ export default function DatasetPage() {
     setSelectedWidgetId(widget.id);
   }
 
-  const gridLayout: LayoutItem[] = widgets.map(toLayoutItem);
+
+  const groupWidgets = widgets.filter((w) => w.type === "group");
+
+  function outerLayoutItem(w: WidgetDefinition): LayoutItem {
+    const item = toLayoutItem(w);
+    if (w.type !== "group") return item;
+    const needed = groupRowsNeeded(memberOf(widgets, w.id));
+    return { ...item, h: Math.max(item.h, needed), minH: needed };
+  }
+  const outerItems = widgets.filter(
+    (w) => w.type === "group" || !w.groupId || !groupWidgets.some((g) => g.id === w.groupId)
+  );
+
+  function moveWidgetToGroup(id: string, groupId: string) {
+    const widget = widgets.find((w) => w.id === id);
+    if (!widget || widget.type === "group") return;
+    if ((widget.groupId ?? "") === groupId) return;
+    const size = widget.layout ?? defaultLayoutFor(widget.type);
+    const peers = memberOf(widgets, groupId).filter((w) => w.id !== id);
+    const moved: WidgetDefinition = {
+      ...widget,
+      groupId: groupId || undefined,
+      layout: { ...size, ...findFreeSlot(peers.map(toLayoutItem), size.w, size.h) },
+    };
+    const next = widgets.map((w) => (w.id === id ? moved : w));
+    setWidgets(next);
+    persistWidgets(next);
+    const target = groupWidgets.find((g) => g.id === groupId);
+    toast.success(
+      target
+        ? t("ds.movedToGroup", { name: target.title })
+        : t("ds.movedOutOfGroup")
+    );
+  }
+
+  function snapshotDropZones() {
+    zonesRef.current = [
+      ...document.querySelectorAll<HTMLElement>("[data-group-drop]"),
+    ].map((box) => {
+      const r = box.getBoundingClientRect();
+      return {
+        id: box.dataset.groupDrop ?? "",
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+        area: r.width * r.height,
+      };
+    });
+  }
+
+  function zoneAtPoint(x: number, y: number): string | null {
+    let best: { id: string; area: number } | null = null;
+    for (const z of zonesRef.current) {
+      if (x < z.left || x > z.right || y < z.top || y > z.bottom) continue;
+      if (!best || z.area < best.area) best = { id: z.id, area: z.area };
+    }
+    return best?.id ?? null;
+  }
+
+  function onWidgetDragStart(widgetId: string) {
+    const widget = widgets.find((w) => w.id === widgetId);
+    if (!widget || widget.type === "group") return;
+    snapshotDropZones();
+    draggingRef.current = widgetId;
+  }
+
+  function onWidgetDrag(event: Event) {
+    if (!draggingRef.current) return;
+    const point = event as MouseEvent;
+    if (typeof point.clientX !== "number") return;
+    const zone = zoneAtPoint(point.clientX, point.clientY);
+    setHoverZone(zone && zone !== "" ? zone : null);
+  }
+
+  function onWidgetDragStop(widgetId: string, event: Event) {
+    const wasDragging = draggingRef.current === widgetId;
+    draggingRef.current = null;
+    setHoverZone(null);
+    if (!wasDragging) return;
+    const point = event as MouseEvent;
+    if (typeof point.clientX !== "number") return;
+    const target = zoneAtPoint(point.clientX, point.clientY);
+    if (target === null) return;
+    moveWidgetToGroup(widgetId, target);
+  }
+
+  function renderWidget(widget: WidgetDefinition) {
+                const isSelected = editMode && selectedWidgetId === widget.id;
+                const actions = editMode ? (
+                  <div className="widget-toolbar">
+                    <button
+                            type="button"
+                            className="icon-btn keyboard-only"
+                            aria-label={t("widget.editAria", { title: widget.title })}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditWidget(widget);
+                            }}
+                          >
+                            <PencilIcon width={15} height={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={t("widget.duplicateAria", { title: widget.title })}
+                            title={t("ds.duplicateWidget")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicateWidget(widget);
+                            }}
+                          >
+                            <CopyIcon width={15} height={15} />
+                          </button>
+                    <button
+                      type="button"
+                      className="icon-btn danger"
+                      aria-label={t("widget.deleteAria", { title: widget.title })}
+                      title={t("ds.deleteWidget")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openWidgetDeleteConfirm(widget);
+                      }}
+                    >
+                      <TrashIcon width={15} height={15} />
+                    </button>
+                  </div>
+                ) : widget.type === "group" || widget.type === "section" ? null : (
+                  <div className="widget-toolbar">
+                    <WidgetMenu
+                      label={widget.title}
+                      dataLabels={
+                        labelOverrides[widget.id] ?? globalDataLabels
+                      }
+                      onFocus={() => setFocusWidget(widget)}
+                      onCopyData={() => copyWidgetData(widget)}
+                      canCopyImage={HAS_CANVAS.has(widget.type)}
+                      onCopyImage={() => copyWidgetImage(widget)}
+                      onToggleDataLabels={() => toggleDataLabels(widget.id)}
+                    />
+                  </div>
+                );
+
+                if (widget.type === "section") {
+                  return (
+                    <div key={widget.id} data-widget-id={widget.id}>
+                      <div
+                        className={`widget-card is-bare${isSelected ? " is-selected" : ""}`}
+                        onPointerDown={() => {
+                          if (editMode) openEditWidget(widget);
+                        }}
+                      >
+                        {actions}
+                        <h3 className="section-heading">{widget.title}</h3>
+                        {widget.description && (
+                          <p className="widget-subtitle" title={widget.description}>
+                            {widget.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (widget.type === "group") {
+                  const members = memberOf(widgets, widget.id);
+                  const size = widget.layout ?? defaultLayoutFor(widget.type);
+                  const hugs = size.h <= groupRowsNeeded(members);
+                  return (
+                    <div key={widget.id} data-widget-id={widget.id}>
+                      <div
+                        className={`widget-group${hugs ? " is-hugging" : ""}${
+                          isSelected ? " is-selected" : ""
+                        }${hoverZone === widget.id ? " is-drop-target" : ""}`}
+                        data-group-drop={widget.id}
+                        onPointerDown={(e) => {
+                          if (!editMode) return;
+                          if ((e.target as HTMLElement).closest(".widget-card")) return;
+                          openEditWidget(widget);
+                        }}
+                      >
+                        <div className="widget-group-header">
+                          <h3 className="widget-group-title">{widget.title}</h3>
+                          {editMode && (
+                            <div className="widget-group-actions">
+                              <button
+                                type="button"
+                                className="icon-btn danger"
+                                aria-label={t("widget.deleteAria", { title: widget.title })}
+                                title={t("ds.deleteWidget")}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openWidgetDeleteConfirm(widget);
+                                }}
+                              >
+                                <TrashIcon width={15} height={15} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="widget-group-body">
+                          {members.length === 0 ? (
+                            <p className="widget-group-empty">
+                              {t("ds.groupEmpty")}
+                            </p>
+                          ) : (
+                            <GridLayout
+                              className={`charts-grid${editMode ? " edit-mode" : ""}`}
+                              width={groupInnerWidth(containerWidth, size.w)}
+                              layout={members.map(toLayoutItem)}
+                              gridConfig={{
+                                cols: GRID_COLS,
+                                rowHeight: ROW_HEIGHT,
+                                margin: [GRID_MARGIN, GRID_MARGIN],
+                                containerPadding: [0, 0],
+                              }}
+                              dragConfig={{
+                                enabled: editMode,
+                                bounded: false,
+                                handle: ".widget-card",
+                                cancel: "button, a, input, select, canvas",
+                              }}
+                              resizeConfig={{ enabled: editMode, handles: ["s", "e", "se"] }}
+                              onLayoutChange={handleLayoutChange}
+                              onDragStart={(_l, _o, item) => {
+                                if (item) onWidgetDragStart(item.i);
+                              }}
+                              onDrag={(_l, _o, _i, _p, event) => onWidgetDrag(event)}
+                              onDragStop={(_l, _o, item, _p, event) => {
+                                if (item) onWidgetDragStop(item.i, event);
+                              }}
+                            >
+                              {members.map(renderWidget)}
+                            </GridLayout>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={widget.id} data-widget-id={widget.id}>
+                    <WidgetCard
+                      selected={isSelected}
+                      onPointerDown={() => {
+                        if (editMode) {
+                          openEditWidget(widget);
+                        }
+                      }}
+                      skeleton={<WidgetSkeleton widget={widget} />}
+                    >
+                      {actions}
+                      <WidgetDescriptionProvider value={widget.description}>
+                        <DataLabelsProvider value={labelOverrides[widget.id]}>
+                        <WidgetRender
+                          widget={widget}
+                          columns={columns}
+                          reloadNonce={reloadNonce}
+                          globalFilters={globalFilters}
+                          valueLabels={valueLabels}
+                        />
+                        </DataLabelsProvider>
+                      </WidgetDescriptionProvider>
+                    </WidgetCard>
+                  </div>
+                );
+  }
 
   const reg = registry ?? dataset;
   const slicers: Slicer[] = reg.slicers ?? [];
@@ -855,133 +1177,36 @@ export default function DatasetPage() {
         {dashboardNotice ?? (
           <div ref={containerCallbackRef} style={{ width: "100%", minHeight: "200px" }}>
             {containerWidth > 0 && (
-              <GridLayout
-                className={`charts-grid${editMode ? " edit-mode" : ""}`}
-                width={containerWidth}
-                layout={gridLayout}
-                gridConfig={{
-                  cols: GRID_COLS,
-                  rowHeight: 60,
-                  margin: [16, 16],
-                  containerPadding: [0, 0],
-                }}
-                dragConfig={{
-                  enabled: editMode,
-                  bounded: true,
-                  handle: ".widget-card",
-                  cancel: "button, a, input, select, canvas",
-                }}
-                resizeConfig={{
-                  enabled: editMode,
-                  handles: ["s", "e", "se"],
-                }}
-                onLayoutChange={handleLayoutChange}
-              >
-                {widgets.map((widget) => {
-                  const isSelected = editMode && selectedWidgetId === widget.id;
-                  const actions = editMode ? (
-                    <div className="widget-toolbar">
-                      <button
-                              type="button"
-                              className="icon-btn keyboard-only"
-                              aria-label={t("widget.editAria", { title: widget.title })}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditWidget(widget);
-                              }}
-                            >
-                              <PencilIcon width={15} height={15} />
-                            </button>
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              aria-label={t("widget.duplicateAria", { title: widget.title })}
-                              title={t("ds.duplicateWidget")}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDuplicateWidget(widget);
-                              }}
-                            >
-                              <CopyIcon width={15} height={15} />
-                            </button>
-                      <button
-                        type="button"
-                        className="icon-btn danger"
-                        aria-label={t("widget.deleteAria", { title: widget.title })}
-                        title={t("ds.deleteWidget")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openWidgetDeleteConfirm(widget);
-                        }}
-                      >
-                        <TrashIcon width={15} height={15} />
-                      </button>
-                    </div>
-                  ) : widget.type === "section" ? null : (
-                    <div className="widget-toolbar">
-                      <WidgetMenu
-                        label={widget.title}
-                        dataLabels={
-                          labelOverrides[widget.id] ?? globalDataLabels
-                        }
-                        onFocus={() => setFocusWidget(widget)}
-                        onCopyData={() => copyWidgetData(widget)}
-                        canCopyImage={HAS_CANVAS.has(widget.type)}
-                        onCopyImage={() => copyWidgetImage(widget)}
-                        onToggleDataLabels={() => toggleDataLabels(widget.id)}
-                      />
-                    </div>
-                  );
-
-                  if (widget.type === "section") {
-                    return (
-                      <div key={widget.id}>
-                        <div
-                          className={`widget-card is-bare${isSelected ? " is-selected" : ""}`}
-                          onPointerDown={() => {
-                            if (editMode) openEditWidget(widget);
-                          }}
-                        >
-                          {actions}
-                          <h3 className="section-heading">{widget.title}</h3>
-                          {widget.description && (
-                            <p className="widget-subtitle" title={widget.description}>
-                              {widget.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={widget.id} data-widget-id={widget.id}>
-                      <WidgetCard
-                        selected={isSelected}
-                        onPointerDown={() => {
-                          if (editMode) {
-                            openEditWidget(widget);
-                          }
-                        }}
-                        skeleton={<WidgetSkeleton widget={widget} />}
-                      >
-                        {actions}
-                        <WidgetDescriptionProvider value={widget.description}>
-                          <DataLabelsProvider value={labelOverrides[widget.id]}>
-                          <WidgetRender
-                            widget={widget}
-                            columns={columns}
-                            reloadNonce={reloadNonce}
-                            globalFilters={globalFilters}
-                            valueLabels={valueLabels}
-                          />
-                          </DataLabelsProvider>
-                        </WidgetDescriptionProvider>
-                      </WidgetCard>
-                    </div>
-                  );
-                })}
-              </GridLayout>
+              <div data-group-drop="">
+                <GridLayout
+                  className={`charts-grid${editMode ? " edit-mode" : ""}`}
+                  width={containerWidth}
+                  layout={outerItems.map(outerLayoutItem)}
+                  gridConfig={{
+                    cols: GRID_COLS,
+                    rowHeight: ROW_HEIGHT,
+                    margin: [GRID_MARGIN, GRID_MARGIN],
+                    containerPadding: [0, 0],
+                  }}
+                  dragConfig={{
+                    enabled: editMode,
+                    bounded: false,
+                    handle: ".widget-card, .widget-group-header",
+                    cancel: ".widget-group-body, button, a, input, select, canvas",
+                  }}
+                  resizeConfig={{ enabled: editMode, handles: ["s", "e", "se"] }}
+                  onLayoutChange={handleLayoutChange}
+                  onDragStart={(_l, _o, item) => {
+                    if (item) onWidgetDragStart(item.i);
+                  }}
+                  onDrag={(_l, _o, _i, _p, event) => onWidgetDrag(event)}
+                  onDragStop={(_l, _o, item, _p, event) => {
+                    if (item) onWidgetDragStop(item.i, event);
+                  }}
+                >
+                  {outerItems.map(renderWidget)}
+                </GridLayout>
+              </div>
             )}
           </div>
         )}
@@ -1037,6 +1262,7 @@ export default function DatasetPage() {
         columns={columns}
         datasetId={dataset.id}
         editing={editingWidget}
+        groups={groupWidgets.map((g) => ({ id: g.id, title: g.title }))}
         onSave={handleSaveWidget}
         onDeselect={() => setSelectedWidgetId(null)}
         onDelete={openWidgetDeleteConfirm}

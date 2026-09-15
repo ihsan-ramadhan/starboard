@@ -37,6 +37,7 @@ import TreemapIcon from "../../assets/icons/chart-treemap.svg?react";
 import TableIcon from "../../assets/icons/table.svg?react";
 import CalendarIcon from "../../assets/icons/calendar-clock.svg?react";
 import HeadingIcon from "../../assets/icons/heading.svg?react";
+import LayersIcon from "../../assets/icons/layers.svg?react";
 import TrashIcon from "../../assets/icons/trash.svg?react";
 
 export type WidgetBuilderSidebarProps = {
@@ -44,6 +45,7 @@ export type WidgetBuilderSidebarProps = {
   readonly columns: readonly DatasetColumn[];
   readonly datasetId: string;
   readonly editing: WidgetDefinition | null;
+  readonly groups: readonly { id: string; title: string }[];
   readonly onSave: (widget: WidgetDefinition) => void;
   readonly onDeselect: () => void;
   readonly onDelete?: (widget: WidgetDefinition) => void;
@@ -100,6 +102,7 @@ const CAPS: Record<WidgetType, Caps> = {
   table: { ...NO_CAPS, table: true, limit: true, filter: true },
   date: { ...NO_CAPS, date: true },
   section: { ...NO_CAPS },
+  group: { ...NO_CAPS },
 };
 
 const VISUAL_TYPES: {
@@ -121,6 +124,7 @@ const VISUAL_TYPES: {
   { type: "table", labelKey: "visual.table", icon: TableIcon },
   { type: "date", labelKey: "visual.date", icon: CalendarIcon },
   { type: "section", labelKey: "visual.section", icon: HeadingIcon },
+  { type: "group", labelKey: "visual.group", icon: LayersIcon },
 ];
 
 const SERIES_MODE_KEY: Record<SeriesMode, TKey> = {
@@ -135,6 +139,7 @@ type Draft = {
   type: WidgetType;
   title: string;
   description: string;
+  groupId: string;
   metric: WidgetDefinition["metric"];
   metricColumn: string;
   metricColumns: string[];
@@ -162,6 +167,7 @@ const BLANK: Draft = {
   type: "bar",
   title: "",
   description: "",
+  groupId: "",
   metric: "SUM",
   metricColumn: "",
   metricColumns: [],
@@ -203,6 +209,7 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     type: widget.type,
     title: widget.title,
     description: widget.description ?? "",
+    groupId: widget.groupId ?? "",
     metric: widget.metric,
     metricColumn: widget.metricColumn ?? "",
     metricColumns:
@@ -417,6 +424,7 @@ export default function WidgetBuilderSidebar({
   columns,
   datasetId,
   editing,
+  groups,
   onSave,
   onDeselect,
   onDelete,
@@ -529,7 +537,9 @@ export default function WidgetBuilderSidebar({
       id: editing?.id ?? createId(),
       type: draft.type,
       title: draft.title.trim(),
-      description: draft.description.trim() || undefined,
+      description:
+        draft.type === "group" ? undefined : draft.description.trim() || undefined,
+      groupId: draft.groupId || undefined,
       datasetId: editing?.datasetId ?? datasetId,
       ...metricFields(buildContext),
       ...axisFields(buildContext),
@@ -607,18 +617,39 @@ export default function WidgetBuilderSidebar({
                 />
               </label>
 
-              <label className="builder-field">
-                <span className="builder-label">{t("builder.widgetDescription")}</span>
-                <textarea
-                  value={draft.description}
-                  onChange={(e) => set("description", e.target.value)}
-                  placeholder={t("builder.descriptionPlaceholder")}
-                  className="builder-input builder-textarea"
-                  rows={2}
-                  maxLength={280}
-                />
-                <p className="builder-field-desc">{t("builder.descriptionHint")}</p>
-              </label>
+              {draft.type !== "group" && (
+                <label className="builder-field">
+                  <span className="builder-label">{t("builder.widgetDescription")}</span>
+                  <textarea
+                    value={draft.description}
+                    onChange={(e) => set("description", e.target.value)}
+                    placeholder={t("builder.descriptionPlaceholder")}
+                    className="builder-input builder-textarea"
+                    rows={2}
+                    maxLength={280}
+                  />
+                  <p className="builder-field-desc">{t("builder.descriptionHint")}</p>
+                </label>
+              )}
+
+              {draft.type !== "group" && groups.length > 0 && (
+                <label className="builder-field">
+                  <span className="builder-label">{t("builder.widgetGroup")}</span>
+                  <select
+                    value={draft.groupId}
+                    onChange={(e) => set("groupId", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">{t("builder.noGroup")}</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.title}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="builder-field-desc">{t("builder.groupHint")}</p>
+                </label>
+              )}
 
               {caps.values !== "none" && (
                 <label className="builder-field">

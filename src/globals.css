@@ -876,36 +876,25 @@ a {
 }
 
 .widget-card:hover .icon-btn,
+.widget-group:hover .icon-btn,
 .icon-btn:focus-visible {
   background: var(--bg);
   border-color: var(--border);
   color: var(--fg);
 }
 
-.widget-card .icon-btn:hover {
+.widget-card .icon-btn:hover,
+.widget-group .icon-btn:hover {
   background: var(--surface);
   border-color: var(--fg-subtle);
   color: var(--fg);
 }
 
-.widget-card .icon-btn.danger:hover {
+.widget-card .icon-btn.danger:hover,
+.widget-group .icon-btn.danger:hover {
   background: var(--danger-bg);
   border-color: var(--danger-border);
   color: var(--danger-strong);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.brand-mark {
-  color: var(--accent);
 }
 
 .login-screen {
@@ -2320,12 +2309,6 @@ a {
   opacity: 1;
 }
 
-.widget-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .widget-toolbar .widget-menu-btn {
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease,
@@ -2336,6 +2319,95 @@ a {
 .widget-toolbar .widget-menu-btn:focus-visible,
 .widget-toolbar .widget-menu-btn[aria-expanded="true"] {
   opacity: 1;
+}
+
+.widget-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 6px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.charts-grid.edit-mode .widget-group {
+  border-style: dashed;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.charts-grid.edit-mode .widget-group:hover {
+  border-color: var(--accent-hint);
+}
+
+.charts-grid.edit-mode .widget-group.is-selected {
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.widget-group.is-drop-target {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.widget-group.is-hugging {
+  height: auto;
+  max-height: 100%;
+}
+
+.widget-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.charts-grid.edit-mode .widget-group-header {
+  cursor: grab;
+}
+
+.widget-group-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.widget-group-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.widget-group:hover .widget-group-actions,
+.widget-group-actions:focus-within {
+  opacity: 1;
+}
+
+.widget-group-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.widget-group-empty {
+  margin: 0;
+  padding: 18px 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-subtle);
 }
 
 .widget-menu {
@@ -2455,11 +2527,6 @@ a {
   white-space: nowrap;
 }
 
-.widget-body {
-  flex: 1;
-  min-height: 240px;
-}
-
 .widget-empty {
   display: flex;
   align-items: center;
@@ -2510,13 +2577,6 @@ a {
 
 .edit-mode .widget-title {
   padding-right: 68px;
-}
-
-.widget-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-subtle);
 }
 
 .empty-widgets-card {
@@ -2870,19 +2930,7 @@ a {
     width: min(320px, 100vw);
     box-shadow: -4px 0 20px rgba(15, 23, 42, 0.15);
   }
-}.builder-modal {
-  width: min(460px, 92vw);
-  max-width: 92vw;
-}
-
-.builder-body {
-  padding: 4px 20px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.builder-field {
+}.builder-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2905,8 +2953,7 @@ a {
 }
 
 .builder-textarea {
-  resize: vertical;
-  min-height: 52px;
+  resize: none;
   line-height: 1.45;
 }
 
@@ -2941,18 +2988,6 @@ select.builder-input {
   cursor: pointer;
   user-select: none;
   padding: 4px 0;
-}
-
-.builder-dependent-field {
-  margin-top: 6px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: fadeIn 0.15s ease-out;
 }
 
 .dataset-title {

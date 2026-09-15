@@ -88,7 +88,8 @@ export type WidgetType =
   | "scatter"
   | "table"
   | "date"
-  | "section";
+  | "section"
+  | "group";
 
 export type SeriesMode = "grouped" | "stacked" | "stacked100";
 
@@ -279,6 +280,7 @@ export type WidgetDefinition = {
   type: WidgetType;
   title: string;
   description?: string;
+  groupId?: string;
   datasetId: string;
   metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
   metricColumn?: string;
@@ -320,4 +322,5 @@ export const WIDGET_TYPE_KEY: Record<WidgetType, TKey> = {
   table: "widgetType.table",
   date: "widgetType.date",
   section: "widgetType.section",
+  group: "widgetType.group",
 };

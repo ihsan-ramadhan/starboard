@@ -12,7 +12,7 @@ import {
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatAxisValue, formatFullValue } from "../../lib/format";
+import { formatAxisValue } from "../../lib/format";
 import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang, useT } from "../../lib/i18n";

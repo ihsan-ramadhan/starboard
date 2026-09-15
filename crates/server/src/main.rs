@@ -89,6 +89,8 @@ struct WidgetPayload {
     title: String,
     #[serde(default)]
     description: Option<String>,
+    #[serde(rename = "groupId", default)]
+    group_id: Option<String>,
     #[serde(rename = "datasetId", default)]
     dataset_id: String,
     metric: String,
