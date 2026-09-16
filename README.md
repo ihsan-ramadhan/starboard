@@ -1,18 +1,16 @@
+<div align="center">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="src/assets/sigma-wordmark-dark.webp">
   <img src="src/assets/sigma-wordmark.webp" alt="SIGMA" width="260">
 </picture>
 
-Stargate Integrated Dashboard & Management Analytics — the operational reporting
-desktop app for PT Stargate Pacific Resources, a nickel mining site. Each
-department keeps its figures in master Excel workbooks; SIGMA turns those into
-dashboards the team arranges themselves. Import a workbook, pick the sheets and
-columns you want, drag the charts where you want them. Nobody writes SQL.
+**Stargate Integrated Dashboard & Management Analytics**
 
-Nothing in the app is tied to one department. Departments are rows in a
-`departments` table, and every dataset, dashboard, and login is scoped by
-department code. MIOP, HSE, and MPMA use it today; adding another is a row, not
-a code change.
+Turn Excel workbooks into dashboards your team arranges itself — import a file,
+pick the columns, drag the charts where you want them. Nobody writes SQL.
+
+</div>
 
 ## Quick start
 
