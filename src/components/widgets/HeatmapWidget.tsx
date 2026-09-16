@@ -1,0 +1,168 @@
+import { useMemo } from "react";
+import type { CurrencyCode, ValueFormat } from "../../types";
+import type { WideRow } from "../../lib/series";
+import { ChartFrame, escapeHtml, type SeriesLabeller } from "./chartParts";
+import { EChart } from "./EChart";
+import { compactValueAs, formatValueAs } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
+import type { EChartsOption } from "echarts";
+import { useLang } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
+
+export type HeatmapWidgetProps = {
+  readonly title: string;
+  readonly data: readonly WideRow[];
+  readonly seriesKeys: readonly string[];
+  readonly labelOf: SeriesLabeller;
+  readonly format?: ValueFormat;
+  readonly unit?: string;
+  readonly currency?: CurrencyCode;
+  readonly reloadNonce?: number;
+};
+
+export default function HeatmapWidget({
+  title,
+  data,
+  seriesKeys,
+  labelOf,
+  format,
+  unit,
+  currency,
+  reloadNonce,
+}: HeatmapWidgetProps) {
+  const lang = useLang();
+  const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
+  const c = chartChrome(theme);
+
+  const option = useMemo<EChartsOption>(() => {
+    const columns = data.map((d) => String(d.groupKey ?? ""));
+    const rows = [...seriesKeys].reverse();
+
+    const cells: [number, number, number][] = [];
+    let max = 0;
+    data.forEach((row, x) => {
+      rows.forEach((key, y) => {
+        const value = Number(row[key]) || 0;
+        if (value > max) max = value;
+        cells.push([x, y, value]);
+      });
+    });
+
+    const cellIsDark = (ratio: number) =>
+      theme === "dark" ? ratio < 0.4 : ratio >= 0.6;
+    const cellData = labels
+      ? cells.map((cell) => {
+          const onDark = cellIsDark(max > 0 ? cell[2] / max : 0);
+          return {
+            value: cell,
+            label: {
+              color: onDark ? "#ffffff" : "#0f172a",
+              textBorderColor: onDark
+                ? "rgba(0,0,0,0.55)"
+                : "rgba(255,255,255,0.75)",
+              textBorderWidth: 2,
+            },
+          };
+        })
+      : cells;
+
+    return {
+      animation: true,
+      animationDuration: 600,
+      grid: { top: 12, right: 14, bottom: 56, left: 8, containLabel: true },
+      tooltip: {
+        trigger: "item",
+        appendToBody: true,
+        backgroundColor: c.panel,
+        borderColor: c.panelBorder,
+        borderWidth: 1,
+        padding: [8, 12],
+        textStyle: { color: c.text, fontSize: 12 },
+        extraCssText:
+          `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
+        formatter: (p: any) => {
+          const [x, y, value] = p.value as [number, number, number];
+          return (
+            `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(
+              labelOf(rows[y])
+            )}</div>` +
+            `<div style="display:flex;justify-content:space-between;gap:12px">` +
+            `<span>${escapeHtml(columns[x])}</span>` +
+            `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(
+              formatValueAs(value, format, currency, unit)
+            )}</span></div>`
+          );
+        },
+      },
+      xAxis: {
+        type: "category",
+        data: columns,
+        splitArea: { show: true },
+        axisLine: { lineStyle: { color: c.panelBorder } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: c.axis,
+          fontSize: 11,
+          rotate: 30,
+          overflow: "truncate",
+          width: 80,
+        },
+      },
+      yAxis: {
+        type: "category",
+        data: rows.map((key) => labelOf(key)),
+        splitArea: { show: true },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: c.axis,
+          fontSize: 11,
+          overflow: "truncate",
+          width: 110,
+        },
+      },
+      visualMap: {
+        min: 0,
+        max: max || 1,
+        calculable: false,
+        orient: "horizontal",
+        left: "center",
+        bottom: 2,
+        itemWidth: 10,
+        itemHeight: 90,
+        textStyle: { color: c.axis, fontSize: 11 },
+        inRange: { color: [...c.heatRamp] },
+      },
+      series: [
+        {
+          type: "heatmap",
+          data: cellData,
+          progressive: 0,
+          label: labels
+            ? {
+                show: true,
+                fontSize: 10,
+                fontWeight: 600,
+                formatter: (p: any) => {
+                  const cell = (p.value as [number, number, number])[2];
+                  if (!cell) return "";
+                  return compactValueAs(cell, format, currency, unit);
+                },
+              }
+            : { show: false },
+          itemStyle: { borderColor: c.panel, borderWidth: 1 },
+          emphasis: {
+            itemStyle: { borderColor: c.text, borderWidth: 1 },
+          },
+        },
+      ],
+    };
+  }, [data, seriesKeys, labelOf, format, unit, currency, lang, theme, labels]);
+
+  return (
+    <ChartFrame title={title} isEmpty={data.length === 0 || seriesKeys.length === 0}>
+      <EChart option={option} reloadNonce={reloadNonce} />
+    </ChartFrame>
+  );
+}

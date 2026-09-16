@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type {
   SessionUser,
   DatasetRegistry,
@@ -12,7 +13,16 @@ import type { DetectedSheet } from "../components/ImportWizard";
 const API_BASE = import.meta.env.VITE_API_BASE;
 let authToken: string | null = null;
 
-const AUTH_STORAGE_KEY = "starboard_token";
+const AUTH_STORAGE_KEY = "sigma_token";
+
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -29,7 +39,7 @@ export function restoreAuthToken() {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_BASE) {
-    throw new Error("VITE_API_BASE belum diset di file .env");
+    throw new Error(t("api.noBaseUrl"));
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -45,14 +55,64 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
   } catch {
     throw new Error(
-      "Tidak dapat terhubung ke server. Pastikan aplikasi Starboard Server berjalan."
+      t("api.unreachable")
     );
   }
   if (!res.ok) {
-    const message = await readErrorMessage(res);
-    throw new Error(message);
+    throw new ApiError(await readErrorMessage(res), res.status);
   }
   return res.json() as Promise<T>;
+}
+
+async function upload(bytes: ArrayBuffer): Promise<string> {
+  if (!API_BASE) {
+    throw new Error(t("api.noBaseUrl"));
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/octet-stream",
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/uploads`, {
+      method: "POST",
+      headers,
+      body: bytes,
+    });
+  } catch {
+    throw new Error(
+      t("api.unreachable")
+    );
+  }
+  if (!res.ok) throw new ApiError(await readErrorMessage(res), res.status);
+  const parsed = (await res.json()) as { uploadId: string };
+  return parsed.uploadId;
+}
+
+async function binary(
+  path: string,
+  init: RequestInit = {}
+): Promise<Response> {
+  if (!API_BASE) {
+    throw new Error(t("api.noBaseUrl"));
+  }
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: { ...headers, ...(init.headers as Record<string, string>) },
+    });
+  } catch {
+    throw new Error(t("api.unreachable"));
+  }
+  if (!res.ok) throw new ApiError(await readErrorMessage(res), res.status);
+  return res;
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -86,10 +146,13 @@ export type RowsQuery = {
   sortColumn?: string;
   sortDir?: "asc" | "desc";
   filters?: WidgetFilter[];
+  withTotal?: boolean;
 };
 
 const WIDGET_CACHE_TTL_MS = 30_000;
+const WIDGET_CACHE_MAX = 120;
 const widgetDataCache = new Map<string, { at: number; value: WidgetQueryResult }>();
+const widgetDataInFlight = new Map<string, Promise<WidgetQueryResult>>();
 
 function widgetDataKey(q: WidgetQuery) {
   return [
@@ -101,15 +164,28 @@ function widgetDataKey(q: WidgetQuery) {
     q.seriesColumn,
     q.limit,
     q.orderByKey,
-    q.filters?.map((f) => `${f.column}${f.op}${f.value}`).join(","),
+    q.filters
+      ?.map((f) => `${f.column}${f.op}${f.value}${f.values?.join("~") ?? ""}`)
+      .join(","),
   ].join("|");
 }
 
+function rememberWidgetData(key: string, value: WidgetQueryResult) {
+  widgetDataCache.delete(key);
+  widgetDataCache.set(key, { at: Date.now(), value });
+  while (widgetDataCache.size > WIDGET_CACHE_MAX) {
+    const oldest = widgetDataCache.keys().next().value;
+    if (oldest === undefined) break;
+    widgetDataCache.delete(oldest);
+  }
+}
+
 export function peekWidgetData(q: WidgetQuery) {
-  const entry = widgetDataCache.get(widgetDataKey(q));
+  const key = widgetDataKey(q);
+  const entry = widgetDataCache.get(key);
   if (!entry) return undefined;
   if (Date.now() - entry.at > WIDGET_CACHE_TTL_MS) {
-    widgetDataCache.delete(widgetDataKey(q));
+    widgetDataCache.delete(key);
     return undefined;
   }
   return entry.value;
@@ -117,6 +193,10 @@ export function peekWidgetData(q: WidgetQuery) {
 
 export function clearWidgetDataCache() {
   widgetDataCache.clear();
+}
+
+function machineParam(machine?: string | null) {
+  return machine ? `&machine=${encodeURIComponent(machine)}` : "";
 }
 
 export const api = {
@@ -133,12 +213,58 @@ export const api = {
     });
   },
 
-  getDatasets(dept: string) {
-    return request<DatasetRegistry[]>(`/api/datasets?dept=${encodeURIComponent(dept)}`);
+  getDatasets(dept: string, machine?: string | null) {
+    return request<DatasetRegistry[]>(
+      `/api/datasets?dept=${encodeURIComponent(dept)}${machineParam(machine)}`
+    );
   },
 
-  getDatasetDetail(dept: string, key: string) {
-    return request<DatasetDetail>(`/api/datasets/${encodeURIComponent(key)}?dept=${encodeURIComponent(dept)}`);
+  getDatasetDetail(dept: string, key: string, machine?: string | null) {
+    return request<DatasetDetail>(
+      `/api/datasets/${encodeURIComponent(key)}?dept=${encodeURIComponent(dept)}${machineParam(machine)}`
+    );
+  },
+
+  uploadFile(bytes: ArrayBuffer) {
+    return upload(bytes);
+  },
+
+  async getDatasetIcon(key: string, version: number) {
+    const res = await binary(
+      `/api/datasets/${encodeURIComponent(key)}/icon?v=${version}`
+    );
+    return res.blob();
+  },
+
+  async setDatasetIcon(key: string, image: Blob) {
+    const res = await binary(`/api/datasets/${encodeURIComponent(key)}/icon`, {
+      method: "PUT",
+      body: image,
+    });
+    return (await res.json()) as number;
+  },
+
+  async clearDatasetIcon(key: string) {
+    await binary(`/api/datasets/${encodeURIComponent(key)}/icon`, {
+      method: "DELETE",
+    });
+  },
+
+  columnValues(datasetId: string, column: string, limit?: number) {
+    return request<{ values: string[]; truncated: boolean }>(
+      "/api/analytics/values",
+      {
+        method: "POST",
+        body: JSON.stringify({ datasetId, column, limit }),
+      }
+    );
+  },
+
+  heartbeat(dept: string, machine: string) {
+    return request<boolean>("/api/sync/heartbeat", {
+      method: "POST",
+      body: JSON.stringify({ dept, machine }),
+    });
   },
 
   getWidgets(dept: string, key: string) {
@@ -155,7 +281,12 @@ export const api = {
   updateDataset(
     dept: string,
     key: string,
-    patch: { displayName?: string; description?: string }
+    patch: {
+      displayName?: string;
+      description?: string;
+      slicers?: unknown;
+      valueLabels?: unknown;
+    }
   ) {
     return request<boolean>(`/api/datasets/${encodeURIComponent(key)}`, {
       method: "PUT",
@@ -176,16 +307,16 @@ export const api = {
     });
   },
 
-  analyzeExcel(fileBytes: number[], datasetKey: string) {
+  analyzeExcel(uploadId: string, datasetKey: string) {
     return request<DetectedSheet[]>("/api/excel/analyze", {
       method: "POST",
-      body: JSON.stringify({ fileBytes, datasetKey }),
+      body: JSON.stringify({ uploadId, datasetKey }),
     });
   },
 
   async importExcel(payload: {
     dept: string;
-    fileBytes: number[];
+    uploadId: string;
     displayName: string;
     baseKey: string;
     selectedSheets: string[];
@@ -209,7 +340,7 @@ export const api = {
   async syncDataset(
     dept: string,
     key: string,
-    payload: { fileBytes: number[]; sourceMtime: string }
+    payload: { uploadId: string; sourceMtime: string }
   ) {
     const res = await request<{
       primaryKey: string;
@@ -224,18 +355,30 @@ export const api = {
     return res;
   },
 
+  releaseWatch(dept: string, key: string, machine: string) {
+    return request<boolean>(
+      `/api/datasets/${encodeURIComponent(key)}/sync?dept=${encodeURIComponent(dept)}&machine=${encodeURIComponent(machine)}`,
+      { method: "DELETE" }
+    );
+  },
+
   setSyncEnabled(
     dept: string,
     key: string,
     enabled: boolean,
-    sourcePath?: string,
-    watchedBy?: string
+    source?: {
+      sourcePath: string;
+      watchedBy: string;
+      fileName: string;
+      fileSize: number;
+      force?: boolean;
+    }
   ) {
     return request<boolean>(
       `/api/datasets/${encodeURIComponent(key)}/sync`,
       {
         method: "PUT",
-        body: JSON.stringify({ dept, enabled, sourcePath, watchedBy }),
+        body: JSON.stringify({ dept, enabled, ...source }),
       }
     );
   },
@@ -244,12 +387,24 @@ export const api = {
     const key = widgetDataKey(q);
     const fresh = peekWidgetData(q);
     if (fresh) return fresh;
-    const res = await request<WidgetQueryResult>("/api/analytics/query", {
+
+    const running = widgetDataInFlight.get(key);
+    if (running) return running;
+
+    const pending = request<WidgetQueryResult>("/api/analytics/query", {
       method: "POST",
       body: JSON.stringify(q),
-    });
-    widgetDataCache.set(key, { at: Date.now(), value: res });
-    return res;
+    })
+      .then((res) => {
+        rememberWidgetData(key, res);
+        return res;
+      })
+      .finally(() => {
+        widgetDataInFlight.delete(key);
+      });
+
+    widgetDataInFlight.set(key, pending);
+    return pending;
   },
 
   queryRows(q: RowsQuery) {

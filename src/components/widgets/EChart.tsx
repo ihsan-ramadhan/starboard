@@ -1,23 +1,39 @@
 import { useEffect, useRef } from "react";
 import { init, use, type EChartsType } from "echarts/core";
-import { BarChart, LineChart, PieChart } from "echarts/charts";
+import {
+  BarChart,
+  GaugeChart,
+  HeatmapChart,
+  LineChart,
+  PieChart,
+  ScatterChart,
+  TreemapChart,
+} from "echarts/charts";
 import {
   AxisPointerComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from "echarts/components";
+import { LabelLayout } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
 
 use([
   BarChart,
+  GaugeChart,
+  HeatmapChart,
   LineChart,
   PieChart,
+  ScatterChart,
+  TreemapChart,
   AxisPointerComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
+  VisualMapComponent,
+  LabelLayout,
   CanvasRenderer,
 ]);
 
@@ -81,7 +97,13 @@ export function EChart({
     });
     observer.observe(node);
 
+    const hideTip = () => chart.dispatchAction({ type: "hideTip" });
+    node.addEventListener("pointerleave", hideTip);
+    window.addEventListener("scroll", hideTip, true);
+
     return () => {
+      node.removeEventListener("pointerleave", hideTip);
+      window.removeEventListener("scroll", hideTip, true);
       observer.disconnect();
       chart.dispose();
       chartRef.current = null;

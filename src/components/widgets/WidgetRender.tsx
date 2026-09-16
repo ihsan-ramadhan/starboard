@@ -8,34 +8,47 @@ import {
   type ReactNode,
 } from "react";
 import { api, peekWidgetData, type WidgetQuery } from "../../lib/api";
+import { defaultSortBy, resolveFormat } from "../../types";
 import type {
   ChartDataPoint,
   CurrencyCode,
   DatasetColumn,
   SeriesMode,
+  ValueFormat,
+  ValueLabelMap,
   WidgetDefinition,
+  WidgetFilter,
   WidgetQueryResult,
+  WidgetType,
 } from "../../types";
 import type { WideRow } from "../../lib/series";
-import type { SeriesLabeller } from "./chartParts";
+import type { SeriesLabeller, ValueFormatter } from "./chartParts";
 import { buildColorMap } from "../../lib/palette";
 import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
-import { formatCount } from "../../lib/format";
+import { formatCount, formatValueAs } from "../../lib/format";
 import { foldOthers, pivotSeries, scaleMismatch, seriesLabeller } from "../../lib/series";
 import KpiCard from "./KpiCard";
 import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
+import { useLang, useT, type Translate } from "../../lib/i18n";
+import { useResolvedTheme } from "../../lib/theme";
 const BarChartWidget = lazy(() => import("./BarChartWidget"));
 const LineChartWidget = lazy(() => import("./LineChartWidget"));
 const AreaChartWidget = lazy(() => import("./AreaChartWidget"));
 const ComboChartWidget = lazy(() => import("./ComboChartWidget"));
 const PieChartWidget = lazy(() => import("./PieChartWidget"));
+const TreemapWidget = lazy(() => import("./TreemapWidget"));
+const HeatmapWidget = lazy(() => import("./HeatmapWidget"));
+const ScatterWidget = lazy(() => import("./ScatterWidget"));
+const GaugeWidget = lazy(() => import("./GaugeWidget"));
 
 export type WidgetRenderProps = {
   readonly widget: WidgetDefinition;
   readonly columns: readonly DatasetColumn[];
   readonly reloadNonce?: number;
+  readonly globalFilters?: readonly WidgetFilter[];
+  readonly valueLabels?: ValueLabelMap | null;
 };
 
 const MAX_PIE_SLICES = 8;
@@ -47,7 +60,7 @@ const EMPTY_PIVOT = pivotSeries([], true);
 
 
 function valueColumns(widget: WidgetDefinition): string[] | undefined {
-  if (widget.type === "kpi") {
+  if (widget.type === "kpi" || widget.type === "gauge") {
     if (widget.metricColumn && widget.targetColumn) {
       return [widget.metricColumn, widget.targetColumn];
     }
@@ -58,12 +71,19 @@ function valueColumns(widget: WidgetDefinition): string[] | undefined {
   return widget.metricColumn ? [widget.metricColumn] : undefined;
 }
 
-function usableFilters(widget: WidgetDefinition) {
-  const active = (widget.filters ?? []).filter((f) => f.column && f.value !== "");
-  return active.length > 0 ? active : undefined;
+function usableFilters(
+  widget: WidgetDefinition,
+  global: readonly WidgetFilter[]
+): WidgetFilter[] | undefined {
+  const own = (widget.filters ?? []).filter((f) => f.column && f.value !== "");
+  const all = [...own, ...global];
+  return all.length > 0 ? all : undefined;
 }
 
-function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
+export function buildQuery(
+  widget: WidgetDefinition,
+  global: readonly WidgetFilter[]
+): WidgetQuery | null {
   if (widget.type === "table") return null;
 
   if (widget.type === "date") {
@@ -85,8 +105,8 @@ function buildQuery(widget: WidgetDefinition): WidgetQuery | null {
     groupByColumn: widget.groupByColumn,
     seriesColumn: multi ? undefined : widget.seriesColumn,
     limit: widget.limit ?? 10,
-    orderByKey: widget.type === "line" || widget.type === "area",
-    filters: usableFilters(widget),
+    orderByKey: (widget.sortBy ?? defaultSortBy(widget.type)) === "key",
+    filters: usableFilters(widget, global),
   };
 }
 
@@ -130,6 +150,7 @@ type KpiWidgetProps = {
   readonly result: WidgetQueryResult;
   readonly columnLabel: SeriesLabeller;
   readonly currency?: CurrencyCode;
+  readonly format?: ValueFormat;
   readonly reloadNonce: number;
 };
 
@@ -138,6 +159,7 @@ function KpiWidgetView({
   result,
   columnLabel,
   currency,
+  format,
   reloadNonce,
 }: KpiWidgetProps) {
   const targetColumn = widget.targetColumn;
@@ -152,6 +174,8 @@ function KpiWidgetView({
       targetLabel={targetColumn ? columnLabel(targetColumn) : undefined}
       unit={widget.unit}
       currency={currency}
+      format={format}
+      goodDirection={widget.goodDirection}
       reloadNonce={reloadNonce}
     />
   );
@@ -164,6 +188,7 @@ type SeriesChartProps = {
   readonly lineKeys: readonly string[];
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
+  readonly formatValue: ValueFormatter;
   readonly stacking: SeriesMode;
   readonly currency?: CurrencyCode;
   readonly reloadNonce: number;
@@ -178,6 +203,7 @@ function SeriesChart({
   lineKeys,
   colors,
   labelOf,
+  formatValue,
   stacking,
   currency,
   reloadNonce,
@@ -190,6 +216,7 @@ function SeriesChart({
     seriesKeys,
     colors,
     labelOf,
+    formatValue,
     unit: widget.unit,
     currency,
     reloadNonce,
@@ -198,6 +225,9 @@ function SeriesChart({
   };
 
   if (widget.type === "bar") return <BarChartWidget {...shared} mode={stacking} />;
+  if (widget.type === "barh") {
+    return <BarChartWidget {...shared} mode={stacking} horizontal />;
+  }
   if (widget.type === "area") return <AreaChartWidget {...shared} mode={stacking} />;
   if (widget.type === "combo") {
     return <ComboChartWidget {...shared} lineKeys={lineKeys} />;
@@ -205,16 +235,18 @@ function SeriesChart({
   return <LineChartWidget {...shared} showTrendline={widget.showTrendline} />;
 }
 
-function WidgetRender({
-  widget,
-  columns,
-  reloadNonce = 0,
-}: WidgetRenderProps) {
-  const spec = buildQuery(widget);
-  const specKey = spec ? JSON.stringify(spec) : "";
-  const query = useMemo(() => spec, [specKey, reloadNonce]);
+const SERIES_CHARTS = new Set<WidgetType>([
+  "bar",
+  "barh",
+  "area",
+  "combo",
+  "line",
+  "heatmap",
+  "scatter",
+]);
 
-  const [result, setResult] = useState<WidgetQueryResult | null>(() =>
+function useWidgetData(query: WidgetQuery | null) {
+  const [raw, setRaw] = useState<WidgetQueryResult | null>(() =>
     query ? peekWidgetData(query) ?? null : null
   );
   const [error, setError] = useState<string | null>(null);
@@ -225,23 +257,23 @@ function WidgetRender({
     const cached = peekWidgetData(query);
     if (cached) {
       setError(null);
-      setResult(cached);
+      setRaw(cached);
       return;
     }
 
     let active = true;
-    setResult(null);
+    setRaw(null);
     setError(null);
     api
       .queryWidgetData(query)
       .then((res) => {
-        if (active) setResult(res);
+        if (active) setRaw(res);
       })
       .catch((e) => {
         console.error("Failed to load widget:", e);
         if (!active) return;
         setError(String(e instanceof Error ? e.message : e));
-        setResult({ rows: [] });
+        setRaw({ rows: [] });
       });
 
     return () => {
@@ -249,20 +281,117 @@ function WidgetRender({
     };
   }, [query]);
 
+  return { raw, error };
+}
+
+function scaleNote(
+  t: Translate,
+  hidden: boolean,
+  stacking: SeriesMode,
+  data: readonly WideRow[],
+  seriesKeys: readonly string[],
+  labelOf: (series: string) => string
+): string | undefined {
+  if (hidden || stacking === "stacked100") return undefined;
+  const mismatch = scaleMismatch(data, seriesKeys, SCALE_MISMATCH_RATIO);
+  if (!mismatch) return undefined;
+  return t("chart.scaleNote", {
+    small: labelOf(mismatch.small),
+    ratio: formatCount(Math.round(mismatch.ratio)),
+    large: labelOf(mismatch.large),
+  });
+}
+
+function GaugeView({
+  widget,
+  result,
+  currency,
+  format,
+  reloadNonce,
+}: {
+  readonly widget: WidgetDefinition;
+  readonly result: WidgetQueryResult;
+  readonly currency: CurrencyCode | undefined;
+  readonly format: ValueFormat | undefined;
+  readonly reloadNonce: number;
+}) {
+  const valueOf = (column?: string) =>
+    result.rows.find((r) => r.series === column)?.value ?? null;
+  const hasMax = Boolean(widget.targetColumn);
+  return (
+    <GaugeWidget
+      title={widget.title}
+      value={hasMax ? valueOf(widget.metricColumn) : result.scalarValue ?? null}
+      max={hasMax ? valueOf(widget.targetColumn) : null}
+      goodDirection={widget.goodDirection}
+      unit={widget.unit}
+      currency={currency}
+      format={format}
+      reloadNonce={reloadNonce}
+    />
+  );
+}
+
+function WidgetRender({
+  widget,
+  columns,
+  reloadNonce = 0,
+  globalFilters = [],
+  valueLabels,
+}: WidgetRenderProps) {
+  const t = useT();
+  const lang = useLang();
+  const theme = useResolvedTheme();
+  const spec = buildQuery(widget, globalFilters);
+  const specKey = spec ? JSON.stringify(spec) : "";
+  const query = useMemo(() => spec, [specKey, reloadNonce]);
+
+  const { raw, error } = useWidgetData(query);
+
+  const groupLabels = widget.groupByColumn
+    ? valueLabels?.[widget.groupByColumn]
+    : undefined;
+
+  const result = useMemo(() => {
+    if (!raw || !groupLabels) return raw;
+    return {
+      ...raw,
+      rows: raw.rows.map((row) =>
+        row.groupKey in groupLabels
+          ? { ...row, groupKey: groupLabels[row.groupKey] || row.groupKey }
+          : row
+      ),
+    };
+  }, [raw, groupLabels]);
+
   const warningHidden = useScaleWarningHidden();
-  const currency = widget.isCurrency ? widget.currency ?? "IDR" : undefined;
+
+  const primaryColumn = widget.metricColumn ?? widget.metricColumns?.[0];
+  const primary = resolveFormat(widget, primaryColumn);
+  const metricFormat = primary.format;
+  const currency = primary.currency;
+
+  const formatValue = useMemo(() => {
+    return (series: string, value: number) => {
+      const { format, currency: cur } = resolveFormat(widget, series);
+      return formatValueAs(value, format, cur, widget.unit);
+    };
+  }, [
+    widget.valueFormats,
+    widget.valueCurrencies,
+    widget.isCurrency,
+    widget.currency,
+    widget.unit,
+    lang,
+  ]);
 
   const columnLabel = useMemo(() => seriesLabeller(columns), [columns]);
   const labelOf = useMemo(
-    () => (series: string) => (series === "value" ? "Nilai" : columnLabel(series)),
-    [columnLabel]
+    () => (series: string) => (series === "value" ? t("widget.valueSeries") : columnLabel(series)),
+    [columnLabel, t]
   );
 
-  const isSeriesChart =
-    widget.type === "bar" ||
-    widget.type === "area" ||
-    widget.type === "combo" ||
-    widget.type === "line";
+  const isSeriesChart = SERIES_CHARTS.has(widget.type);
 
   const pivot = useMemo(
     () =>
@@ -273,27 +402,27 @@ function WidgetRender({
   );
 
   const seriesColors = useMemo(
-    () => buildColorMap(pivot?.seriesKeys ?? []),
-    [pivot]
+    () => buildColorMap(pivot?.seriesKeys ?? [], theme),
+    [pivot, theme]
   );
 
   const slices = useMemo(
     () =>
-      result && widget.type === "pie"
+      result && (widget.type === "pie" || widget.type === "treemap")
         ? foldOthers(result.rows as ChartDataPoint[], MAX_PIE_SLICES)
         : null,
     [result, widget.type]
   );
 
   const sliceColors = useMemo(
-    () => buildColorMap((slices ?? []).map((s) => s.groupKey)),
-    [slices]
+    () => buildColorMap((slices ?? []).map((s) => s.groupKey), theme),
+    [slices, theme]
   );
 
-  const lineKeys = useMemo(
-    () => (widget.lineColumn ? [widget.lineColumn] : []),
-    [widget.lineColumn]
-  );
+  const lineKeys = useMemo(() => {
+    if (widget.lineColumns?.length) return widget.lineColumns;
+    return widget.lineColumn ? [widget.lineColumn] : [];
+  }, [widget.lineColumns, widget.lineColumn]);
 
   const suspend = (node: ReactNode) => (
     <Suspense fallback={<WidgetSkeleton widget={widget} />}>{node}</Suspense>
@@ -306,9 +435,10 @@ function WidgetRender({
         datasetId={widget.datasetId}
         columns={columns}
         selected={widget.tableColumns}
-        filters={usableFilters(widget)}
+        filters={usableFilters(widget, globalFilters)}
         limit={widget.limit ?? 25}
         reloadNonce={reloadNonce}
+        valueLabels={valueLabels}
       />
     );
   }
@@ -348,15 +478,18 @@ function WidgetRender({
         result={result}
         columnLabel={columnLabel}
         currency={currency}
+        format={metricFormat}
         reloadNonce={reloadNonce}
       />
     );
   }
 
-  if (widget.type === "pie") {
+  if (widget.type === "pie" || widget.type === "treemap") {
+    const Slices = widget.type === "pie" ? PieChartWidget : TreemapWidget;
     return suspend(
-      <PieChartWidget
+      <Slices
         title={widget.title}
+        format={metricFormat}
         data={slices ?? []}
         colors={sliceColors}
         unit={widget.unit}
@@ -366,20 +499,57 @@ function WidgetRender({
     );
   }
 
+  if (widget.type === "gauge") {
+    return suspend(
+      <GaugeView
+        widget={widget}
+        result={result}
+        currency={currency}
+        format={metricFormat}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+
   const stacking = widget.seriesMode ?? "grouped";
   const { seriesKeys, data } = pivot ?? EMPTY_PIVOT;
   const colors = seriesColors;
 
-  const mismatch =
-    warningHidden || stacking === "stacked100"
-      ? null
-      : scaleMismatch(data, seriesKeys, SCALE_MISMATCH_RATIO);
+  if (widget.type === "heatmap") {
+    return suspend(
+      <HeatmapWidget
+        title={widget.title}
+        format={metricFormat}
+        data={data}
+        seriesKeys={seriesKeys}
+        labelOf={labelOf}
+        unit={widget.unit}
+        currency={currency}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+
+  if (widget.type === "scatter") {
+    const axisPair = (widget.metricColumns ?? seriesKeys).filter((name) =>
+      seriesKeys.includes(name)
+    );
+    return suspend(
+      <ScatterWidget
+        title={widget.title}
+        data={data}
+        seriesKeys={axisPair.length === 2 ? axisPair : seriesKeys}
+        labelOf={labelOf}
+        formatValue={formatValue}
+        unit={widget.unit}
+        currency={currency}
+        reloadNonce={reloadNonce}
+      />
+    );
+  }
+
   const hideWarning = () => setScaleWarningHidden(true);
-  const note = mismatch
-    ? `${labelOf(mismatch.small)} nyaris tak terlihat: skalanya ${formatCount(
-        Math.round(mismatch.ratio)
-      )}× lebih kecil dari ${labelOf(mismatch.large)}. Tampilkan di chart terpisah.`
-    : undefined;
+  const note = scaleNote(t, warningHidden, stacking, data, seriesKeys, labelOf);
 
   return suspend(
     <SeriesChart
@@ -389,6 +559,7 @@ function WidgetRender({
       lineKeys={lineKeys}
       colors={colors}
       labelOf={labelOf}
+      formatValue={formatValue}
       stacking={stacking}
       currency={currency}
       reloadNonce={reloadNonce}

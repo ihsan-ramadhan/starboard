@@ -4,12 +4,19 @@ import type { WideRow } from "../../lib/series";
 import {
   ChartFrame,
   baseEChartOption,
+  dataLabel,
+  blankWhenEmpty,
+  edgeAwareLabels,
   type SeriesLabeller,
+  type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatAxisValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
+import { useLang } from "../../lib/i18n";
+import { useResolvedTheme } from "../../lib/theme";
 
 export type AreaChartWidgetProps = {
   readonly title: string;
@@ -18,6 +25,7 @@ export type AreaChartWidgetProps = {
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
   readonly mode: SeriesMode;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -32,18 +40,26 @@ export default function AreaChartWidget({
   colors,
   labelOf,
   mode,
+  formatValue,
   unit,
   currency,
   reloadNonce,
   note,
   onHideNote,
 }: AreaChartWidgetProps) {
+  const lang = useLang();
+  const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
   const multi = seriesKeys.length > 1;
   const stacked = mode !== "grouped" && multi;
   const isPercent = mode === "stacked100" && multi;
 
   const option = useMemo<EChartsOption>(() => {
-    const base = baseEChartOption(multi, currency, isPercent, { boundaryGap: false });
+    const base = baseEChartOption(multi, currency, isPercent, {
+      boundaryGap: false,
+      theme,
+      dataLabels: labels,
+    });
     const categories = data.map((d) => String(d.groupKey ?? ""));
 
     const rowSums = isPercent
@@ -52,11 +68,21 @@ export default function AreaChartWidget({
         )
       : [];
 
+    const labelText = blankWhenEmpty((value) =>
+      isPercent
+        ? `${Math.round(value * 100)}%`
+        : formatAxisValue(value, currency)
+    );
+
     const series = seriesKeys.map((key, index) => ({
       name: key,
       type: "line" as const,
+      label: dataLabel(labels, theme, "top", labelText),
+      labelLayout: edgeAwareLabels(data.length),
       smooth: true,
-      symbol: "none",
+      symbol: "circle",
+      symbolSize: labels ? 5 : 0,
+      showSymbol: labels,
       stack: stacked ? "total" : undefined,
       animationDuration: 850,
       animationEasing: "cubicOut" as const,
@@ -98,7 +124,7 @@ export default function AreaChartWidget({
             const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
             const val = isPercent
               ? `${Math.round(p.value * 100)}%`
-              : formatFullValue(p.value, currency, unit);
+              : formatValue(p.seriesName, p.value);
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
               `<span>${marker}${escapeHtml(labelOf(p.seriesName))}</span>` +
@@ -111,7 +137,7 @@ export default function AreaChartWidget({
       },
       series,
     };
-  }, [data, seriesKeys, colors, labelOf, mode, unit, currency, multi, stacked, isPercent]);
+  }, [data, seriesKeys, colors, labelOf, formatValue, mode, unit, currency, multi, stacked, isPercent, lang, theme, labels]);
 
   return (
     <ChartFrame

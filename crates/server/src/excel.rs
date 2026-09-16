@@ -6,6 +6,48 @@ use uuid::Uuid;
 
 use crate::types::{ColumnSchema, DetectedSheet};
 
+const PG_IDENT_MAX: usize = 63;
+
+const INDEX_MAX_DISTINCT: usize = 100;
+
+fn worth_indexing(col: &ColumnSchema, rows: &[HashMap<String, String>]) -> bool {
+    if col.r#type == "category" || col.r#type == "date" {
+        return true;
+    }
+    if col.r#type != "numeric" {
+        return false;
+    }
+    let mut seen: HashSet<&str> = HashSet::new();
+    for row in rows {
+        match row.get(&col.slug) {
+            Some(v) if !v.is_empty() => {
+                seen.insert(v.as_str());
+                if seen.len() > INDEX_MAX_DISTINCT {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    !seen.is_empty()
+}
+
+pub fn fit_dataset_key(dept_slug: &str, key: &str) -> String {
+    let overhead = dept_slug.len() + "_".len() + "_records".len();
+    let budget = PG_IDENT_MAX.saturating_sub(overhead);
+
+    if key.len() <= budget {
+        return key.to_string();
+    }
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&key, &mut hasher);
+    let tag = format!("{:06x}", (std::hash::Hasher::finish(&hasher) as u32) & 0xff_ffff);
+
+    let head = budget.saturating_sub(tag.len() + 1);
+    format!("{}_{}", &key[..head], tag)
+}
+
 pub fn slugify(name: &str) -> String {
     let re = Regex::new(r"[^a-z0-9]+").unwrap();
     let lower = name.to_lowercase();
@@ -295,6 +337,13 @@ pub struct ImportSpec<'a> {
     pub strict: bool,
 }
 
+pub fn base_name(path: &str) -> Option<String> {
+    path.rsplit(['/', '\\'])
+        .next()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 pub async fn execute_import(
     client: &mut tokio_postgres::Client,
     bytes: &[u8],
@@ -408,7 +457,7 @@ pub async fn execute_import(
             continue;
         }
 
-        let key = format!("{}_{}", base_key, slugify(sheet_name));
+        let key = fit_dataset_key(&dept_slug, &format!("{}_{}", base_key, slugify(sheet_name)));
         let table_name = format!("{}_{}_records", dept_slug, key);
         if primary_key.is_empty() {
             primary_key = key.clone();
@@ -439,9 +488,51 @@ pub async fn execute_import(
             0
         };
 
-        tx.execute(&format!("DROP TABLE IF EXISTS \"{}\"", table_name), &[])
+        let existing_shape: Vec<(String, String)> = if existed {
+            tx.query(
+                r#"
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name = $1
+                  AND table_schema = current_schema()
+                  AND column_name NOT IN ('id', 'source_sheet', 'created_at')
+                ORDER BY column_name
+                "#,
+                &[&table_name],
+            )
             .await
-            .map_err(|e| format!("Drop table error: {}", e))?;
+            .map_err(|e| format!("Column lookup error: {}", e))?
+            .iter()
+            .map(|r| (r.get(0), r.get(1)))
+            .collect()
+        } else {
+            Vec::new()
+        };
+
+        let mut wanted_shape: Vec<(String, String)> = import_cols
+            .iter()
+            .map(|c| {
+                let pg = match c.r#type.as_str() {
+                    "numeric" => "numeric",
+                    "date" => "date",
+                    _ => "text",
+                };
+                (c.slug.clone(), pg.to_string())
+            })
+            .collect();
+        wanted_shape.sort();
+
+        let reuse_table = existed && existing_shape == wanted_shape;
+
+        if reuse_table {
+            tx.execute(&format!("TRUNCATE TABLE \"{}\"", table_name), &[])
+                .await
+                .map_err(|e| format!("Truncate table error: {}", e))?;
+        } else {
+            tx.execute(&format!("DROP TABLE IF EXISTS \"{}\"", table_name), &[])
+                .await
+                .map_err(|e| format!("Drop table error: {}", e))?;
+        }
 
         let create_sql = format!(
             r#"
@@ -456,9 +547,11 @@ pub async fn execute_import(
             col_defs.join(",\n")
         );
 
-        tx.execute(&create_sql, &[])
-            .await
-            .map_err(|e| format!("Create table error: {}", e))?;
+        if !reuse_table {
+            tx.execute(&create_sql, &[])
+                .await
+                .map_err(|e| format!("Create table error: {}", e))?;
+        }
 
         let ds_id = Uuid::new_v4().to_string();
         let disp_title = if !spec.display_name.is_empty() {
@@ -467,14 +560,18 @@ pub async fn execute_import(
             sheet_name.clone()
         };
         let sync_enabled = spec.source_path.is_some();
+        let source_size = bytes.len() as i64;
+        let source_name = spec.source_path.and_then(base_name);
 
         tx.execute(
             r#"
             INSERT INTO dataset_registry
                 ("id", "dept", "key", "tableName", "displayName", "createdAt",
                  "sourcePath", "syncConfig", "syncEnabled", "lastSyncedAt",
-                 "lastSyncedMtime", "watchedBy", "createdBy")
-            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9, $10, $11)
+                 "lastSyncedMtime", "watchedBy", "createdBy",
+                 "sourceName", "sourceSize")
+            VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, now(), $9, $10, $11,
+                    $12, $13)
             ON CONFLICT ("dept", "key") DO UPDATE
             SET "tableName" = EXCLUDED."tableName",
                 "displayName" = EXCLUDED."displayName",
@@ -484,7 +581,9 @@ pub async fn execute_import(
                 "sourcePath" = COALESCE(EXCLUDED."sourcePath", dataset_registry."sourcePath"),
                 "watchedBy" = COALESCE(EXCLUDED."watchedBy", dataset_registry."watchedBy"),
                 "syncEnabled" = EXCLUDED."syncEnabled" OR dataset_registry."syncEnabled",
-                "createdBy" = COALESCE(dataset_registry."createdBy", EXCLUDED."createdBy")
+                "createdBy" = COALESCE(dataset_registry."createdBy", EXCLUDED."createdBy"),
+                "sourceName" = COALESCE(EXCLUDED."sourceName", dataset_registry."sourceName"),
+                "sourceSize" = EXCLUDED."sourceSize"
             "#,
             &[
                 &ds_id,
@@ -498,6 +597,8 @@ pub async fn execute_import(
                 &spec.source_mtime,
                 &spec.watched_by,
                 &spec.created_by,
+                &source_name,
+                &source_size,
             ],
         )
         .await
@@ -511,6 +612,20 @@ pub async fn execute_import(
             .await
             .map_err(|e| format!("Fetch dataset id error: {}", e))?;
         let true_ds_id: String = ds_row.get(0);
+
+        if let (Some(machine), Some(path)) = (spec.watched_by, spec.source_path) {
+            tx.execute(
+                r#"
+                INSERT INTO dataset_source_paths ("datasetId", machine, path)
+                VALUES ($1, $2, $3)
+                ON CONFLICT ("datasetId", machine)
+                DO UPDATE SET path = EXCLUDED.path, "lastSeenAt" = now()
+                "#,
+                &[&true_ds_id, &machine, &path],
+            )
+            .await
+            .map_err(|e| format!("Source path upsert error: {}", e))?;
+        }
 
         tx.execute(
             r#"DELETE FROM dataset_columns WHERE "datasetId" = $1"#,
@@ -613,6 +728,23 @@ pub async fn execute_import(
                 tx.execute(&insert_sql, &[])
                     .await
                     .map_err(|e| format!("Batch insert error: {}", e))?;
+            }
+        }
+
+        if !reuse_table {
+            for col in &import_cols {
+                if !worth_indexing(col, &rows_data) {
+                    continue;
+                }
+                tx.execute(
+                    &format!(
+                        r#"CREATE INDEX ON "{}" ("{}")"#,
+                        table_name, col.slug
+                    ),
+                    &[],
+                )
+                .await
+                .map_err(|e| format!("Create index error: {}", e))?;
             }
         }
 

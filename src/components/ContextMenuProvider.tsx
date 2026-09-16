@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import { t } from "../lib/i18n";
 
 type EditableTarget = HTMLInputElement | HTMLTextAreaElement;
 
@@ -91,14 +92,14 @@ export default function ContextMenuProvider() {
       try {
         text = await navigator.clipboard.readText();
       } catch {
-        toast.error("Tidak bisa membaca papan klip. Ctrl+C dulu atau pakai Ctrl+V.");
+        toast.error(t("clipboard.unreadable"));
         return;
       }
     }
     if (text) {
       insertAtCaret(target, text);
     } else {
-      toast.error("Clipboard kosong. Salin sesuatu dulu.");
+      toast.error(t("clipboard.empty"));
     }
   }
 

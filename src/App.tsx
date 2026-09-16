@@ -19,7 +19,8 @@ import {
 } from "./components/ImportWizard";
 import { api, restoreAuthToken, setAuthToken } from "./lib/api";
 import { setWindowFullscreen } from "./lib/desktop";
-import { useExcelSync, type SyncStatuses } from "./lib/excelSync";
+import { useExcelSync, useMachineName, type SyncStatuses } from "./lib/excelSync";
+import { useT } from "./lib/i18n";
 import {
   isAdmin,
   type SessionUser,
@@ -57,7 +58,7 @@ type AppContextType = {
 
 const REGISTRY_POLL_MS = 20_000;
 
-const WIDGET_CACHE_KEY = "starboard_widget_layout";
+const WIDGET_CACHE_KEY = "sigma_widget_layout";
 
 function readWidgetCache(): Record<string, WidgetDefinition[]> {
   try {
@@ -206,19 +207,20 @@ function DatasetRoute() {
 }
 
 export default function App() {
+  const t = useT();
   const [user, setUser] = useState<SessionUser | null>(() => {
-    const saved = localStorage.getItem("starboard_user");
+    const saved = localStorage.getItem("sigma_user");
     if (!saved) return null;
     try {
       const parsed = JSON.parse(saved) as SessionUser;
 
       if (!parsed?.accessLevel) {
-        localStorage.removeItem("starboard_user");
+        localStorage.removeItem("sigma_user");
         return null;
       }
       return parsed;
     } catch {
-      localStorage.removeItem("starboard_user");
+      localStorage.removeItem("sigma_user");
       return null;
     }
   });
@@ -237,9 +239,17 @@ export default function App() {
   const [editMode, setEditMode] = useState(false);
 
   const datasetsSigRef = useRef("");
+  const machine = useMachineName();
+  const machineRef = useRef<string | null>(null);
+  machineRef.current = machine;
 
   function applyDatasets(list: DatasetRegistry[]) {
-    const signature = JSON.stringify(list);
+    const signature = JSON.stringify(
+      list.map(({ lastSeenAt, ...rest }) => ({
+        ...rest,
+        lastSeenAt: lastSeenAt?.slice(0, 16) ?? null,
+      }))
+    );
     if (signature === datasetsSigRef.current) return false;
     datasetsSigRef.current = signature;
     setDatasets(list);
@@ -248,7 +258,7 @@ export default function App() {
 
   async function loadDatasets(role: string) {
     try {
-      const data = await api.getDatasets(role);
+      const data = await api.getDatasets(role, machineRef.current);
       applyDatasets(data);
     } catch (err: any) {
       if (err?.message?.includes("Unauthorized") || err?.message?.includes("401")) {
@@ -270,7 +280,7 @@ export default function App() {
       return datasetCache[key];
     }
     try {
-      const res = await api.getDatasetDetail(user.role, key);
+      const res = await api.getDatasetDetail(user.role, key, machineRef.current);
       setDatasetCache((prev) => ({ ...prev, [key]: res }));
       return res;
     } catch (err) {
@@ -278,6 +288,12 @@ export default function App() {
       return null;
     }
   }
+
+  useEffect(() => {
+    const role = user?.role;
+    if (!role || !machine) return;
+    loadDatasets(role);
+  }, [machine]);
 
   useEffect(() => {
     try {
@@ -293,7 +309,7 @@ export default function App() {
     let active = true;
     const id = window.setInterval(async () => {
       try {
-        const list = await api.getDatasets(role);
+        const list = await api.getDatasets(role, machineRef.current);
         if (!active) return;
         if (applyDatasets(list)) setDatasetCache({});
       } catch {
@@ -342,12 +358,12 @@ export default function App() {
     setDatasetCache({});
     setImportState(initialImportWizardState);
     setWidgetCache({});
-    localStorage.removeItem("starboard_user");
+    localStorage.removeItem("sigma_user");
     localStorage.removeItem(WIDGET_CACHE_KEY);
   }
 
   if (checking && !user) {
-    return <div className="hint" style={{ padding: 24 }}>Memuat aplikasi…</div>;
+    return <div className="hint" style={{ padding: 24 }}>{t("app.loading")}</div>;
   }
 
   return (

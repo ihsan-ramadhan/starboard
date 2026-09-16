@@ -1,11 +1,13 @@
 mod types;
 mod excel;
 mod analytics;
+mod server_sync;
 mod auth;
 
 use axum::{
+    body::Bytes,
     extract::{DefaultBodyLimit, Path, Query, State},
-    http::{Method, StatusCode},
+    http::{header, Method, StatusCode},
     middleware,
     response::IntoResponse,
     routing::{get, post},
@@ -16,20 +18,40 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio_postgres::NoTls;
+use uuid::Uuid;
 use tower_http::cors::CorsLayer;
 
-use crate::analytics::{execute_rows_query, execute_widget_query};
+use crate::analytics::{execute_column_values, execute_rows_query, execute_widget_query};
 use crate::excel::{execute_import, parse_and_analyze_sheets, ImportSpec};
 use crate::types::{
-    DatasetColumn, DatasetDetail, DatasetRegistry, DetectedSheet, SessionUser,
-    RowsQueryRequest, RowsQueryResult, WidgetQueryRequest, WidgetQueryResult,
+    ColumnValuesRequest, ColumnValuesResult, DatasetColumn, DatasetDetail, DatasetRegistry,
+    DetectedSheet, SessionUser, RowsQueryRequest, RowsQueryResult, WidgetQueryRequest,
+    WidgetQueryResult,
 };
 
-#[derive(Clone)]
 struct AppState {
     pool: Pool,
+    uploads: Mutex<HashMap<String, (Instant, Vec<u8>)>>,
+}
+
+const UPLOAD_TTL: Duration = Duration::from_secs(300);
+
+impl AppState {
+    fn stage_upload(&self, bytes: Vec<u8>) -> String {
+        let id = Uuid::new_v4().to_string();
+        let mut map = self.uploads.lock().unwrap();
+        map.retain(|_, (at, _)| at.elapsed() < UPLOAD_TTL);
+        map.insert(id.clone(), (Instant::now(), bytes));
+        id
+    }
+
+    fn take_upload(&self, id: &str) -> Option<Vec<u8>> {
+        let mut map = self.uploads.lock().unwrap();
+        map.remove(id).map(|(_, bytes)| bytes)
+    }
 }
 
 #[derive(Deserialize)]
@@ -48,6 +70,8 @@ struct LoginResponse {
 #[derive(Deserialize)]
 struct DeptQuery {
     dept: String,
+    #[serde(default)]
+    machine: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -63,6 +87,10 @@ struct WidgetPayload {
     id: String,
     r#type: String,
     title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(rename = "groupId", default)]
+    group_id: Option<String>,
     #[serde(rename = "datasetId", default)]
     dataset_id: String,
     metric: String,
@@ -76,12 +104,22 @@ struct WidgetPayload {
     series_column: Option<String>,
     #[serde(rename = "seriesMode", default)]
     series_mode: Option<String>,
+    #[serde(rename = "sortBy", default)]
+    sort_by: Option<String>,
     #[serde(rename = "lineColumn", default)]
     line_column: Option<String>,
+    #[serde(rename = "lineColumns", default)]
+    line_columns: Option<Vec<String>>,
+    #[serde(rename = "valueFormats", default)]
+    value_formats: Option<serde_json::Value>,
+    #[serde(rename = "valueCurrencies", default)]
+    value_currencies: Option<serde_json::Value>,
     #[serde(rename = "targetColumn", default)]
     target_column: Option<String>,
     #[serde(rename = "showTrendline", default)]
     show_trendline: Option<bool>,
+    #[serde(rename = "goodDirection", default)]
+    good_direction: Option<String>,
     #[serde(default)]
     filters: Option<Vec<crate::types::WidgetFilter>>,
     #[serde(rename = "tableColumns", default)]
@@ -104,8 +142,10 @@ struct WidgetPayload {
 
 #[derive(Deserialize)]
 struct AnalyzeRequest {
-    #[serde(rename = "fileBytes")]
-    file_bytes: Vec<u8>,
+    #[serde(rename = "uploadId", default)]
+    upload_id: Option<String>,
+    #[serde(rename = "fileBytes", default)]
+    file_bytes: Option<Vec<u8>>,
     #[serde(rename = "datasetKey", default)]
     dataset_key: Option<String>,
 }
@@ -117,8 +157,10 @@ struct ImportRequest {
     display_name: String,
     #[serde(rename = "baseKey")]
     base_key: String,
-    #[serde(rename = "fileBytes")]
-    file_bytes: Vec<u8>,
+    #[serde(rename = "uploadId", default)]
+    upload_id: Option<String>,
+    #[serde(rename = "fileBytes", default)]
+    file_bytes: Option<Vec<u8>>,
     #[serde(rename = "selectedSheets")]
     selected_sheets: Vec<String>,
     #[serde(rename = "selectedColumns")]
@@ -135,8 +177,10 @@ struct ImportRequest {
 #[derive(Deserialize)]
 struct SyncRequest {
     dept: String,
-    #[serde(rename = "fileBytes")]
-    file_bytes: Vec<u8>,
+    #[serde(rename = "uploadId", default)]
+    upload_id: Option<String>,
+    #[serde(rename = "fileBytes", default)]
+    file_bytes: Option<Vec<u8>>,
     #[serde(rename = "sourceMtime")]
     source_mtime: String,
 }
@@ -147,6 +191,9 @@ struct RenameRequest {
     #[serde(rename = "displayName")]
     display_name: Option<String>,
     description: Option<String>,
+    slicers: Option<serde_json::Value>,
+    #[serde(rename = "valueLabels")]
+    value_labels: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -163,6 +210,24 @@ struct SyncSettingsRequest {
     source_path: Option<String>,
     #[serde(rename = "watchedBy", default)]
     watched_by: Option<String>,
+    #[serde(rename = "fileName", default)]
+    file_name: Option<String>,
+    #[serde(rename = "fileSize", default)]
+    file_size: Option<i64>,
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Deserialize)]
+struct HeartbeatRequest {
+    dept: String,
+    machine: String,
+}
+
+#[derive(Serialize)]
+struct UploadResponse {
+    #[serde(rename = "uploadId")]
+    upload_id: String,
 }
 
 #[derive(Serialize)]
@@ -219,7 +284,12 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let state = Arc::new(AppState { pool });
+    let state = Arc::new(AppState {
+        pool,
+        uploads: Mutex::new(HashMap::new()),
+    });
+
+    server_sync::spawn(state.pool.clone());
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
@@ -249,12 +319,23 @@ async fn main() {
         )
         .route(
             "/api/datasets/{key}/sync",
-            post(sync_dataset_handler).put(update_sync_settings_handler),
+            post(sync_dataset_handler)
+                .put(update_sync_settings_handler)
+                .delete(release_watch_handler),
         )
+        .route(
+            "/api/datasets/{key}/icon",
+            get(get_dataset_icon_handler)
+                .put(put_dataset_icon_handler)
+                .delete(delete_dataset_icon_handler),
+        )
+        .route("/api/uploads", post(stage_upload_handler))
+        .route("/api/sync/heartbeat", post(heartbeat_handler))
         .route("/api/excel/analyze", post(analyze_excel_handler))
         .route("/api/excel/import", post(import_excel_handler))
         .route("/api/analytics/query", post(query_widget_data_handler))
         .route("/api/analytics/rows", post(query_rows_handler))
+        .route("/api/analytics/values", post(query_values_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
@@ -269,7 +350,7 @@ async fn main() {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!(">>> Starboard Backend running on http://{}", addr);
+    println!(">>> SIGMA Backend running on http://{}", addr);
 
     match tokio::net::TcpListener::bind(addr).await {
         Ok(listener) => {
@@ -306,6 +387,43 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
 
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "createdBy" text;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "description" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sourceName" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sourceSize" bigint;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverPath" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "serverError" text;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "slicers" jsonb;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "valueLabels" jsonb;
+            ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "iconVersion" integer;
+
+            CREATE TABLE IF NOT EXISTS dataset_icons (
+                "datasetId" text PRIMARY KEY
+                    REFERENCES dataset_registry(id) ON DELETE CASCADE,
+                mime text NOT NULL,
+                bytes bytea NOT NULL,
+                "updatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            DELETE FROM sessions WHERE "expiresAt" <= now();
+            CREATE UNIQUE INDEX IF NOT EXISTS sessions_token_key ON sessions (token);
+            CREATE INDEX IF NOT EXISTS dashboard_widgets_dataset_idx
+                ON dashboard_widgets ("datasetId");
+            CREATE INDEX IF NOT EXISTS dataset_columns_dataset_idx
+                ON dataset_columns ("datasetId");
+
+            CREATE TABLE IF NOT EXISTS dataset_source_paths (
+                "datasetId" text NOT NULL
+                    REFERENCES dataset_registry(id) ON DELETE CASCADE,
+                machine text NOT NULL,
+                path text NOT NULL,
+                "lastSeenAt" timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY ("datasetId", machine)
+            );
+
+            INSERT INTO dataset_source_paths ("datasetId", machine, path)
+            SELECT id, "watchedBy", "sourcePath"
+            FROM dataset_registry
+            WHERE "watchedBy" IS NOT NULL AND "sourcePath" IS NOT NULL
+            ON CONFLICT DO NOTHING;
             ALTER TABLE dataset_registry ADD COLUMN IF NOT EXISTS "sortOrder" integer;
             ALTER TABLE dashboard_widgets ADD COLUMN IF NOT EXISTS "userId" text;
 
@@ -342,10 +460,25 @@ async fn ensure_schema(pool: &Pool) -> Result<(), String> {
     Ok(())
 }
 
-const REGISTRY_COLUMNS: &str = r#"id, dept, key, "tableName", "displayName", "createdAt"::text,
-    "sourcePath", "syncEnabled",
-    to_char("lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    "lastSyncedMtime", "watchedBy", "sortOrder", "description""#;
+const REGISTRY_COLUMNS: &str = r#"r.id, r.dept, r.key, r."tableName", r."displayName",
+    r."createdAt"::text, r."sourcePath", r."syncEnabled",
+    to_char(r."lastSyncedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    r."lastSyncedMtime", r."watchedBy", r."sortOrder", r.description,
+    r."sourceName", r."sourceSize", r."serverPath", r."serverError", r.slicers,
+    r."valueLabels",
+    sp.path,
+    coalesce(agg.watchers, 0),
+    to_char(agg.seen AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    r."iconVersion""#;
+
+const REGISTRY_FROM: &str = r#"FROM dataset_registry r
+    LEFT JOIN dataset_source_paths sp
+        ON sp."datasetId" = r.id AND sp.machine = $2
+    LEFT JOIN (
+        SELECT "datasetId", count(*) AS watchers, max("lastSeenAt") AS seen
+        FROM dataset_source_paths
+        GROUP BY "datasetId"
+    ) agg ON agg."datasetId" = r.id"#;
 
 fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
     DatasetRegistry {
@@ -362,13 +495,23 @@ fn registry_from_row(r: &tokio_postgres::Row) -> DatasetRegistry {
         watched_by: r.get(10),
         sort_order: r.get(11),
         description: r.get(12),
+        source_name: r.get(13),
+        source_size: r.get(14),
+        server_path: r.get(15),
+        server_error: r.get(16),
+        slicers: r.get(17),
+        value_labels: r.get(18),
+        my_path: r.get(19),
+        watcher_count: r.get::<_, i64>(20) as i32,
+        last_seen_at: r.get(21),
+        icon_version: r.get(22),
     }
 }
 
 async fn health_check() -> impl IntoResponse {
     Json(HealthResponse {
         status: "ok",
-        service: "starboard-backend",
+        service: "sigma-backend",
     })
 }
 
@@ -428,7 +571,12 @@ async fn login_handler(
     let session_id = uuid::Uuid::new_v4().to_string();
     let token = auth::create_token();
     let expires: chrono::NaiveDateTime =
-        chrono::Utc::now().naive_utc() + chrono::Duration::days(7);
+        chrono::Utc::now().naive_utc()
+            + chrono::Duration::days(auth::SESSION_DAYS as i64);
+
+    let _ = client
+        .execute(r#"DELETE FROM sessions WHERE "expiresAt" <= now()"#, &[])
+        .await;
 
     client
         .execute(
@@ -489,13 +637,13 @@ async fn get_datasets_handler(
             &format!(
                 r#"
                 SELECT {}
-                FROM dataset_registry
-                WHERE dept = $1
-                ORDER BY "sortOrder" ASC NULLS LAST, "createdAt" DESC
+                {}
+                WHERE r.dept = $1
+                ORDER BY r."sortOrder" ASC NULLS LAST, r."createdAt" DESC
                 "#,
-                REGISTRY_COLUMNS
+                REGISTRY_COLUMNS, REGISTRY_FROM
             ),
-            &[&query.dept],
+            &[&query.dept, &query.machine],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Query error: {}", e)))?;
@@ -529,13 +677,13 @@ async fn get_dataset_detail_handler(
             &format!(
                 r#"
                 SELECT {}
-                FROM dataset_registry
-                WHERE dept = $1 AND key = $2
+                {}
+                WHERE r.dept = $1 AND r.key = $3
                 LIMIT 1
                 "#,
-                REGISTRY_COLUMNS
+                REGISTRY_COLUMNS, REGISTRY_FROM
             ),
-            &[&query.dept, &key],
+            &[&query.dept, &query.machine, &key],
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch dataset error: {}", e)))?;
@@ -657,7 +805,11 @@ async fn rename_dataset_handler(
         }
     }
 
-    if name.is_none() && description.is_none() {
+    if name.is_none()
+        && description.is_none()
+        && payload.slicers.is_none()
+        && payload.value_labels.is_none()
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             "Tidak ada perubahan yang dikirim.".to_string(),
@@ -692,6 +844,28 @@ async fn rename_dataset_handler(
             .await
             .map_err(|e| {
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("Deskripsi error: {}", e))
+            })?;
+    }
+
+    if let Some(slicers) = payload.slicers.as_ref() {
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET slicers = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, slicers],
+            )
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Slicer error: {}", e)))?;
+    }
+
+    if let Some(labels) = payload.value_labels.as_ref() {
+        affected += client
+            .execute(
+                r#"UPDATE dataset_registry SET "valueLabels" = $3 WHERE dept = $1 AND key = $2"#,
+                &[&payload.dept, &key, labels],
+            )
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Label nilai error: {}", e))
             })?;
     }
 
@@ -1015,14 +1189,225 @@ async fn save_widgets_handler(
     Ok(Json(true))
 }
 
+const ICON_MAX_BYTES: usize = 256 * 1024;
+
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
+    }
+    if bytes.starts_with(b"\xff\xd8\xff") {
+        return Some("image/jpeg");
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    None
+}
+
+async fn get_dataset_icon_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"SELECT i.mime, i.bytes
+               FROM dataset_icons i
+               JOIN dataset_registry r ON r.id = i."datasetId"
+               WHERE r.dept = $1 AND r.key = $2"#,
+            &[&auth.role, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Icon error: {}", e)))?
+        .ok_or((StatusCode::NOT_FOUND, "Gambar menu tidak ditemukan.".to_string()))?;
+
+    let mime: String = row.get(0);
+    let bytes: Vec<u8> = row.get(1);
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (
+                header::CACHE_CONTROL,
+                "private, max-age=31536000, immutable".to_string(),
+            ),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; sandbox".to_string(),
+            ),
+        ],
+        bytes,
+    ))
+}
+
+async fn put_dataset_icon_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    body: Bytes,
+) -> Result<Json<i32>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if body.len() > ICON_MAX_BYTES {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Gambar menu maksimal 256 KB.".to_string(),
+        ));
+    }
+    let mime = sniff_image_mime(&body).ok_or((
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "Format gambar tidak dikenali. Gunakan PNG, JPEG, atau WebP.".to_string(),
+    ))?;
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"WITH target AS (
+                   SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2
+               ), saved AS (
+                   INSERT INTO dataset_icons ("datasetId", mime, bytes)
+                   SELECT id, $3, $4 FROM target
+                   ON CONFLICT ("datasetId") DO UPDATE
+                       SET mime = excluded.mime,
+                           bytes = excluded.bytes,
+                           "updatedAt" = now()
+                   RETURNING "datasetId"
+               )
+               UPDATE dataset_registry
+               SET "iconVersion" = coalesce("iconVersion", 0) + 1
+               WHERE id = (SELECT "datasetId" FROM saved)
+               RETURNING "iconVersion""#,
+            &[&auth.role, &key, &mime, &body.as_ref()],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Icon error: {}", e)))?
+        .ok_or((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()))?;
+
+    Ok(Json(row.get(0)))
+}
+
+async fn delete_dataset_icon_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let row = client
+        .query_opt(
+            r#"WITH target AS (
+                   SELECT id FROM dataset_registry WHERE dept = $1 AND key = $2
+               ), gone AS (
+                   DELETE FROM dataset_icons
+                   WHERE "datasetId" = (SELECT id FROM target)
+               )
+               UPDATE dataset_registry
+               SET "iconVersion" = NULL
+               WHERE id = (SELECT id FROM target)
+               RETURNING id"#,
+            &[&auth.role, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Icon error: {}", e)))?;
+
+    if row.is_none() {
+        return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
+    }
+
+    Ok(Json(true))
+}
+
+async fn stage_upload_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    body: Bytes,
+) -> Result<Json<UploadResponse>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if body.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "File yang dikirim kosong.".to_string()));
+    }
+    let upload_id = state.stage_upload(body.to_vec());
+    Ok(Json(UploadResponse { upload_id }))
+}
+
+fn resolve_bytes(
+    state: &AppState,
+    upload_id: Option<&str>,
+    inline: Option<Vec<u8>>,
+) -> Result<Vec<u8>, (StatusCode, String)> {
+    if let Some(id) = upload_id {
+        return state.take_upload(id).ok_or((
+            StatusCode::GONE,
+            "Unggahan tidak ditemukan atau sudah kedaluwarsa. Ulangi dari awal.".to_string(),
+        ));
+    }
+    inline.ok_or((
+        StatusCode::BAD_REQUEST,
+        "Tidak ada file yang dikirim.".to_string(),
+    ))
+}
+
+async fn heartbeat_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(payload): Json<HeartbeatRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    if payload.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    client
+        .execute(
+            r#"
+            UPDATE dataset_source_paths sp
+            SET "lastSeenAt" = now()
+            FROM dataset_registry r
+            WHERE sp."datasetId" = r.id AND r.dept = $1 AND sp.machine = $2
+            "#,
+            &[&payload.dept, &payload.machine],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Heartbeat error: {}", e)))?;
+
+    Ok(Json(true))
+}
+
 async fn analyze_excel_handler(
+    State(state): State<Arc<AppState>>,
     auth: crate::auth::AuthUser,
     Json(payload): Json<AnalyzeRequest>,
 ) -> Result<Json<Vec<DetectedSheet>>, (StatusCode, String)> {
     auth.require_admin()?;
 
+    let bytes = resolve_bytes(&state, payload.upload_id.as_deref(), payload.file_bytes)?;
     let key = payload.dataset_key.unwrap_or_else(|| "dataset".to_string());
-    let sheets = parse_and_analyze_sheets(&payload.file_bytes, &key)
+    let sheets = parse_and_analyze_sheets(&bytes, &key)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(sheets))
 }
@@ -1046,9 +1431,11 @@ async fn import_excel_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
+    let bytes = resolve_bytes(&state, payload.upload_id.as_deref(), payload.file_bytes)?;
+
     let (primary_key, total_imported) = execute_import(
         &mut client,
-        &payload.file_bytes,
+        &bytes,
         &ImportSpec {
             dept: &payload.dept,
             display_name: &payload.display_name,
@@ -1119,6 +1506,9 @@ async fn sync_dataset_handler(
     }
 
     if last_mtime.as_deref() == Some(payload.source_mtime.as_str()) {
+        if let Some(id) = payload.upload_id.as_deref() {
+            state.take_upload(id);
+        }
         return Ok(Json(ImportResponse {
             primary_key: key,
             total_imported: 0,
@@ -1144,9 +1534,11 @@ async fn sync_dataset_handler(
         serde_json::from_value(config.get("selectedColumns").cloned().unwrap_or_default())
             .map_err(|e| (StatusCode::CONFLICT, format!("Resep sync rusak: {}", e)))?;
 
+    let bytes = resolve_bytes(&state, payload.upload_id.as_deref(), payload.file_bytes)?;
+
     let (primary_key, total_imported) = execute_import(
         &mut client,
-        &payload.file_bytes,
+        &bytes,
         &ImportSpec {
             dept: &payload.dept,
             display_name: &current_name,
@@ -1170,6 +1562,100 @@ async fn sync_dataset_handler(
     }))
 }
 
+pub(crate) fn claim_mismatch(
+    known_name: Option<&str>,
+    known_size: Option<i64>,
+    new_name: Option<&str>,
+    new_size: Option<i64>,
+) -> Option<String> {
+    let mut notes = Vec::new();
+
+    if let (Some(known), Some(candidate)) = (known_name, new_name) {
+        if !known.eq_ignore_ascii_case(candidate) {
+            notes.push(format!("namanya \"{}\", sumber sebelumnya \"{}\"", candidate, known));
+        }
+    }
+
+    if let (Some(known), Some(candidate)) = (known_size, new_size) {
+        if known > 0 && (candidate * 2 < known || candidate > known * 2) {
+            notes.push(format!(
+                "ukurannya {} KB, sumber sebelumnya {} KB",
+                candidate / 1024,
+                known / 1024
+            ));
+        }
+    }
+
+    if notes.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "File yang dipilih sepertinya bukan sumber yang sama: {}. Kirim ulang dengan force untuk tetap memakainya.",
+            notes.join("; ")
+        ))
+    }
+}
+
+async fn release_watch_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Path(key): Path<String>,
+    Query(query): Query<DeptQuery>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    auth.require_admin()?;
+    if query.dept != auth.role {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Anda tidak memiliki akses ke dataset departemen lain.".to_string(),
+        ));
+    }
+
+    let machine = query.machine.ok_or((
+        StatusCode::BAD_REQUEST,
+        "Nama mesin tidak disertakan.".to_string(),
+    ))?;
+
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    client
+        .execute(
+            r#"
+            DELETE FROM dataset_source_paths sp
+            USING dataset_registry r
+            WHERE sp."datasetId" = r.id
+              AND r.dept = $1 AND r.key = $2 AND sp.machine = $3
+            "#,
+            &[&query.dept, &key, &machine],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Release error: {}", e)))?;
+
+    client
+        .execute(
+            r#"
+            UPDATE dataset_registry r
+            SET "sourcePath" = (
+                SELECT sp.path FROM dataset_source_paths sp
+                WHERE sp."datasetId" = r.id ORDER BY sp."lastSeenAt" DESC LIMIT 1
+            )
+            WHERE r.dept = $1 AND r.key = $2
+              AND NOT EXISTS (
+                SELECT 1 FROM dataset_source_paths sp
+                WHERE sp."datasetId" = r.id AND sp.path = r."sourcePath"
+              )
+            "#,
+            &[&query.dept, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Repoint error: {}", e)))?;
+
+    Ok(Json(true))
+}
+
 async fn update_sync_settings_handler(
     State(state): State<Arc<AppState>>,
     auth: crate::auth::AuthUser,
@@ -1190,18 +1676,59 @@ async fn update_sync_settings_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
-    let affected = client
+    let row = client
+        .query_opt(
+            r#"SELECT id, "sourceName", "sourceSize" FROM dataset_registry
+               WHERE dept = $1 AND key = $2"#,
+            &[&payload.dept, &key],
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch dataset error: {}", e)))?;
+
+    let (dataset_id, known_name, known_size): (String, Option<String>, Option<i64>) = match row {
+        Some(r) => (r.get(0), r.get(1), r.get(2)),
+        None => return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string())),
+    };
+
+    if let (Some(path), Some(machine)) = (&payload.source_path, &payload.watched_by) {
+        if !payload.force {
+            if let Some(message) = claim_mismatch(
+                known_name.as_deref(),
+                known_size,
+                payload.file_name.as_deref(),
+                payload.file_size,
+            ) {
+                return Err((StatusCode::CONFLICT, message));
+            }
+        }
+
+        client
+            .execute(
+                r#"
+                INSERT INTO dataset_source_paths ("datasetId", machine, path)
+                VALUES ($1, $2, $3)
+                ON CONFLICT ("datasetId", machine)
+                DO UPDATE SET path = EXCLUDED.path, "lastSeenAt" = now()
+                "#,
+                &[&dataset_id, machine, path],
+            )
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Source path error: {}", e))
+            })?;
+    }
+
+    client
         .execute(
             r#"
             UPDATE dataset_registry
-            SET "syncEnabled" = $3,
-                "sourcePath" = COALESCE($4, "sourcePath"),
-                "watchedBy" = COALESCE($5, "watchedBy")
-            WHERE dept = $1 AND key = $2
+            SET "syncEnabled" = $2,
+                "sourcePath" = COALESCE($3, "sourcePath"),
+                "watchedBy" = COALESCE($4, "watchedBy")
+            WHERE id = $1
             "#,
             &[
-                &payload.dept,
-                &key,
+                &dataset_id,
                 &payload.enabled,
                 &payload.source_path,
                 &payload.watched_by,
@@ -1209,10 +1736,6 @@ async fn update_sync_settings_handler(
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Update sync error: {}", e)))?;
-
-    if affected == 0 {
-        return Err((StatusCode::NOT_FOUND, "Dataset tidak ditemukan.".to_string()));
-    }
 
     Ok(Json(true))
 }
@@ -1229,6 +1752,23 @@ async fn query_widget_data_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
 
     let res = execute_widget_query(&client, req, &auth.role)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Ok(Json(res))
+}
+
+async fn query_values_handler(
+    State(state): State<Arc<AppState>>,
+    auth: crate::auth::AuthUser,
+    Json(req): Json<ColumnValuesRequest>,
+) -> Result<Json<ColumnValuesResult>, (StatusCode, String)> {
+    let client = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Pool error: {}", e)))?;
+
+    let res = execute_column_values(&client, req, &auth.role)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(res))

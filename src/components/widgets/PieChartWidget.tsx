@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChartDataPoint, CurrencyCode } from "../../types";
-import { formatFullValue } from "../../lib/format";
+import type { ChartDataPoint, CurrencyCode, ValueFormat } from "../../types";
+import { compactValueAs, formatValueAs } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import { ChartFrame, escapeHtml } from "./chartParts";
 import { EChart } from "./EChart";
 import type { EChartsOption } from "echarts";
+import { useT } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type PieChartWidgetProps = {
   readonly title: string;
   readonly data: readonly ChartDataPoint[];
   readonly colors: Record<string, string>;
+  readonly format?: ValueFormat;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -18,10 +22,15 @@ export default function PieChartWidget({
   title,
   data,
   colors,
+  format,
   unit,
   currency,
   reloadNonce,
 }: PieChartWidgetProps) {
+  const t = useT();
+  const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
+  const c = chartChrome(theme);
   const [selected, setSelected] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
@@ -41,19 +50,20 @@ export default function PieChartWidget({
       animationEasing: "cubicOut",
       tooltip: {
         trigger: "item",
-        backgroundColor: "#ffffff",
-        borderColor: "#e2e8f0",
+        appendToBody: true,
+        backgroundColor: c.panel,
+        borderColor: c.panelBorder,
         borderWidth: 1,
         padding: [8, 12],
-        textStyle: { color: "#0f172a", fontSize: 12 },
+        textStyle: { color: c.text, fontSize: 12 },
         extraCssText:
-          "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+          `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
         formatter: (p: any) => {
           const marker = `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background-color:${p.color};"></span>`;
           return (
             `<div>` +
             `<div style="font-weight:600;margin-bottom:2px">${marker}${escapeHtml(p.name)}</div>` +
-            `<div style="font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))} (${p.percent}%)</div>` +
+            `<div style="font-variant-numeric:tabular-nums">${escapeHtml(formatValueAs(p.value, format, currency, unit))} (${p.percent}%)</div>` +
             `</div>`
           );
         },
@@ -63,12 +73,12 @@ export default function PieChartWidget({
         icon: "circle",
         itemWidth: 8,
         itemHeight: 8,
-        textStyle: { color: "#475569", fontSize: 11 },
+        textStyle: { color: c.axis, fontSize: 11 },
       },
       series: [
         {
           type: "pie",
-          radius: ["52%", "78%"],
+          radius: labels ? ["44%", "66%"] : ["52%", "78%"],
           center: ["50%", "45%"],
           avoidLabelOverlap: true,
           animationType: "scale",
@@ -76,10 +86,24 @@ export default function PieChartWidget({
           animationEasing: "cubicOut",
           itemStyle: {
             borderRadius: 3,
-            borderColor: "#ffffff",
+            borderColor: c.panel,
             borderWidth: 2,
           },
-          label: { show: false },
+          label: labels
+            ? {
+                show: true,
+                position: "outside",
+                fontSize: 10,
+                fontWeight: 600,
+                color: c.text,
+                formatter: (p: any) =>
+                  compactValueAs(p.value, format, currency, unit),
+              }
+            : { show: false },
+          labelLine: labels
+            ? { show: true, length: 6, length2: 6, lineStyle: { color: c.axis } }
+            : { show: false },
+          labelLayout: { hideOverlap: true },
           emphasis: {
             scale: true,
             scaleSize: 5,
@@ -92,7 +116,7 @@ export default function PieChartWidget({
         },
       ],
     }),
-    [data, colors, currency, unit]
+    [data, colors, currency, unit, format, theme, labels]
   );
 
   return (
@@ -101,9 +125,9 @@ export default function PieChartWidget({
       isEmpty={data.length === 0}
       overlay={
         <div className="donut-center">
-          <span className="donut-center-label">Total</span>
+          <span className="donut-center-label">{t("pie.total")}</span>
           <span className="donut-center-value">
-            {formatFullValue(total, currency, unit)}
+            {formatValueAs(total, format, currency, unit)}
           </span>
         </div>
       }

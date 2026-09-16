@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { DateMode } from "../../types";
 import { formatCount } from "../../lib/format";
+import { dateLocale, t, useLang } from "../../lib/i18n";
+import { WidgetSubtitle } from "./chartParts";
 
 export type DateCardProps = {
   readonly label: string;
@@ -42,8 +44,11 @@ function read(mode: DateMode, targetDate?: string, sinceDate?: string | null): R
     const left = daysBetween(today, end);
     return {
       value: left,
-      unit: "hari",
-      caption: `${Math.round(((total - left) / total) * 100)}% tahun ${today.getFullYear()} berjalan`,
+      unit: t("date.days"),
+      caption: t("date.yearProgress", {
+        pct: Math.round(((total - left) / total) * 100),
+        year: today.getFullYear(),
+      }),
       ratio: (total - left) / total,
     };
   }
@@ -56,50 +61,60 @@ function read(mode: DateMode, targetDate?: string, sinceDate?: string | null): R
     const left = daysBetween(today, end);
     return {
       value: left,
-      unit: "hari",
-      caption: `Kuartal ${quarter + 1} berakhir ${end.toLocaleDateString("id-ID", {
-        day: "numeric",
-        month: "short",
-      })}`,
+      unit: t("date.days"),
+      caption: t("date.quarterEnds", {
+        q: quarter + 1,
+        date: end.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" }),
+      }),
       ratio: (total - left) / total,
     };
   }
 
   if (mode === "untilDate") {
     if (!targetDate) {
-      return { value: null, unit: "", caption: "Tanggal target belum diatur" };
+      return { value: null, unit: "", caption: t("date.noTarget") };
     }
     const target = new Date(`${targetDate}T00:00:00`);
     if (Number.isNaN(target.getTime())) {
-      return { value: null, unit: "", caption: "Tanggal target tidak valid" };
+      return { value: null, unit: "", caption: t("date.invalidTarget") };
     }
     const left = daysBetween(today, target);
-    const formatted = target.toLocaleDateString("id-ID", {
+    const formatted = target.toLocaleDateString(dateLocale(), {
       day: "numeric",
       month: "long",
       year: "numeric",
     });
     if (left < 0) {
-      return { value: Math.abs(left), unit: "hari", caption: `Lewat dari ${formatted}` };
+      return {
+        value: Math.abs(left),
+        unit: t("date.days"),
+        caption: t("date.pastTarget", { date: formatted }),
+      };
     }
-    return { value: left, unit: "hari", caption: `Menuju ${formatted}` };
+    return {
+      value: left,
+      unit: t("date.days"),
+      caption: t("date.towardTarget", { date: formatted }),
+    };
   }
 
   if (!sinceDate) {
-    return { value: null, unit: "", caption: "Belum ada tanggal tercatat" };
+    return { value: null, unit: "", caption: t("date.noRecorded") };
   }
   const last = new Date(`${sinceDate.slice(0, 10)}T00:00:00`);
   if (Number.isNaN(last.getTime())) {
-    return { value: null, unit: "", caption: "Tanggal terakhir tidak terbaca" };
+    return { value: null, unit: "", caption: t("date.unreadable") };
   }
   return {
     value: daysBetween(last, today),
-    unit: "hari",
-    caption: `Terakhir ${last.toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    })}`,
+    unit: t("date.days"),
+    caption: t("date.lastSeen", {
+      date: last.toLocaleDateString(dateLocale(), {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    }),
   };
 }
 
@@ -133,6 +148,7 @@ export default function DateCard({
   sinceDate,
   reloadNonce = 0,
 }: DateCardProps) {
+  useLang();
   useCurrentDay();
   const reading = read(mode, targetDate, sinceDate);
   const targetWidth =
@@ -143,6 +159,7 @@ export default function DateCard({
   return (
     <div className="kpi-wrapper">
       <div className="kpi-label">{label}</div>
+      <WidgetSubtitle />
       <div className="kpi-value">
         {reading.value === null ? "—" : formatCount(reading.value)}
         {reading.unit && <span className="kpi-unit"> {reading.unit}</span>}

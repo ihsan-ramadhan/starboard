@@ -1,14 +1,16 @@
 import { Navigate } from "react-router-dom";
 import { useApp } from "../App";
 import { isAdmin } from "../types";
+import { useT } from "../lib/i18n";
 
 export default function HomePage() {
+  const t = useT();
   const { datasets, datasetsLoaded, user } = useApp();
 
   if (!datasetsLoaded) {
     return (
       <main className="content">
-        <p className="hint">Memuat dashboard…</p>
+        <p className="hint">{t("home.loading")}</p>
       </main>
     );
   }
@@ -24,10 +26,9 @@ export default function HomePage() {
   return (
     <main className="content">
       <div className="empty-card">
-        <h2>Belum ada dashboard</h2>
+        <h2>{t("home.empty")}</h2>
         <p>
-          Admin {user.role} belum mengimpor dataset apa pun. Dashboard akan
-          muncul di sini begitu datanya masuk.
+          {t("home.emptyDesc", { dept: user.role })}
         </p>
       </div>
     </main>

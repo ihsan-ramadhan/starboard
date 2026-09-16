@@ -38,6 +38,25 @@ pub struct DatasetRegistry {
     pub watched_by: Option<String>,
     #[serde(rename = "sortOrder")]
     pub sort_order: Option<i32>,
+    #[serde(rename = "sourceName")]
+    pub source_name: Option<String>,
+    #[serde(rename = "sourceSize")]
+    pub source_size: Option<i64>,
+    #[serde(rename = "serverPath")]
+    pub server_path: Option<String>,
+    #[serde(rename = "serverError")]
+    pub server_error: Option<String>,
+    pub slicers: Option<serde_json::Value>,
+    #[serde(rename = "valueLabels")]
+    pub value_labels: Option<serde_json::Value>,
+    #[serde(rename = "myPath")]
+    pub my_path: Option<String>,
+    #[serde(rename = "watcherCount")]
+    pub watcher_count: i32,
+    #[serde(rename = "lastSeenAt")]
+    pub last_seen_at: Option<String>,
+    #[serde(rename = "iconVersion")]
+    pub icon_version: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -90,7 +109,10 @@ pub struct DetectedSheet {
 pub struct WidgetFilter {
     pub column: String,
     pub op: String,
+    #[serde(default)]
     pub value: String,
+    #[serde(default)]
+    pub values: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -133,6 +155,22 @@ pub struct RowsQueryRequest {
     #[serde(rename = "sortDir")]
     pub sort_dir: Option<String>,
     pub filters: Option<Vec<WidgetFilter>>,
+    #[serde(rename = "withTotal")]
+    pub with_total: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ColumnValuesRequest {
+    #[serde(rename = "datasetId")]
+    pub dataset_id: String,
+    pub column: String,
+    pub limit: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ColumnValuesResult {
+    pub values: Vec<String>,
+    pub truncated: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

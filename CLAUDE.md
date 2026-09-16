@@ -1,5 +1,3 @@
-@AGENTS.md
-
 <!-- antislop:start -->
 ## antislop
 For UI, copy, people, mobile layout, or code comments work, read `antislop.md` (core) and then the skill for the task:

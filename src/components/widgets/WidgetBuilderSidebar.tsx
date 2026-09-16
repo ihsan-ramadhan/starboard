@@ -1,29 +1,41 @@
-import { useEffect, useMemo, useState } from "react";
-import type {
-  CurrencyCode,
-  DateMode,
-  DatasetColumn,
-  FilterOp,
-  SeriesMode,
-  WidgetDefinition,
-  WidgetFilter,
-  WidgetType,
-} from "../../types";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
-  CURRENCY_LABEL,
-  DATE_MODE_LABEL,
-  FILTER_OP_LABEL,
+  CURRENCY_SHORT_KEY,
+  DATE_MODE_KEY,
+  FILTER_OP_KEY,
+  GOOD_DIRECTION_KEY,
+  defaultSortBy,
   opsForColumn,
+  SORT_BY_KEY,
+  VALUE_FORMAT_KEY,
+  type CurrencyCode,
+  type DateMode,
+  type DatasetColumn,
+  type FilterOp,
+  type GoodDirection,
+  type SeriesMode,
+  type SortBy,
+  type ValueFormat,
+  type WidgetDefinition,
+  type WidgetFilter,
+  type WidgetType,
 } from "../../types";
-import { setScaleWarningHidden, useScaleWarningHidden } from "../../lib/prefs";
+import { useT, type TKey } from "../../lib/i18n";
 import BarChartIcon from "../../assets/icons/chart-bar.svg?react";
 import LineChartIcon from "../../assets/icons/chart-line.svg?react";
 import AreaChartIcon from "../../assets/icons/chart-area.svg?react";
 import ComboChartIcon from "../../assets/icons/chart-combo.svg?react";
 import PieChartIcon from "../../assets/icons/chart-pie.svg?react";
-import KpiIcon from "../../assets/icons/gauge.svg?react";
+import KpiIcon from "../../assets/icons/chart-kpi.svg?react";
+import GaugeIcon from "../../assets/icons/gauge.svg?react";
+import BarHChartIcon from "../../assets/icons/chart-bar-h.svg?react";
+import HeatmapIcon from "../../assets/icons/chart-heatmap.svg?react";
+import ScatterIcon from "../../assets/icons/chart-scatter.svg?react";
+import TreemapIcon from "../../assets/icons/chart-treemap.svg?react";
 import TableIcon from "../../assets/icons/table.svg?react";
 import CalendarIcon from "../../assets/icons/calendar-clock.svg?react";
+import HeadingIcon from "../../assets/icons/heading.svg?react";
+import LayersIcon from "../../assets/icons/layers.svg?react";
 import TrashIcon from "../../assets/icons/trash.svg?react";
 
 export type WidgetBuilderSidebarProps = {
@@ -31,6 +43,7 @@ export type WidgetBuilderSidebarProps = {
   readonly columns: readonly DatasetColumn[];
   readonly datasetId: string;
   readonly editing: WidgetDefinition | null;
+  readonly groups: readonly { id: string; title: string }[];
   readonly onSave: (widget: WidgetDefinition) => void;
   readonly onDeselect: () => void;
   readonly onDelete?: (widget: WidgetDefinition) => void;
@@ -74,34 +87,48 @@ const NO_CAPS: Caps = {
 
 const CAPS: Record<WidgetType, Caps> = {
   kpi: { ...NO_CAPS, values: "one", target: true, money: true, unit: true, filter: true },
+  gauge: { ...NO_CAPS, values: "one", target: true, money: true, unit: true, filter: true },
   bar: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
+  barh: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
   line: { ...NO_CAPS, values: "many", group: true, series: true, trend: true, limit: true, money: true, filter: true },
   area: { ...NO_CAPS, values: "many", group: true, series: true, stack: true, limit: true, money: true, filter: true },
   combo: { ...NO_CAPS, values: "many", group: true, combo: true, limit: true, money: true, filter: true },
   pie: { ...NO_CAPS, values: "one", group: true, limit: true, money: true, filter: true },
+  treemap: { ...NO_CAPS, values: "one", group: true, limit: true, money: true, unit: true, filter: true },
+  heatmap: { ...NO_CAPS, values: "one", group: true, series: true, limit: true, money: true, unit: true, filter: true },
+  scatter: { ...NO_CAPS, values: "many", group: true, limit: true, money: true, unit: true, filter: true },
   table: { ...NO_CAPS, table: true, limit: true, filter: true },
   date: { ...NO_CAPS, date: true },
+  section: { ...NO_CAPS },
+  group: { ...NO_CAPS },
 };
 
 const VISUAL_TYPES: {
   type: WidgetType;
-  label: string;
+  labelKey: TKey;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }[] = [
-  { type: "bar", label: "Bar", icon: BarChartIcon },
-  { type: "line", label: "Line", icon: LineChartIcon },
-  { type: "area", label: "Area", icon: AreaChartIcon },
-  { type: "combo", label: "Combo", icon: ComboChartIcon },
-  { type: "pie", label: "Pie", icon: PieChartIcon },
-  { type: "kpi", label: "KPI", icon: KpiIcon },
-  { type: "table", label: "Tabel", icon: TableIcon },
-  { type: "date", label: "Tanggal", icon: CalendarIcon },
+  { type: "bar", labelKey: "visual.bar", icon: BarChartIcon },
+  { type: "barh", labelKey: "visual.barh", icon: BarHChartIcon },
+  { type: "line", labelKey: "visual.line", icon: LineChartIcon },
+  { type: "area", labelKey: "visual.area", icon: AreaChartIcon },
+  { type: "combo", labelKey: "visual.combo", icon: ComboChartIcon },
+  { type: "pie", labelKey: "visual.pie", icon: PieChartIcon },
+  { type: "treemap", labelKey: "visual.treemap", icon: TreemapIcon },
+  { type: "heatmap", labelKey: "visual.heatmap", icon: HeatmapIcon },
+  { type: "scatter", labelKey: "visual.scatter", icon: ScatterIcon },
+  { type: "kpi", labelKey: "visual.kpi", icon: KpiIcon },
+  { type: "gauge", labelKey: "visual.gauge", icon: GaugeIcon },
+  { type: "table", labelKey: "visual.table", icon: TableIcon },
+  { type: "date", labelKey: "visual.date", icon: CalendarIcon },
+  { type: "section", labelKey: "visual.section", icon: HeadingIcon },
+  { type: "group", labelKey: "visual.group", icon: LayersIcon },
 ];
 
-const SERIES_MODE_LABEL: Record<SeriesMode, string> = {
-  grouped: "Berdampingan",
-  stacked: "Bertumpuk",
-  stacked100: "Bertumpuk 100%",
+const SERIES_MODE_KEY: Record<SeriesMode, TKey> = {
+  grouped: "seriesMode.grouped",
+  stacked: "seriesMode.stacked",
+  stacked100: "seriesMode.stacked100",
 };
 
 type DraftFilter = WidgetFilter & { readonly id: string };
@@ -109,14 +136,20 @@ type DraftFilter = WidgetFilter & { readonly id: string };
 type Draft = {
   type: WidgetType;
   title: string;
+  description: string;
+  groupId: string;
   metric: WidgetDefinition["metric"];
   metricColumn: string;
   metricColumns: string[];
   groupByColumn: string;
   seriesColumn: string;
   seriesMode: SeriesMode;
-  lineColumn: string;
+  sortBy: SortBy;
+  lineColumns: string[];
+  valueFormats: Record<string, ValueFormat>;
+  valueCurrencies: Record<string, CurrencyCode>;
   targetColumn: string;
+  goodDirection: GoodDirection;
   showTrendline: boolean;
   filters: DraftFilter[];
   tableColumns: string[];
@@ -131,14 +164,20 @@ type Draft = {
 const BLANK: Draft = {
   type: "bar",
   title: "",
+  description: "",
+  groupId: "",
   metric: "SUM",
   metricColumn: "",
   metricColumns: [],
   groupByColumn: "",
   seriesColumn: "",
   seriesMode: "grouped",
-  lineColumn: "",
+  sortBy: "value",
+  lineColumns: [],
+  valueFormats: {},
+  valueCurrencies: {},
   targetColumn: "",
+  goodDirection: "higher",
   showTrendline: false,
   filters: [],
   tableColumns: [],
@@ -150,11 +189,25 @@ const BLANK: Draft = {
   limit: 10,
 };
 
+function legacyFormats(w: WidgetDefinition): Record<string, ValueFormat> {
+  const column = w.metricColumn ?? w.metricColumns?.[0];
+  if (!w.isCurrency || !column) return {};
+  return { [column]: "currency" };
+}
+
+function legacyCurrencies(w: WidgetDefinition): Record<string, CurrencyCode> {
+  const column = w.metricColumn ?? w.metricColumns?.[0];
+  if (!w.isCurrency || !column) return {};
+  return { [column]: w.currency ?? "IDR" };
+}
+
 function draftFrom(widget: WidgetDefinition | null): Draft {
   if (!widget) return BLANK;
   return {
     type: widget.type,
     title: widget.title,
+    description: widget.description ?? "",
+    groupId: widget.groupId ?? "",
     metric: widget.metric,
     metricColumn: widget.metricColumn ?? "",
     metricColumns:
@@ -162,8 +215,13 @@ function draftFrom(widget: WidgetDefinition | null): Draft {
     groupByColumn: widget.groupByColumn ?? "",
     seriesColumn: widget.seriesColumn ?? "",
     seriesMode: widget.seriesMode ?? "grouped",
-    lineColumn: widget.lineColumn ?? "",
+    sortBy: widget.sortBy ?? defaultSortBy(widget.type),
+    lineColumns:
+      widget.lineColumns ?? (widget.lineColumn ? [widget.lineColumn] : []),
+    valueFormats: widget.valueFormats ?? legacyFormats(widget),
+    valueCurrencies: widget.valueCurrencies ?? legacyCurrencies(widget),
     targetColumn: widget.targetColumn ?? "",
+    goodDirection: widget.goodDirection ?? "higher",
     showTrendline: widget.showTrendline ?? false,
     filters: (widget.filters ?? []).map((f) => ({ ...f, id: createId() })),
     tableColumns: widget.tableColumns ?? [],
@@ -217,54 +275,66 @@ type BuildContext = {
 
 type ValidationRule = {
   readonly fails: (ctx: BuildContext) => boolean;
-  readonly message: string;
+  readonly messageKey: TKey;
 };
 
 const VALIDATION_RULES: readonly ValidationRule[] = [
   {
     fails: ({ draft }) => !draft.title.trim(),
-    message: "Judul widget belum diisi.",
+    messageKey: "validate.title",
   },
   {
     fails: ({ draft, caps, isCount }) =>
       caps.values === "one" && !isCount && !draft.metricColumn,
-    message: "Kolom nilai belum dipilih.",
+    messageKey: "validate.valueColumn",
+  },
+  {
+    fails: ({ draft }) =>
+      draft.type === "heatmap" && (!draft.groupByColumn || !draft.seriesColumn),
+    messageKey: "validate.heatmapSeries",
+  },
+  {
+    fails: ({ draft, isCount, picked }) =>
+      draft.type === "scatter" && !isCount && picked.length !== 2,
+    messageKey: "validate.scatterTwo",
   },
   {
     fails: ({ caps, isCount, picked }) =>
       caps.values === "many" && !isCount && picked.length === 0,
-    message: "Pilih minimal satu kolom nilai.",
+    messageKey: "validate.atLeastOneValue",
   },
   {
     fails: ({ draft, caps }) => caps.group && !draft.groupByColumn,
-    message: "Sumbu / kategori belum dipilih.",
+    messageKey: "validate.axis",
   },
   {
     fails: ({ caps, picked }) => caps.combo && picked.length < 2,
-    message: "Combo chart butuh minimal dua kolom nilai.",
+    messageKey: "validate.comboTwoValues",
   },
   {
     fails: ({ draft, caps, picked }) =>
-      caps.combo && !picked.includes(draft.lineColumn),
-    message: "Pilih kolom yang tampil sebagai garis.",
+      caps.combo &&
+      (draft.lineColumns.filter((c) => picked.includes(c)).length === 0 ||
+        picked.every((c) => draft.lineColumns.includes(c))),
+    messageKey: "validate.lineColumns",
   },
   {
     fails: ({ draft, caps }) => caps.table && draft.tableColumns.length === 0,
-    message: "Pilih minimal satu kolom tabel.",
+    messageKey: "validate.tableColumn",
   },
   {
     fails: ({ draft, caps }) =>
       caps.date && draft.dateMode === "untilDate" && !draft.targetDate,
-    message: "Tanggal target belum diisi.",
+    messageKey: "validate.targetDate",
   },
   {
     fails: ({ draft, caps }) =>
       caps.date && draft.dateMode === "sinceColumn" && !draft.metricColumn,
-    message: "Kolom tanggal belum dipilih.",
+    messageKey: "validate.dateColumn",
   },
   {
     fails: ({ draft }) => draft.filters.some((f) => f.column && f.value === ""),
-    message: "Nilai filter belum diisi.",
+    messageKey: "validate.filterValue",
   },
 ];
 
@@ -289,8 +359,12 @@ function axisFields(
   | "groupByColumn"
   | "seriesColumn"
   | "seriesMode"
-  | "lineColumn"
+  | "sortBy"
+  | "lineColumns"
+  | "valueFormats"
+  | "valueCurrencies"
   | "targetColumn"
+  | "goodDirection"
   | "showTrendline"
 > {
   const { draft, caps, isCount, multiValue } = ctx;
@@ -300,8 +374,17 @@ function axisFields(
     groupByColumn: caps.group ? draft.groupByColumn : undefined,
     seriesColumn: series ? draft.seriesColumn || undefined : undefined,
     seriesMode: caps.stack ? draft.seriesMode : undefined,
-    lineColumn: caps.combo ? draft.lineColumn : undefined,
+    sortBy: caps.group ? draft.sortBy : undefined,
+    lineColumns: caps.combo ? draft.lineColumns : undefined,
+    valueFormats:
+      Object.keys(draft.valueFormats).length > 0 ? draft.valueFormats : undefined,
+    valueCurrencies:
+      Object.keys(draft.valueCurrencies).length > 0
+        ? draft.valueCurrencies
+        : undefined,
     targetColumn: target ? draft.targetColumn || undefined : undefined,
+    goodDirection:
+      target && draft.targetColumn ? draft.goodDirection : undefined,
     showTrendline: caps.trend ? draft.showTrendline : undefined,
   };
 }
@@ -321,7 +404,6 @@ function contentFields(
   | "unit"
 > {
   const { draft, caps } = ctx;
-  const money = caps.money && draft.isCurrency;
   const untilDate = caps.date && draft.dateMode === "untilDate";
   return {
     filters: caps.filter && filters.length > 0 ? filters : undefined,
@@ -329,9 +411,9 @@ function contentFields(
     dateMode: caps.date ? draft.dateMode : undefined,
     targetDate: untilDate ? draft.targetDate : undefined,
     limit: caps.limit ? draft.limit : undefined,
-    isCurrency: money,
-    currency: money ? draft.currency : undefined,
-    unit: caps.unit && !money ? draft.unit.trim() || undefined : undefined,
+    isCurrency: undefined,
+    currency: undefined,
+    unit: caps.unit ? draft.unit.trim() || undefined : undefined,
   };
 }
 
@@ -340,12 +422,14 @@ export default function WidgetBuilderSidebar({
   columns,
   datasetId,
   editing,
+  groups,
   onSave,
   onDeselect,
   onDelete,
 }: WidgetBuilderSidebarProps) {
+  const t = useT();
+  const visualGroup = useId();
   const [draft, setDraft] = useState<Draft>(BLANK);
-  const warningHidden = useScaleWarningHidden();
 
   useEffect(() => {
     setDraft(draftFrom(editing));
@@ -385,7 +469,9 @@ export default function WidgetBuilderSidebar({
         groupByColumn: nextCaps.group ? current.groupByColumn : "",
         seriesColumn: nextCaps.series ? current.seriesColumn : "",
         targetColumn: nextCaps.target ? current.targetColumn : "",
-        lineColumn: nextCaps.combo ? current.lineColumn : "",
+        goodDirection: nextCaps.target ? current.goodDirection : "higher",
+        lineColumns: nextCaps.combo ? current.lineColumns : [],
+        sortBy: defaultSortBy(next),
         showTrendline: nextCaps.trend ? current.showTrendline : false,
         limit: limitFor(next, current.limit),
       };
@@ -429,8 +515,14 @@ export default function WidgetBuilderSidebar({
 
   const buildContext: BuildContext = { draft, caps, isCount, picked, multiValue };
 
+  const formatTargets = useMemo(() => {
+    const names = picked.length > 0 ? picked : [draft.metricColumn];
+    const extra = draft.targetColumn ? [draft.targetColumn] : [];
+    return [...new Set([...names, ...extra])].filter(Boolean) as string[];
+  }, [picked, draft.metricColumn, draft.targetColumn]);
+
   const problem =
-    VALIDATION_RULES.find((rule) => rule.fails(buildContext))?.message ?? null;
+    VALIDATION_RULES.find((rule) => rule.fails(buildContext))?.messageKey ?? null;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -444,6 +536,9 @@ export default function WidgetBuilderSidebar({
       id: editing?.id ?? createId(),
       type: draft.type,
       title: draft.title.trim(),
+      description:
+        draft.type === "group" ? undefined : draft.description.trim() || undefined,
+      groupId: draft.groupId || undefined,
       datasetId: editing?.datasetId ?? datasetId,
       ...metricFields(buildContext),
       ...axisFields(buildContext),
@@ -455,13 +550,13 @@ export default function WidgetBuilderSidebar({
   return (
     <aside
       className={`builder-sidebar${isOpen ? "" : " is-hidden"}`}
-      aria-label="Panel visualisasi"
+      aria-label={t("builder.visualPanel")}
       aria-hidden={!isOpen}
     >
       <div className="builder-sidebar-inner">
         <div className="builder-sidebar-header">
           <div className="builder-sidebar-title-group">
-            <h2 className="builder-sidebar-title">Visualisasi</h2>
+            <h2 className="builder-sidebar-title">{t("builder.visualisation")}</h2>
           </div>
 
           {editing && (
@@ -470,7 +565,7 @@ export default function WidgetBuilderSidebar({
                 type="button"
                 className="builder-sidebar-text-btn"
                 onClick={onDeselect}
-                title="Batalkan pilihan dan buat widget baru"
+                title={t("builder.newWidgetHint")}
               >
                 + Buat Baru
               </button>
@@ -481,49 +576,90 @@ export default function WidgetBuilderSidebar({
         <form className="builder-sidebar-form" onSubmit={handleSubmit}>
           <div className="builder-sidebar-body">
             <section className="builder-section">
-              <span className="builder-section-title">Tipe Visual</span>
-              <div className="builder-visual-gallery" role="radiogroup" aria-label="Pilih tipe visual">
+              <span className="builder-section-title">{t("builder.visualType")}</span>
+              <fieldset
+                className="builder-visual-gallery"
+                aria-label={t("builder.pickVisualType")}
+              >
                 {VISUAL_TYPES.map((visual) => {
                   const Icon = visual.icon;
                   const active = draft.type === visual.type;
                   return (
-                    <button
+                    <label
                       key={visual.type}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
                       className={`visual-tile${active ? " is-active" : ""}`}
-                      onClick={() => changeType(visual.type)}
-                      title={visual.label}
+                      title={t(visual.labelKey)}
                     >
+                      <input
+                        type="radio"
+                        className="visual-tile-input"
+                        name={visualGroup}
+                        value={visual.type}
+                        checked={active}
+                        onChange={() => changeType(visual.type)}
+                      />
                       <span className="visual-tile-icon">
                         <Icon width={16} height={16} />
                       </span>
-                      <span className="visual-tile-label">{visual.label}</span>
-                    </button>
+                      <span className="visual-tile-label">{t(visual.labelKey)}</span>
+                    </label>
                   );
                 })}
-              </div>
+              </fieldset>
             </section>
 
             <section className="builder-section">
-              <span className="builder-section-title">Konfigurasi Data</span>
+              <span className="builder-section-title">{t("builder.dataConfig")}</span>
 
               <label className="builder-field">
-                <span className="builder-label">Judul Widget</span>
+                <span className="builder-label">{t("builder.widgetTitle")}</span>
                 <input
                   type="text"
                   value={draft.title}
                   onChange={(e) => set("title", e.target.value)}
-                  placeholder="Contoh: Produksi vs Rencana"
+                  placeholder={t("builder.titlePlaceholder")}
                   className="builder-input"
                   required
                 />
               </label>
 
+              {draft.type !== "group" && (
+                <label className="builder-field">
+                  <span className="builder-label">{t("builder.widgetDescription")}</span>
+                  <textarea
+                    value={draft.description}
+                    onChange={(e) => set("description", e.target.value)}
+                    placeholder={t("builder.descriptionPlaceholder")}
+                    className="builder-input builder-textarea"
+                    rows={2}
+                    maxLength={280}
+                  />
+                  <p className="builder-field-desc">{t("builder.descriptionHint")}</p>
+                </label>
+              )}
+
+              {draft.type !== "group" && groups.length > 0 && (
+                <label className="builder-field">
+                  <span className="builder-label">{t("builder.widgetGroup")}</span>
+                  <select
+                    value={draft.groupId}
+                    onChange={(e) => set("groupId", e.target.value)}
+                    className="builder-input"
+                  >
+                    <option value="">{t("builder.noGroup")}</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.title}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="builder-field-desc">{t("builder.groupHint")}</p>
+                </label>
+              )}
+
               {caps.values !== "none" && (
                 <label className="builder-field">
-                  <span className="builder-label">Agregasi</span>
+                  <span className="builder-label">{t("builder.aggregation")}</span>
                   <select
                     value={draft.metric}
                     onChange={(e) => set("metric", e.target.value as Draft["metric"])}
@@ -540,13 +676,13 @@ export default function WidgetBuilderSidebar({
 
               {caps.values === "one" && !isCount && (
                 <label className="builder-field">
-                  <span className="builder-label">Kolom Nilai</span>
+                  <span className="builder-label">{t("builder.valueColumn")}</span>
                   <select
                     value={draft.metricColumn}
                     onChange={(e) => set("metricColumn", e.target.value)}
                     className="builder-input"
                   >
-                    <option value="">— Pilih kolom —</option>
+                    <option value="">{t("builder.pickColumn")}</option>
                     {numericCols.map((c) => (
                       <option key={c.name} value={c.name}>
                         {c.label || c.name}
@@ -558,14 +694,13 @@ export default function WidgetBuilderSidebar({
 
               {caps.values === "many" && !isCount && (
                 <div className="builder-field">
-                  <span className="builder-label">Kolom Nilai</span>
+                  <span className="builder-label">{t("builder.valueColumn")}</span>
                   <p className="builder-field-desc">
-                    Pilih dua kolom atau lebih untuk membandingkan, misalnya rencana
-                    dan realisasi.
+                    {t("builder.multiValueDesc")}
                   </p>
                   <div className="builder-checklist">
                     {numericCols.length === 0 ? (
-                      <p className="builder-field-desc">Tidak ada kolom numerik.</p>
+                      <p className="builder-field-desc">{t("builder.noNumericColumn")}</p>
                     ) : (
                       numericCols.map((c) => (
                         <label key={c.name} className="builder-check">
@@ -575,9 +710,10 @@ export default function WidgetBuilderSidebar({
                             onChange={() => {
                               const next = toggle(picked, c.name);
                               set("metricColumns", next);
-                              if (draft.lineColumn && !next.includes(draft.lineColumn)) {
-                                set("lineColumn", "");
-                              }
+                              set(
+                                "lineColumns",
+                                draft.lineColumns.filter((n) => next.includes(n))
+                              );
                             }}
                           />
                           <span>{c.label || c.name}</span>
@@ -590,13 +726,13 @@ export default function WidgetBuilderSidebar({
 
               {caps.target && !isCount && (
                 <label className="builder-field">
-                  <span className="builder-label">Kolom Target (opsional)</span>
+                  <span className="builder-label">{t("builder.targetColumn")}</span>
                   <select
                     value={draft.targetColumn}
                     onChange={(e) => set("targetColumn", e.target.value)}
                     className="builder-input"
                   >
-                    <option value="">— Tanpa target —</option>
+                    <option value="">{t("builder.noTarget")}</option>
                     {numericCols
                       .filter((c) => c.name !== draft.metricColumn)
                       .map((c) => (
@@ -608,18 +744,54 @@ export default function WidgetBuilderSidebar({
                 </label>
               )}
 
-              {caps.combo && picked.length > 0 && (
+              {caps.target && !isCount && draft.targetColumn && (
                 <label className="builder-field">
-                  <span className="builder-label">Tampil sebagai garis</span>
+                  <span className="builder-label">{t("builder.goodDirection")}</span>
                   <select
-                    value={draft.lineColumn}
-                    onChange={(e) => set("lineColumn", e.target.value)}
+                    value={draft.goodDirection}
+                    onChange={(e) =>
+                      set("goodDirection", e.target.value as GoodDirection)
+                    }
                     className="builder-input"
                   >
-                    <option value="">— Pilih kolom —</option>
+                    <option value="higher">{t(GOOD_DIRECTION_KEY.higher)}</option>
+                    <option value="lower">{t(GOOD_DIRECTION_KEY.lower)}</option>
+                  </select>
+                </label>
+              )}
+
+              {caps.combo && picked.length > 0 && (
+                <div className="builder-field">
+                  <span className="builder-label">{t("builder.asLines")}</span>
+                  <p className="builder-field-desc">{t("builder.asLinesDesc")}</p>
+                  <div className="builder-checklist">
                     {picked.map((name) => (
-                      <option key={name} value={name}>
-                        {labelOf(name)}
+                      <label key={name} className="builder-check">
+                        <input
+                          type="checkbox"
+                          checked={draft.lineColumns.includes(name)}
+                          onChange={() =>
+                            set("lineColumns", toggle(draft.lineColumns, name))
+                          }
+                        />
+                        <span>{labelOf(name)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {caps.group && draft.groupByColumn && (
+                <label className="builder-field">
+                  <span className="builder-label">{t("builder.sortBy")}</span>
+                  <select
+                    value={draft.sortBy}
+                    onChange={(e) => set("sortBy", e.target.value as SortBy)}
+                    className="builder-input"
+                  >
+                    {(Object.keys(SORT_BY_KEY) as SortBy[]).map((k) => (
+                      <option key={k} value={k}>
+                        {t(SORT_BY_KEY[k])}
                       </option>
                     ))}
                   </select>
@@ -628,13 +800,13 @@ export default function WidgetBuilderSidebar({
 
               {caps.group && (
                 <label className="builder-field">
-                  <span className="builder-label">Sumbu / Kategori</span>
+                  <span className="builder-label">{t("builder.axisCategory")}</span>
                   <select
                     value={draft.groupByColumn}
                     onChange={(e) => set("groupByColumn", e.target.value)}
                     className="builder-input"
                   >
-                    <option value="">— Pilih kolom —</option>
+                    <option value="">{t("builder.pickColumn")}</option>
                     {columns.map((c) => (
                       <option key={c.name} value={c.name}>
                         {c.label || c.name}
@@ -646,14 +818,14 @@ export default function WidgetBuilderSidebar({
 
               {caps.series && (
                 <label className="builder-field">
-                  <span className="builder-label">Pecah per Seri (opsional)</span>
+                  <span className="builder-label">{t("builder.splitSeries")}</span>
                   <select
                     value={draft.seriesColumn}
                     onChange={(e) => set("seriesColumn", e.target.value)}
                     className="builder-input"
                     disabled={multiValue}
                   >
-                    <option value="">— Satu seri saja —</option>
+                    <option value="">{t("builder.oneSeries")}</option>
                     {dimensionCols
                       .filter((c) => c.name !== draft.groupByColumn)
                       .map((c) => (
@@ -664,7 +836,7 @@ export default function WidgetBuilderSidebar({
                   </select>
                   {multiValue && (
                     <p className="builder-field-desc">
-                      Nonaktif karena seri sudah datang dari beberapa kolom nilai.
+                      {t("builder.seriesDisabled")}
                     </p>
                   )}
                 </label>
@@ -672,15 +844,15 @@ export default function WidgetBuilderSidebar({
 
               {caps.stack && (
                 <label className="builder-field">
-                  <span className="builder-label">Susunan Seri</span>
+                  <span className="builder-label">{t("builder.seriesLayout")}</span>
                   <select
                     value={draft.seriesMode}
                     onChange={(e) => set("seriesMode", e.target.value as SeriesMode)}
                     className="builder-input"
                   >
-                    {(Object.keys(SERIES_MODE_LABEL) as SeriesMode[]).map((mode) => (
+                    {(Object.keys(SERIES_MODE_KEY) as SeriesMode[]).map((mode) => (
                       <option key={mode} value={mode}>
-                        {SERIES_MODE_LABEL[mode]}
+                        {t(SERIES_MODE_KEY[mode])}
                       </option>
                     ))}
                   </select>
@@ -694,14 +866,14 @@ export default function WidgetBuilderSidebar({
                     checked={draft.showTrendline}
                     onChange={(e) => set("showTrendline", e.target.checked)}
                   />
-                  <span>Tampilkan garis tren</span>
+                  <span>{t("builder.showTrendline")}</span>
                 </label>
               )}
 
 
               {caps.table && (
                 <div className="builder-field">
-                  <span className="builder-label">Kolom yang Ditampilkan</span>
+                  <span className="builder-label">{t("builder.shownColumns")}</span>
                   <div className="builder-checklist">
                     {columns.map((c) => (
                       <label key={c.name} className="builder-check">
@@ -721,15 +893,15 @@ export default function WidgetBuilderSidebar({
 
               {caps.date && (
                 <label className="builder-field">
-                  <span className="builder-label">Jenis Hitungan</span>
+                  <span className="builder-label">{t("builder.countKind")}</span>
                   <select
                     value={draft.dateMode}
                     onChange={(e) => set("dateMode", e.target.value as DateMode)}
                     className="builder-input"
                   >
-                    {(Object.keys(DATE_MODE_LABEL) as DateMode[]).map((mode) => (
+                    {(Object.keys(DATE_MODE_KEY) as DateMode[]).map((mode) => (
                       <option key={mode} value={mode}>
-                        {DATE_MODE_LABEL[mode]}
+                        {t(DATE_MODE_KEY[mode])}
                       </option>
                     ))}
                   </select>
@@ -738,7 +910,7 @@ export default function WidgetBuilderSidebar({
 
               {caps.date && draft.dateMode === "untilDate" && (
                 <label className="builder-field">
-                  <span className="builder-label">Tanggal Target</span>
+                  <span className="builder-label">{t("builder.targetDate")}</span>
                   <input
                     type="date"
                     value={draft.targetDate}
@@ -750,13 +922,13 @@ export default function WidgetBuilderSidebar({
 
               {caps.date && draft.dateMode === "sinceColumn" && (
                 <label className="builder-field">
-                  <span className="builder-label">Kolom Tanggal</span>
+                  <span className="builder-label">{t("builder.dateColumn")}</span>
                   <select
                     value={draft.metricColumn}
                     onChange={(e) => set("metricColumn", e.target.value)}
                     className="builder-input"
                   >
-                    <option value="">— Pilih kolom —</option>
+                    <option value="">{t("builder.pickColumn")}</option>
                     {dateCols.map((c) => (
                       <option key={c.name} value={c.name}>
                         {c.label || c.name}
@@ -765,7 +937,7 @@ export default function WidgetBuilderSidebar({
                   </select>
                   {dateCols.length === 0 && (
                     <p className="builder-field-desc">
-                      Dataset ini tidak punya kolom bertipe tanggal.
+                      {t("builder.noDateColumn")}
                     </p>
                   )}
                 </label>
@@ -774,7 +946,7 @@ export default function WidgetBuilderSidebar({
               {caps.limit && (
                 <label className="builder-field">
                   <span className="builder-label">
-                    {caps.table ? "Baris per Halaman" : "Batas Kategori"}
+                    {caps.table ? t("builder.rowsPerPage") : t("builder.categoryLimit")}
                   </span>
                   <select
                     value={draft.limit}
@@ -784,7 +956,7 @@ export default function WidgetBuilderSidebar({
                     {(caps.table ? TABLE_PAGE_SIZES : [5, 10, 15, 20, 50, 100]).map(
                       (n) => (
                         <option key={n} value={n}>
-                          {caps.table ? `${n} baris per halaman` : `Top ${n}`}
+                          {caps.table ? t("builder.rowsPerPageOption", { n }) : t("builder.topN", { n })}
                         </option>
                       )
                     )}
@@ -795,11 +967,11 @@ export default function WidgetBuilderSidebar({
 
             {caps.filter && (
               <section className="builder-section">
-                <span className="builder-section-title">Filter</span>
+                <span className="builder-section-title">{t("builder.filters")}</span>
 
                 {draft.filters.length === 0 && (
                   <p className="builder-field-desc">
-                    Tanpa filter, widget memakai seluruh baris dataset.
+                    {t("builder.noFilterDesc")}
                   </p>
                 )}
 
@@ -815,9 +987,9 @@ export default function WidgetBuilderSidebar({
                           value={filter.column}
                           onChange={(e) => changeFilterColumn(index, e.target.value)}
                           className="builder-input"
-                          aria-label="Kolom filter"
+                          aria-label={t("builder.filterColumn")}
                         >
-                          <option value="">— Pilih kolom —</option>
+                          <option value="">{t("builder.pickColumn")}</option>
                           {columns.map((c) => (
                             <option key={c.name} value={c.name}>
                               {c.label || c.name}
@@ -828,8 +1000,8 @@ export default function WidgetBuilderSidebar({
                           type="button"
                           className="builder-filter-remove"
                           onClick={() => removeFilter(index)}
-                          aria-label="Hapus filter ini"
-                          title="Hapus filter ini"
+                          aria-label={t("builder.removeFilter")}
+                          title={t("builder.removeFilter")}
                         >
                           <TrashIcon width={13} height={13} />
                         </button>
@@ -843,11 +1015,11 @@ export default function WidgetBuilderSidebar({
                           }
                           className="builder-input builder-filter-op"
                           disabled={!filter.column}
-                          aria-label="Operator filter"
+                          aria-label={t("builder.filterOperator")}
                         >
                           {allowed.map((op) => (
                             <option key={op} value={op}>
-                              {FILTER_OP_LABEL[op]}
+                              {t(FILTER_OP_KEY[op])}
                             </option>
                           ))}
                         </select>
@@ -856,9 +1028,9 @@ export default function WidgetBuilderSidebar({
                           value={filter.value}
                           onChange={(e) => updateFilter(index, { value: e.target.value })}
                           className="builder-input"
-                          placeholder="Nilai"
+                          placeholder={t("builder.valuePlaceholder")}
                           disabled={!filter.column}
-                          aria-label="Nilai filter"
+                          aria-label={t("builder.filterValue")}
                         />
                       </div>
                     </div>
@@ -873,83 +1045,97 @@ export default function WidgetBuilderSidebar({
 
             {(caps.money || caps.unit) && (
               <section className="builder-section">
-                <span className="builder-section-title">Format Tampilan</span>
+                <span className="builder-section-title">{t("builder.displayFormat")}</span>
 
-                {caps.money && (
-                  <label className="builder-check">
-                    <input
-                      type="checkbox"
-                      checked={draft.isCurrency}
-                      onChange={(e) => set("isCurrency", e.target.checked)}
-                    />
-                    <span>Format sebagai mata uang</span>
-                  </label>
-                )}
-
-                {caps.money && draft.isCurrency && (
-                  <div className="builder-dependent-field">
-                    <label className="builder-field">
-                      <span className="builder-label">Mata Uang</span>
-                      <select
-                        value={draft.currency}
-                        onChange={(e) => set("currency", e.target.value as CurrencyCode)}
-                        className="builder-input"
-                      >
-                        {(Object.keys(CURRENCY_LABEL) as CurrencyCode[]).map((code) => (
-                          <option key={code} value={code}>
-                            {CURRENCY_LABEL[code]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                {caps.values !== "none" && !isCount && formatTargets.length > 0 && (
+                  <div className="builder-field">
+                    <span className="builder-label">{t("builder.dataFormat")}</span>
+                    <ul className="builder-formats">
+                      {formatTargets.map((name) => {
+                        const fmt = draft.valueFormats[name] ?? "general";
+                        return (
+                          <li key={name}>
+                            <div className="builder-format-row">
+                              <span className="builder-format-col" title={labelOf(name)}>
+                                {labelOf(name)}
+                              </span>
+                              <select
+                              className="builder-input"
+                              value={fmt}
+                              aria-label={`${t("builder.dataFormat")} ${labelOf(name)}`}
+                              onChange={(e) => {
+                                const next = { ...draft.valueFormats };
+                                if (e.target.value === "general") delete next[name];
+                                else next[name] = e.target.value as ValueFormat;
+                                set("valueFormats", next);
+                              }}
+                            >
+                              {(Object.keys(VALUE_FORMAT_KEY) as ValueFormat[]).map((f) => (
+                                <option key={f} value={f}>
+                                  {t(VALUE_FORMAT_KEY[f])}
+                                </option>
+                              ))}
+                              </select>
+                            </div>
+                            {fmt === "currency" && (
+                              <select
+                                className="builder-input builder-format-currency"
+                                value={draft.valueCurrencies[name] ?? "IDR"}
+                                aria-label={t("builder.currencyFor", {
+                                  name: labelOf(name),
+                                })}
+                                onChange={(e) =>
+                                  set("valueCurrencies", {
+                                    ...draft.valueCurrencies,
+                                    [name]: e.target.value as CurrencyCode,
+                                  })
+                                }
+                              >
+                                {(Object.keys(CURRENCY_SHORT_KEY) as CurrencyCode[]).map(
+                                  (code) => (
+                                    <option key={code} value={code}>
+                                      {t(CURRENCY_SHORT_KEY[code])}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
 
-                {caps.unit && !draft.isCurrency && (
+                {caps.unit && (
                   <label className="builder-field">
-                    <span className="builder-label">Satuan (opsional)</span>
+                    <span className="builder-label">{t("builder.unit")}</span>
                     <input
                       type="text"
                       value={draft.unit}
                       onChange={(e) => set("unit", e.target.value)}
-                      placeholder="Contoh: Jam, Ton, Unit"
+                      placeholder={t("builder.unitPlaceholder")}
                       className="builder-input"
                     />
                   </label>
                 )}
               </section>
             )}
-
-            <section className="builder-section">
-              <span className="builder-section-title">Preferensi Semua Widget</span>
-              <label className="builder-check">
-                <input
-                  type="checkbox"
-                  checked={warningHidden}
-                  onChange={(e) => setScaleWarningHidden(e.target.checked)}
-                />
-                <span>Sembunyikan peringatan skala</span>
-              </label>
-              <p className="builder-field-desc">
-                Peringatan muncul saat satu seri terlalu kecil untuk terlihat di sumbu
-                bersama. Berlaku untuk seluruh widget dan tersimpan di perangkat ini.
-              </p>
-            </section>
           </div>
 
           <div className="builder-sidebar-footer">
-            {problem && <p className="builder-problem">{problem}</p>}
+            {problem && <p className="builder-problem">{t(problem)}</p>}
 
             <div className="builder-footer-row">
               <button type="submit" className="btn-primary" disabled={problem !== null}>
-                {editing ? "Perbarui Widget" : "+ Tambah Widget"}
+                {editing ? t("builder.updateWidget") : t("builder.addWidget")}
               </button>
 
               <button
                 type="button"
                 className="btn-ghost"
                 onClick={() => setDraft(draftFrom(editing))}
-                title={editing ? "Kembalikan ke pengaturan awal widget" : "Bersihkan formulir"}
+                title={editing ? t("builder.resetToSaved") : t("builder.clearForm")}
               >
                 Reset
               </button>
@@ -959,7 +1145,7 @@ export default function WidgetBuilderSidebar({
                   type="button"
                   className="btn-ghost"
                   onClick={onDeselect}
-                  title="Batal mengubah widget"
+                  title={t("builder.cancelEdit")}
                 >
                   Batal
                 </button>
@@ -973,7 +1159,7 @@ export default function WidgetBuilderSidebar({
                 onClick={() => onDelete(editing)}
               >
                 <TrashIcon width={14} height={14} />
-                Hapus Widget
+                {t("builder.deleteWidget")}
               </button>
             )}
           </div>

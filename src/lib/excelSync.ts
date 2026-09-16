@@ -1,19 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import {
   fileNameOf,
   isDesktop,
   machineName,
-  readSourceFile,
+  readStableSource,
   sourceFileRevision,
 } from "./desktop";
 import { formatCount } from "./format";
 import { isAdmin, type DatasetRegistry, type SessionUser } from "../types";
 
 const POLL_INTERVAL_MS = 20_000;
+const HEARTBEAT_MS = 60_000;
 
 type SyncOutcome = "skipped" | "imported" | "aborted";
+
+function isPermanent(err: unknown) {
+  return err instanceof ApiError && err.status >= 400 && err.status < 500;
+}
 
 export type SyncStatus = {
   state: "watching" | "importing" | "error";
@@ -65,6 +70,7 @@ export function useExcelSync(
   const importedRef = useRef<Record<string, string>>({});
   const rejectedRef = useRef<Record<string, string>>({});
   const runningRef = useRef(false);
+  const lastBeatRef = useRef(0);
 
   useEffect(() => {
 
@@ -109,17 +115,24 @@ export function useExcelSync(
       setStatus(ds.key, { state: "importing" });
       let attempted = revision;
       try {
-        const file = await readSourceFile(path);
+        const file = await readStableSource(path);
+        if (!file) {
+          setStatus(ds.key, { state: "watching" });
+          return "skipped";
+        }
         attempted = file.revision;
         if (!active) return "aborted";
 
+        const uploadId = await api.uploadFile(file.bytes);
+        if (!active) return "aborted";
+
         const res = await api.syncDataset(dept, ds.key, {
-          fileBytes: file.bytes,
+          uploadId,
           sourceMtime: file.revision,
         });
         if (!active) return "aborted";
 
-        importedRef.current[ds.key] = file.revision;
+        importedRef.current[path] = file.revision;
         setStatus(ds.key, { state: "watching" }, Date.now());
         if (res.skipped) return "skipped";
 
@@ -128,19 +141,21 @@ export function useExcelSync(
         );
         return "imported";
       } catch (err) {
-        rejectedRef.current[ds.key] = attempted;
+        if (isPermanent(err)) rejectedRef.current[path] = attempted;
         setStatus(ds.key, { state: "error", error: messageOf(err) });
         return "skipped";
       }
     }
 
-    async function syncOne(
-      ds: DatasetRegistry,
-      host: string
-    ): Promise<SyncOutcome> {
-      const path = ds.sourcePath;
-      if (!ds.syncEnabled || !path || ds.watchedBy !== host) {
+    async function syncOne(ds: DatasetRegistry): Promise<SyncOutcome> {
+      const path = ds.myPath;
+      if (!ds.syncEnabled || !path) {
         forget(ds.key);
+        return "skipped";
+      }
+
+      if (ds.serverPath) {
+        setStatus(ds.key, { state: "watching" });
         return "skipped";
       }
 
@@ -153,17 +168,41 @@ export function useExcelSync(
       }
       if (!active) return "aborted";
 
-      if (revision === rejectedRef.current[ds.key]) return "skipped";
+      if (revision === rejectedRef.current[path]) return "skipped";
 
       if (
         revision === ds.lastSyncedMtime ||
-        revision === importedRef.current[ds.key]
+        revision === importedRef.current[path]
       ) {
         setStatus(ds.key, { state: "watching" });
         return "skipped";
       }
 
       return importOne(ds, path, revision);
+    }
+
+    async function beat(host: string) {
+      if (Date.now() - lastBeatRef.current <= HEARTBEAT_MS) return;
+      lastBeatRef.current = Date.now();
+      await api.heartbeat(dept, host).catch(() => undefined);
+    }
+
+    async function syncAll(): Promise<"aborted" | "imported" | "idle"> {
+      let anyImported = false;
+      const seenPaths = new Set<string>();
+
+      for (const ds of datasetsRef.current) {
+        if (!active) return "aborted";
+        if (ds.myPath) {
+          if (seenPaths.has(ds.myPath)) continue;
+          seenPaths.add(ds.myPath);
+        }
+        const outcome = await syncOne(ds);
+        if (outcome === "aborted") return "aborted";
+        if (outcome === "imported") anyImported = true;
+      }
+
+      return anyImported ? "imported" : "idle";
     }
 
     async function tick() {
@@ -174,16 +213,9 @@ export function useExcelSync(
         const host = machine;
         if (!active || !host) return;
 
-        let anyImported = false;
-
-        for (const ds of datasetsRef.current) {
-          if (!active) return;
-          const outcome = await syncOne(ds, host);
-          if (outcome === "aborted") return;
-          if (outcome === "imported") anyImported = true;
-        }
-
-        if (anyImported && active) await onSyncedRef.current();
+        await beat(host);
+        const outcome = await syncAll();
+        if (outcome === "imported" && active) await onSyncedRef.current();
       } finally {
         runningRef.current = false;
       }

@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { CurrencyCode } from "../../types";
-import { formatCompactValue } from "../../lib/format";
+import { formatAxisValue } from "../../lib/format";
+import { chartChrome, type Resolved } from "../../lib/theme";
 import type { EChartsOption } from "echarts";
+import { useT } from "../../lib/i18n";
 
 export type SeriesLabeller = (series: string) => string;
 
@@ -12,6 +14,32 @@ export function escapeHtml(value: string | number | null | undefined): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+const DescriptionContext = createContext<string | undefined>(undefined);
+
+export function WidgetDescriptionProvider({
+  value,
+  children,
+}: {
+  readonly value?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <DescriptionContext.Provider value={value}>
+      {children}
+    </DescriptionContext.Provider>
+  );
+}
+
+export function WidgetSubtitle() {
+  const text = useContext(DescriptionContext);
+  if (!text) return null;
+  return (
+    <p className="widget-subtitle" title={text}>
+      {text}
+    </p>
+  );
 }
 
 export type ChartFrameProps = {
@@ -31,24 +59,26 @@ export function ChartFrame({
   overlay,
   children,
 }: ChartFrameProps) {
+  const t = useT();
   return (
     <div className="chart-wrapper">
       <h4 className="widget-title" title={title}>
         {title}
       </h4>
+      <WidgetSubtitle />
       {note && !isEmpty && (
         <p className="chart-note">
           <span>{note}</span>
           {onHideNote && (
             <button type="button" className="chart-note-hide" onClick={onHideNote}>
-              Sembunyikan
+              {t("chart.hideNote")}
             </button>
           )}
         </p>
       )}
       <div className="chart-body">
         {isEmpty ? (
-          <div className="widget-empty">Tidak ada data untuk ditampilkan</div>
+          <div className="widget-empty">{t("chart.noData")}</div>
         ) : (
           children
         )}
@@ -58,12 +88,64 @@ export function ChartFrame({
   );
 }
 
+export type ValueFormatter = (series: string, value: number) => string;
+
+export type DataLabelSpot = "top" | "right" | "inside";
+
+export const HIDE_OVERLAP = { hideOverlap: true } as const;
+
+export function blankWhenEmpty(
+  format: (value: number) => string
+): (params: any) => string {
+  return (params: any) => {
+    const raw = params.value;
+    if (raw === null || raw === undefined) return "";
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value === 0) return "";
+    return format(value);
+  };
+}
+
+export function edgeAwareLabels(count: number) {
+  return (params: any) => {
+    let dx = 0;
+    if (params.dataIndex === 0) dx = 16;
+    else if (params.dataIndex === count - 1) dx = -16;
+    return { hideOverlap: true, dx };
+  };
+}
+
+export function dataLabel(
+  show: boolean,
+  theme: Resolved,
+  spot: DataLabelSpot,
+  formatter: (params: any) => string
+) {
+  if (!show) return undefined;
+  const c = chartChrome(theme);
+  const onFill = spot === "inside";
+  return {
+    show: true,
+    position: spot,
+    distance: onFill ? undefined : 4,
+    fontSize: 10,
+    fontWeight: 600 as const,
+    color: onFill ? "#ffffff" : c.text,
+    textBorderColor: onFill ? "rgba(0,0,0,0.5)" : undefined,
+    textBorderWidth: onFill ? 2 : 0,
+    formatter,
+  };
+}
+
+export type SingleFormatter = (value: number) => string;
+
 export function baseEChartOption(
   hasLegend: boolean,
   currency?: CurrencyCode,
   isPercent = false,
-  opts: { boundaryGap?: boolean } = {}
+  opts: { boundaryGap?: boolean; theme?: Resolved; dataLabels?: boolean } = {}
 ): EChartsOption {
+  const c = chartChrome(opts.theme ?? "light");
   return {
     animation: true,
     animationDuration: 800,
@@ -71,7 +153,7 @@ export function baseEChartOption(
     animationDurationUpdate: 400,
     animationEasingUpdate: "cubicOut",
     grid: {
-      top: 14,
+      top: opts.dataLabels ? 28 : 14,
       right: 14,
       bottom: hasLegend ? 32 : 12,
       left: 8,
@@ -79,24 +161,25 @@ export function baseEChartOption(
     },
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#ffffff",
-      borderColor: "#e2e8f0",
+      appendToBody: true,
+      backgroundColor: c.panel,
+      borderColor: c.panelBorder,
       borderWidth: 1,
       padding: [8, 12],
-      textStyle: { color: "#0f172a", fontSize: 12 },
-      extraCssText: "box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08); border-radius: 6px;",
+      textStyle: { color: c.text, fontSize: 12 },
+      extraCssText: `box-shadow: 0 4px 6px -1px ${c.shadow}; border-radius: 6px;`,
       axisPointer: {
         type: "shadow",
-        shadowStyle: { color: "rgba(148, 163, 184, 0.12)" },
+        shadowStyle: { color: c.splitArea },
       },
     },
     xAxis: {
       type: "category",
       boundaryGap: opts.boundaryGap ?? true,
-      axisLine: { lineStyle: { color: "#e2e8f0" } },
+      axisLine: { lineStyle: { color: c.axisLine } },
       axisTick: { show: false },
       axisLabel: {
-        color: "#64748b",
+        color: c.axis,
         fontSize: 11,
         rotate: 30,
         interval: "auto",
@@ -109,13 +192,13 @@ export function baseEChartOption(
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: {
-        lineStyle: { color: "#f1f5f9", type: "dashed" },
+        lineStyle: { color: c.grid, type: "dashed" },
       },
       axisLabel: {
-        color: "#64748b",
+        color: c.axis,
         fontSize: 11,
         formatter: (val: number) =>
-          isPercent ? `${Math.round(val * 100)}%` : formatCompactValue(val, currency),
+          isPercent ? `${Math.round(val * 100)}%` : formatAxisValue(val, currency),
       },
     },
     legend: hasLegend
@@ -124,7 +207,7 @@ export function baseEChartOption(
           icon: "circle",
           itemWidth: 8,
           itemHeight: 8,
-          textStyle: { color: "#475569", fontSize: 11 },
+          textStyle: { color: c.axis, fontSize: 11 },
         }
       : undefined,
   };

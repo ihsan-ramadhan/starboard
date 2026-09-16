@@ -1,3 +1,5 @@
+import type { TKey } from "./lib/i18n";
+
 export type SessionUser = {
   id: string;
   username: string;
@@ -36,6 +38,16 @@ export type DatasetRegistry = {
 
   watchedBy: string | null;
   sortOrder: number | null;
+  sourceName: string | null;
+  sourceSize: number | null;
+  serverPath: string | null;
+  serverError: string | null;
+  slicers: Slicer[] | null;
+  valueLabels: ValueLabelMap | null;
+  myPath: string | null;
+  watcherCount: number;
+  lastSeenAt: string | null;
+  iconVersion: number | null;
 };
 
 export type ChartDataPoint = {
@@ -64,32 +76,123 @@ export type RowsQueryResult = {
 
 export type WidgetType =
   | "kpi"
+  | "gauge"
   | "bar"
+  | "barh"
   | "line"
   | "area"
   | "combo"
   | "pie"
+  | "treemap"
+  | "heatmap"
+  | "scatter"
   | "table"
-  | "date";
+  | "date"
+  | "section"
+  | "group";
 
 export type SeriesMode = "grouped" | "stacked" | "stacked100";
 
-export type FilterOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains";
+export type SortBy = "value" | "key";
+
+export const SORT_BY_KEY: Record<SortBy, TKey> = {
+  value: "sortBy.value",
+  key: "sortBy.key",
+};
+
+export function defaultSortBy(type: WidgetType): SortBy {
+  return type === "line" || type === "area" || type === "combo" ? "key" : "value";
+}
+
+export type FilterOp =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "in";
 
 export type WidgetFilter = {
   column: string;
   op: FilterOp;
   value: string;
+  values?: string[];
 };
 
-export const FILTER_OP_LABEL: Record<FilterOp, string> = {
-  eq: "sama dengan",
-  ne: "tidak sama",
-  gt: "lebih dari",
-  gte: "minimal",
-  lt: "kurang dari",
-  lte: "maksimal",
-  contains: "mengandung",
+export type SlicerControl = "multi" | "range" | "both";
+
+export type SlicerMode = "multi" | "range";
+
+export type ValueLabelMap = Record<string, Record<string, string>>;
+
+export function labelForValue(
+  map: ValueLabelMap | null | undefined,
+  column: string,
+  raw: string
+): string {
+  const custom = map?.[column]?.[raw];
+  return custom?.trim() ? custom : raw;
+}
+
+export type Slicer = {
+  id: string;
+  column: string;
+  label: string;
+  control: SlicerControl;
+};
+
+export type SlicerValue = {
+  mode?: SlicerMode;
+  values?: string[];
+  from?: string;
+  to?: string;
+};
+
+export function slicerMode(
+  slicer: Slicer,
+  value: SlicerValue | undefined
+): SlicerMode {
+  if (slicer.control !== "both") return slicer.control;
+  if (value?.mode) return value.mode;
+  return value?.values?.length ? "multi" : "range";
+}
+
+export function slicerToFilters(
+  slicer: Slicer,
+  value: SlicerValue | undefined
+): WidgetFilter[] {
+  if (!value) return [];
+
+  if (slicerMode(slicer, value) === "multi") {
+    const picked = value.values ?? [];
+    if (picked.length === 0) return [];
+    return [{ column: slicer.column, op: "in", value: "", values: picked }];
+  }
+
+  const out: WidgetFilter[] = [];
+  if (value.from) out.push({ column: slicer.column, op: "gte", value: value.from });
+  if (value.to) out.push({ column: slicer.column, op: "lte", value: value.to });
+  return out;
+}
+
+export function slicerIsActive(
+  slicer: Slicer,
+  value: SlicerValue | undefined
+): boolean {
+  return slicerToFilters(slicer, value).length > 0;
+}
+
+export const FILTER_OP_KEY: Record<FilterOp, TKey> = {
+  in: "filterOp.in",
+  eq: "filterOp.eq",
+  ne: "filterOp.ne",
+  gt: "filterOp.gt",
+  gte: "filterOp.gte",
+  lt: "filterOp.lt",
+  lte: "filterOp.lte",
+  contains: "filterOp.contains",
 };
 
 const ORDERED_OPS: FilterOp[] = ["eq", "ne", "gt", "gte", "lt", "lte"];
@@ -105,19 +208,65 @@ export type DateMode =
   | "untilDate"
   | "sinceColumn";
 
-export const DATE_MODE_LABEL: Record<DateMode, string> = {
-  yearRemaining: "Sisa hari tahun ini",
-  quarterRemaining: "Sisa hari kuartal ini",
-  untilDate: "Hitung mundur ke tanggal",
-  sinceColumn: "Hari sejak tanggal terakhir",
+export const DATE_MODE_KEY: Record<DateMode, TKey> = {
+  yearRemaining: "dateMode.yearRemaining",
+  quarterRemaining: "dateMode.quarterRemaining",
+  untilDate: "dateMode.untilDate",
+  sinceColumn: "dateMode.sinceColumn",
+};
+
+export type GoodDirection = "higher" | "lower";
+
+export const GOOD_DIRECTION_KEY: Record<GoodDirection, TKey> = {
+  higher: "goodDirection.higher",
+  lower: "goodDirection.lower",
+};
+
+export type ValueFormat =
+  | "general"
+  | "whole"
+  | "decimal"
+  | "currency"
+  | "percent"
+  | "scientific";
+
+export const VALUE_FORMAT_KEY: Record<ValueFormat, TKey> = {
+  general: "valueFormat.general",
+  whole: "valueFormat.whole",
+  decimal: "valueFormat.decimal",
+  currency: "valueFormat.currency",
+  percent: "valueFormat.percent",
+  scientific: "valueFormat.scientific",
 };
 
 export type CurrencyCode = "IDR" | "USD";
 
-export const CURRENCY_LABEL: Record<CurrencyCode, string> = {
-  IDR: "Rupiah (Rp)",
-  USD: "Dolar AS ($)",
+export const CURRENCY_KEY: Record<CurrencyCode, TKey> = {
+  IDR: "currency.IDR",
+  USD: "currency.USD",
 };
+
+export const CURRENCY_SHORT_KEY: Record<CurrencyCode, TKey> = {
+  IDR: "currency.IDRshort",
+  USD: "currency.USDshort",
+};
+
+export function resolveFormat(
+  widget: Pick<
+    WidgetDefinition,
+    "valueFormats" | "valueCurrencies" | "isCurrency" | "currency"
+  >,
+  column = ""
+): { format?: ValueFormat; currency?: CurrencyCode } {
+  const format =
+    widget.valueFormats?.[column] ??
+    (widget.isCurrency ? "currency" : undefined);
+  if (format !== "currency") return { format };
+  return {
+    format,
+    currency: widget.valueCurrencies?.[column] ?? widget.currency ?? "IDR",
+  };
+}
 
 export type WidgetLayout = {
   x: number;
@@ -130,6 +279,8 @@ export type WidgetDefinition = {
   id: string;
   type: WidgetType;
   title: string;
+  description?: string;
+  groupId?: string;
   datasetId: string;
   metric: "SUM" | "AVG" | "COUNT" | "MIN" | "MAX";
   metricColumn?: string;
@@ -137,27 +288,39 @@ export type WidgetDefinition = {
   groupByColumn?: string;
   seriesColumn?: string;
   seriesMode?: SeriesMode;
+  sortBy?: SortBy;
   lineColumn?: string;
+  lineColumns?: string[];
   targetColumn?: string;
   showTrendline?: boolean;
+  goodDirection?: GoodDirection;
   filters?: WidgetFilter[];
   tableColumns?: string[];
   dateMode?: DateMode;
   targetDate?: string;
   limit?: number;
   isCurrency?: boolean;
+  valueFormats?: Record<string, ValueFormat>;
+  valueCurrencies?: Record<string, CurrencyCode>;
   currency?: CurrencyCode;
   unit?: string;
   layout?: WidgetLayout;
 };
 
-export const WIDGET_TYPE_LABEL: Record<WidgetType, string> = {
-  kpi: "KPI Card",
-  bar: "Bar Chart",
-  line: "Line Chart",
-  area: "Area Chart",
-  combo: "Combo Chart",
-  pie: "Pie / Donut Chart",
-  table: "Tabel",
-  date: "KPI Tanggal",
+export const WIDGET_TYPE_KEY: Record<WidgetType, TKey> = {
+  kpi: "widgetType.kpi",
+  gauge: "widgetType.gauge",
+  bar: "widgetType.bar",
+  barh: "widgetType.barh",
+  line: "widgetType.line",
+  area: "widgetType.area",
+  combo: "widgetType.combo",
+  pie: "widgetType.pie",
+  treemap: "widgetType.treemap",
+  heatmap: "widgetType.heatmap",
+  scatter: "widgetType.scatter",
+  table: "widgetType.table",
+  date: "widgetType.date",
+  section: "widgetType.section",
+  group: "widgetType.group",
 };

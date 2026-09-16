@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import { formatCell, formatCount } from "../../lib/format";
-import type { DatasetColumn, WidgetFilter } from "../../types";
+import type { DatasetColumn, ValueLabelMap, WidgetFilter } from "../../types";
+import { useT } from "../../lib/i18n";
+import { WidgetSubtitle } from "./chartParts";
 
 type TableRow = { key: string; data: Record<string, unknown> };
 
@@ -13,6 +15,7 @@ export type TableWidgetProps = {
   readonly filters?: readonly WidgetFilter[];
   readonly limit: number;
   readonly reloadNonce: number;
+  readonly valueLabels?: ValueLabelMap | null;
 };
 
 type SortState = { column: string; dir: "asc" | "desc" } | null;
@@ -25,7 +28,9 @@ export default function TableWidget({
   filters,
   limit,
   reloadNonce,
+  valueLabels,
 }: TableWidgetProps) {
+  const t = useT();
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [pageDraft, setPageDraft] = useState("1");
@@ -35,13 +40,24 @@ export default function TableWidget({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function displayCell(column: string, raw: unknown) {
+    const map = valueLabels?.[column];
+    const direct = map?.[String(raw)];
+    if (direct) return direct;
+    const text = formatCell(raw);
+    return map?.[text] || text;
+  }
+
   const wanted = useMemo(
     () => (selected?.length ? [...selected] : undefined),
     [selected]
   );
 
   const filterKey = useMemo(
-    () => (filters ?? []).map((f) => `${f.column}${f.op}${f.value}`).join(","),
+    () =>
+      (filters ?? [])
+        .map((f) => `${f.column}${f.op}${f.value}${f.values?.join("~") ?? ""}`)
+        .join(","),
     [filters]
   );
   const activeFilters = useMemo(
@@ -52,6 +68,14 @@ export default function TableWidget({
   useEffect(() => {
     setPage(0);
   }, [datasetId, wanted, limit, filterKey]);
+
+  const scopeKey = `${datasetId}|${wanted?.join(",") ?? ""}|${filterKey}|${limit}|${reloadNonce}`;
+  const countedScope = useRef<string | null>(null);
+  const needTotal = countedScope.current !== scopeKey;
+
+  useEffect(() => {
+    countedScope.current = scopeKey;
+  }, [scopeKey]);
 
   useEffect(() => {
     let active = true;
@@ -67,12 +91,13 @@ export default function TableWidget({
         offset: page * limit,
         sortColumn: sort?.column,
         sortDir: sort?.dir,
+        withTotal: needTotal,
       })
       .then((res) => {
         if (!active) return;
         setRows(res.rows.map((data) => ({ key: crypto.randomUUID(), data })));
         setShown(res.columns);
-        setTotal(res.total);
+        if (res.total >= 0) setTotal(res.total);
       })
       .catch((e) => {
         if (!active) return;
@@ -140,7 +165,7 @@ export default function TableWidget({
     notice = <div className="widget-empty">{error}</div>;
   } else if (rows === null) {
     notice = (
-      <div className="sk-table" aria-busy="true" aria-label={`Memuat ${title}`}>
+      <div className="sk-table" aria-busy="true" aria-label={t("table.loading", { title })}>
         <span className="sk sk-row sk-row-head" />
         {Array.from({ length: Math.min(limit, 6) }, (_, i) => (
           <span key={i} className="sk sk-row" />
@@ -148,7 +173,7 @@ export default function TableWidget({
       </div>
     );
   } else if (rows.length === 0 && total === 0) {
-    notice = <div className="widget-empty">Tidak ada baris untuk ditampilkan</div>;
+    notice = <div className="widget-empty">{t("table.noRows")}</div>;
   }
 
   return (
@@ -156,6 +181,7 @@ export default function TableWidget({
       <h4 className="widget-title" title={title}>
         {title}
       </h4>
+      <WidgetSubtitle />
 
       {notice ?? (
         <>
@@ -179,7 +205,7 @@ export default function TableWidget({
                           type="button"
                           className={`th-sort${active ? " is-active" : ""}`}
                           onClick={() => toggleSort(name)}
-                          title={`Urutkan menurut ${labelOf(name)}`}
+                          title={t("table.sortBy", { name: labelOf(name) })}
                         >
                           <span>{labelOf(name)}</span>
                           <span className="th-sort-arrow">
@@ -199,7 +225,7 @@ export default function TableWidget({
                         key={name}
                         className={typeOf(name) === "numeric" ? "cell-num" : undefined}
                       >
-                        {formatCell(row.data[name])}
+                        {displayCell(name, row.data[name])}
                       </td>
                     ))}
                   </tr>
@@ -210,17 +236,21 @@ export default function TableWidget({
 
           <div className="table-foot">
             <span className="table-range">
-              {firstRow}–{lastRow} dari {formatCount(total)} baris
+              {t("table.range", {
+                from: firstRow,
+                to: lastRow,
+                total: formatCount(total),
+              })}
             </span>
 
             {pageCount > 1 && (
-              <nav className="table-pager" aria-label="Navigasi halaman tabel">
+              <nav className="table-pager" aria-label={t("table.pagination")}>
                 <button
                   type="button"
                   className="table-page-btn"
                   onClick={() => goTo(page - 1)}
                   disabled={page === 0}
-                  aria-label="Halaman sebelumnya"
+                  aria-label={t("table.prevPage")}
                 >
                   ‹
                 </button>
@@ -231,7 +261,7 @@ export default function TableWidget({
                     type="text"
                     inputMode="numeric"
                     value={pageDraft}
-                    aria-label={`Halaman, dari ${pageCount} halaman`}
+                    aria-label={t("table.pageOf", { n: pageCount })}
                     onChange={(e) => setPageDraft(e.target.value.replace(/\D/g, ""))}
                     onBlur={commitPageDraft}
                     onKeyDown={(e) => {
@@ -241,7 +271,7 @@ export default function TableWidget({
                       }
                     }}
                   />
-                  <span>dari {pageCount}</span>
+                  <span>{t("table.ofPages", { n: pageCount })}</span>
                 </span>
 
                 <button
@@ -249,7 +279,7 @@ export default function TableWidget({
                   className="table-page-btn"
                   onClick={() => goTo(page + 1)}
                   disabled={page >= pageCount - 1}
-                  aria-label="Halaman berikutnya"
+                  aria-label={t("table.nextPage")}
                 >
                   ›
                 </button>

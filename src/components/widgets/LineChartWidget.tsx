@@ -4,12 +4,19 @@ import { TREND_KEY, withTrendline, type WideRow } from "../../lib/series";
 import {
   ChartFrame,
   baseEChartOption,
+  dataLabel,
+  blankWhenEmpty,
+  edgeAwareLabels,
   type SeriesLabeller,
+  type ValueFormatter,
   escapeHtml,
 } from "./chartParts";
 import { EChart } from "./EChart";
-import { formatFullValue } from "../../lib/format";
+import { formatAxisValue } from "../../lib/format";
+import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
+import { useLang, useT } from "../../lib/i18n";
+import { chartChrome, useResolvedTheme } from "../../lib/theme";
 
 export type LineChartWidgetProps = {
   readonly title: string;
@@ -18,6 +25,7 @@ export type LineChartWidgetProps = {
   readonly colors: Record<string, string>;
   readonly labelOf: SeriesLabeller;
   readonly showTrendline?: boolean;
+  readonly formatValue: ValueFormatter;
   readonly unit?: string;
   readonly currency?: CurrencyCode;
   readonly reloadNonce?: number;
@@ -32,12 +40,17 @@ export default function LineChartWidget({
   colors,
   labelOf,
   showTrendline,
+  formatValue,
   unit,
   currency,
   reloadNonce,
   note,
   onHideNote,
 }: LineChartWidgetProps) {
+  const lang = useLang();
+  const theme = useResolvedTheme();
+  const labels = useDataLabelsShown();
+  const t = useT();
   const multi = seriesKeys.length > 1;
   const trendable = showTrendline && seriesKeys.length === 1;
   const plotted = useMemo(
@@ -46,18 +59,26 @@ export default function LineChartWidget({
   );
 
   const withTrendLabel: SeriesLabeller = (series) =>
-    series === TREND_KEY ? "Garis tren" : labelOf(series);
+    series === TREND_KEY ? t("chart.trendline") : labelOf(series);
 
   const option = useMemo<EChartsOption>(() => {
     const hasTrend =
       Boolean(trendable) && plotted.some((d) => d[TREND_KEY] != null);
     const hasLegend = Boolean(multi || hasTrend);
-    const base = baseEChartOption(hasLegend, currency, false, { boundaryGap: false });
+    const base = baseEChartOption(hasLegend, currency, false, {
+      boundaryGap: false,
+      theme,
+      dataLabels: labels,
+    });
     const categories = plotted.map((d) => String(d.groupKey ?? ""));
+
+    const labelText = blankWhenEmpty((value) => formatAxisValue(value, currency));
 
     const series: any[] = seriesKeys.map((key, index) => ({
       name: key,
       type: "line" as const,
+      label: dataLabel(labels, theme, "top", labelText),
+      labelLayout: edgeAwareLabels(plotted.length),
       smooth: true,
       symbol: "circle",
       symbolSize: 6,
@@ -79,8 +100,8 @@ export default function LineChartWidget({
         symbolSize: 0,
         animationDuration: 600,
         animationDelay: 300,
-        itemStyle: { color: "#94a3b8" },
-        lineStyle: { width: 2, color: "#94a3b8", type: "dashed" },
+        itemStyle: { color: chartChrome(theme).axis },
+        lineStyle: { width: 2, color: chartChrome(theme).axis, type: "dashed" },
         data: plotted.map((d) =>
           d[TREND_KEY] == null ? null : Number(d[TREND_KEY])
         ),
@@ -111,7 +132,7 @@ export default function LineChartWidget({
             return (
               `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;line-height:1.6">` +
               `<span>${marker}${escapeHtml(withTrendLabel(p.seriesName))}</span>` +
-              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatFullValue(p.value, currency, unit))}</span>` +
+              `<span style="font-weight:600;font-variant-numeric:tabular-nums">${escapeHtml(formatValue(p.seriesName, p.value))}</span>` +
               `</div>`
             );
           });
@@ -120,7 +141,7 @@ export default function LineChartWidget({
       },
       series,
     };
-  }, [plotted, seriesKeys, colors, labelOf, showTrendline, unit, currency, multi, trendable]);
+  }, [plotted, seriesKeys, colors, labelOf, formatValue, showTrendline, unit, currency, multi, trendable, lang, theme, labels]);
 
   return (
     <ChartFrame

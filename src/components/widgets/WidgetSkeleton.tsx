@@ -1,4 +1,5 @@
 import type { WidgetDefinition } from "../../types";
+import { t } from "../../lib/i18n";
 
 const BAR_HEIGHTS = ["58%", "86%", "42%", "70%", "34%", "52%"];
 
@@ -13,7 +14,7 @@ function hasMeter(widget: WidgetDefinition) {
 export default function WidgetSkeleton({ widget }: { readonly widget: WidgetDefinition }) {
   if (widget.type === "kpi" || widget.type === "date") {
     return (
-      <div className="kpi-wrapper" aria-busy="true" aria-label={`Memuat ${widget.title}`}>
+      <div className="kpi-wrapper" aria-busy="true" aria-label={t("widget.loading", { title: widget.title })}>
         <div className="kpi-label">{widget.title}</div>
         <span className="sk sk-value" />
         {hasMeter(widget) && (
@@ -29,7 +30,7 @@ export default function WidgetSkeleton({ widget }: { readonly widget: WidgetDefi
   if (widget.type === "table") {
     const rows = Math.min(widget.limit ?? 25, 6);
     return (
-      <div className="chart-wrapper" aria-busy="true" aria-label={`Memuat ${widget.title}`}>
+      <div className="chart-wrapper" aria-busy="true" aria-label={t("widget.loading", { title: widget.title })}>
         <h4 className="widget-title">{widget.title}</h4>
         <div className="sk-table">
           <span className="sk sk-row sk-row-head" />
@@ -43,7 +44,7 @@ export default function WidgetSkeleton({ widget }: { readonly widget: WidgetDefi
 
   if (widget.type === "pie") {
     return (
-      <div className="chart-wrapper" aria-busy="true" aria-label={`Memuat ${widget.title}`}>
+      <div className="chart-wrapper" aria-busy="true" aria-label={t("widget.loading", { title: widget.title })}>
         <h4 className="widget-title">{widget.title}</h4>
         <div className="chart-body sk-donut-body">
           <span className="sk sk-donut" />
@@ -54,7 +55,7 @@ export default function WidgetSkeleton({ widget }: { readonly widget: WidgetDefi
   }
 
   return (
-    <div className="chart-wrapper" aria-busy="true" aria-label={`Memuat ${widget.title}`}>
+    <div className="chart-wrapper" aria-busy="true" aria-label={t("widget.loading", { title: widget.title })}>
       <h4 className="widget-title">{widget.title}</h4>
       <div className="chart-body sk-chart">
         <div className="sk-axis">
@@ -63,8 +64,8 @@ export default function WidgetSkeleton({ widget }: { readonly widget: WidgetDefi
           ))}
         </div>
         <div className="sk-plot">
-          {BAR_HEIGHTS.map((height, i) => (
-            <span key={i} className="sk sk-bar" style={{ height }} />
+          {BAR_HEIGHTS.map((height) => (
+            <span key={height} className="sk sk-bar" style={{ height }} />
           ))}
         </div>
       </div>

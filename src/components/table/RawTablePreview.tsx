@@ -1,5 +1,6 @@
 import type { DatasetColumn } from "../../types";
 import { formatCell } from "../../lib/format";
+import { useT } from "../../lib/i18n";
 
 export type RawTablePreviewProps = {
   readonly columns: readonly DatasetColumn[];
@@ -10,11 +11,12 @@ export default function RawTablePreview({
   columns,
   sampleRows,
 }: RawTablePreviewProps) {
+  const t = useT();
   return (
     <div className="section-card" style={{ marginTop: "20px" }}>
       <div className="table-header-row">
-        <h3>Pratinjau Data Impor (15 baris pertama)</h3>
-        <span className="table-sub">Data aktual dari database</span>
+        <h3>{t("preview.title")}</h3>
+        <span className="table-sub">{t("preview.actual")}</span>
       </div>
 
       <div className="table-wrapper">
@@ -39,7 +41,7 @@ export default function RawTablePreview({
                   colSpan={columns.length + 1}
                   style={{ textAlign: "center", padding: "24px" }}
                 >
-                  Belum ada data dalam tabel ini.
+                  {t("preview.empty")}
                 </td>
               </tr>
             ) : (

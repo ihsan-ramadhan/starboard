@@ -4,15 +4,29 @@ import { toast } from "sonner";
 import { useApp } from "../App";
 import { api, setAuthToken } from "../lib/api";
 import ConfirmModal from "./ConfirmModal";
+import DatasetIconModal from "./DatasetIconModal";
+import SettingsModal from "./SettingsModal";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import LogoutIcon from "../assets/icons/log-out.svg?react";
+import SettingsIcon from "../assets/icons/settings.svg?react";
+import sigmaLogo from "../assets/sigma-wordmark.webp";
+import sigmaLogoDark from "../assets/sigma-wordmark-dark.webp";
+import { useT } from "../lib/i18n";
+import { useResolvedTheme } from "../lib/theme";
+import ImageIcon from "../assets/icons/image.svg?react";
 import PencilIcon from "../assets/icons/pencil.svg?react";
 import TrashIcon from "../assets/icons/trash.svg?react";
+import { useDatasetIcon } from "../lib/datasetIcon";
 import { isAdmin, type SessionUser } from "../types";
 
-type DatasetTab = { id: string; key: string; displayName: string };
+type DatasetTab = {
+  id: string;
+  key: string;
+  displayName: string;
+  iconVersion: number | null;
+};
 
-const COLLAPSE_KEY = "starboard_sidebar_collapsed";
+const COLLAPSE_KEY = "sigma_sidebar_collapsed";
 
 const LONG_PRESS_MS = 150;
 const MOVE_TOLERANCE = 6;
@@ -48,6 +62,16 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+function NavBadge({ item }: { readonly item: DatasetTab }) {
+  const icon = useDatasetIcon(item.key, item.iconVersion);
+  if (!icon) return <span className="nav-initial">{initials(item.displayName)}</span>;
+  return (
+    <span className="nav-initial has-image">
+      <img src={icon} alt="" />
+    </span>
+  );
+}
+
 type NavItemProps = {
   readonly item: DatasetTab;
   readonly arranging: boolean;
@@ -59,6 +83,7 @@ type NavItemProps = {
   readonly onNudge: (e: React.KeyboardEvent<HTMLElement>) => void;
   readonly onStartRename: () => void;
   readonly onFinishRename: (value: string) => void;
+  readonly onPickIcon: () => void;
   readonly onDelete: () => void;
 };
 
@@ -73,8 +98,10 @@ function NavItem({
   onNudge,
   onStartRename,
   onFinishRename,
+  onPickIcon,
   onDelete,
 }: NavItemProps) {
+  const t = useT();
   const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -93,7 +120,7 @@ function NavItem({
         aria-label={item.displayName}
         title={item.displayName}
       >
-        <span className="nav-initial">{initials(item.displayName)}</span>
+        <NavBadge item={item} />
         <span className="nav-label sidebar-hideable">{item.displayName}</span>
       </Link>
     );
@@ -116,7 +143,7 @@ function NavItem({
           className="nav-rename"
           defaultValue={item.displayName}
           maxLength={60}
-          aria-label={`Nama menu untuk ${item.displayName}`}
+          aria-label={t("sidebar.renameAria", { name: item.displayName })}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
             if (e.key === "Escape") {
@@ -134,16 +161,25 @@ function NavItem({
             draggable={false}
             aria-current={active ? "page" : undefined}
             onKeyDown={onNudge}
-            title={`${item.displayName} — tekan lama untuk memindahkan, atau Alt + panah atas/bawah`}
+            title={t("sidebar.navHint", { name: item.displayName })}
           >
-            <span className="nav-initial">{initials(item.displayName)}</span>
+            <NavBadge item={item} />
             <span className="nav-label sidebar-hideable">{item.displayName}</span>
           </Link>
           <button
             type="button"
+            className="nav-icon-btn"
+            aria-label={t("icon.editNamed", { name: item.displayName })}
+            title={t("icon.title")}
+            onClick={onPickIcon}
+          >
+            <ImageIcon width={13} height={13} />
+          </button>
+          <button
+            type="button"
             className="nav-rename-btn"
-            aria-label={`Ganti nama ${item.displayName}`}
-            title="Ganti nama menu"
+            aria-label={t("sidebar.renameNamed", { name: item.displayName })}
+            title={t("sidebar.renameMenu")}
             onClick={onStartRename}
           >
             <PencilIcon width={13} height={13} />
@@ -151,8 +187,8 @@ function NavItem({
           <button
             type="button"
             className="nav-del-btn"
-            aria-label={`Hapus dataset ${item.displayName}`}
-            title="Hapus dataset"
+            aria-label={t("sidebar.deleteNamed", { name: item.displayName })}
+            title={t("sidebar.deleteDataset")}
             onClick={onDelete}
           >
             <TrashIcon width={13} height={13} />
@@ -178,7 +214,10 @@ export function Sidebar({
     useApp();
   const admin = isAdmin(user);
   const arranging = admin && editMode;
+  const t = useT();
+  const theme = useResolvedTheme();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1"
@@ -186,6 +225,7 @@ export function Sidebar({
   const [items, setItems] = useState<DatasetTab[]>(datasets);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [datasetToDelete, setDatasetToDelete] = useState<DatasetTab | null>(null);
+  const [iconTarget, setIconTarget] = useState<DatasetTab | null>(null);
   const [isDeletingDataset, setIsDeletingDataset] = useState(false);
 
   const itemsRef = useRef(items);
@@ -244,7 +284,7 @@ export function Sidebar({
       await api.reorderDatasets(user.role, next.map((i) => i.key));
       await refreshDatasets();
     } catch (err) {
-      toast.error("Gagal menyimpan urutan menu: " + String(err));
+      toast.error(t("sidebar.orderFailed") + String(err));
       setItems(datasets);
     }
   }
@@ -262,7 +302,7 @@ export function Sidebar({
       await api.updateDataset(user.role, key, { displayName: name });
       await refreshDatasets();
     } catch (err: unknown) {
-      toast.error("Gagal mengganti nama menu: " + String(err));
+      toast.error(t("sidebar.renameFailed") + String(err));
       setItems((prev) =>
         prev.map((i) => (i.key === key ? { ...i, displayName: previous } : i))
       );
@@ -353,15 +393,16 @@ export function Sidebar({
     try {
       await api.deleteDataset(datasetToDelete.id);
       setWidgetCache((prev) => {
-        const { [datasetToDelete.key]: _removed, ...rest } = prev;
+        const rest = { ...prev };
+        delete rest[datasetToDelete.key];
         return rest;
       });
       await refreshDatasets();
-      toast.success(`Dataset "${datasetToDelete.displayName}" berhasil dihapus.`);
+      toast.success(t("sidebar.deleted", { name: datasetToDelete.displayName }));
       if (activeKey === datasetToDelete.key) navigate("/", { replace: true });
       setDatasetToDelete(null);
     } catch (err) {
-      toast.error("Gagal menghapus dataset: " + String(err));
+      toast.error(t("sidebar.deleteFailed") + String(err));
     } finally {
       setIsDeletingDataset(false);
     }
@@ -377,7 +418,7 @@ export function Sidebar({
       setIsLoggingOut(false);
       setAuthToken(null);
       setShowLogoutModal(false);
-      localStorage.removeItem("starboard_user");
+      localStorage.removeItem("sigma_user");
       if (onLogout) onLogout();
       navigate("/login");
     }
@@ -386,7 +427,7 @@ export function Sidebar({
   let navNotice: ReactNode = null;
   if (!datasetsLoaded) {
     navNotice = (
-      <div className="sk-nav" aria-busy="true" aria-label="Memuat daftar dataset">
+      <div className="sk-nav" aria-busy="true" aria-label={t("sidebar.loadingList")}>
         {[0, 1, 2].map((i) => (
           <span key={i} className="sk sk-nav-row" />
         ))}
@@ -396,9 +437,70 @@ export function Sidebar({
     navNotice = (
       <span className="nav-empty">
         {admin
-          ? "Belum ada dataset. Mulai dari Import Dataset di bawah."
-          : `Admin ${user.role} belum mengimpor dataset.`}
+          ? t("sidebar.empty")
+          : t("sidebar.adminEmpty", { dept: user.role })}
       </span>
+    );
+  }
+
+  function editToggle() {
+    if (!admin) return null;
+    return (
+      <button
+        type="button"
+        className={`sidebar-edit${editMode ? " on" : ""}`}
+        aria-pressed={editMode}
+        onClick={() => {
+          setRenamingKey(null);
+          setEditMode((v) => !v);
+        }}
+        title={editMode ? t("sidebar.exitEdit") : t("sidebar.enterEdit")}
+      >
+        <PencilIcon width={15} height={15} />
+        <span className="sidebar-hideable">
+          {editMode ? t("sidebar.editDone") : t("sidebar.editMode")}
+        </span>
+      </button>
+    );
+  }
+
+  function sidebarFoot() {
+    return (
+      <div className="sidebar-foot">
+        {editToggle()}
+
+        <div className="sidebar-user">
+          <span
+            className="dept-badge"
+            style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
+            title={collapsed ? user.username : undefined}
+          >
+            {user.role}
+          </span>
+          <span className="user-name sidebar-hideable">{user.username}</span>
+
+          <div className="sidebar-foot-actions">
+            <button
+              type="button"
+              className="sidebar-icon-btn"
+              onClick={() => setShowSettings(true)}
+              aria-label={t("settings.open")}
+              title={t("settings.title")}
+            >
+              <SettingsIcon width={16} height={16} />
+            </button>
+            <button
+              type="button"
+              className="sidebar-icon-btn is-danger"
+              onClick={() => setShowLogoutModal(true)}
+              aria-label={t("sidebar.logout")}
+              title={t("sidebar.logout")}
+            >
+              <LogoutIcon width={16} height={16} />
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -406,17 +508,18 @@ export function Sidebar({
     <>
       <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
         <div className="sidebar-head">
-          <div className="brand">
-            <span className="brand-mark">★</span>
-            <span className="sidebar-hideable"> Starboard</span>
-          </div>
+          <img
+            className="brand-logo"
+            src={theme === "dark" ? sigmaLogoDark : sigmaLogo}
+            alt="SIGMA"
+          />
           <button
             type="button"
             className="sidebar-toggle"
             onClick={toggleCollapsed}
             aria-expanded={!collapsed}
-            aria-label={collapsed ? "Buka sidebar" : "Tutup sidebar"}
-            title={collapsed ? "Buka sidebar" : "Tutup sidebar"}
+            aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+            title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
           >
             <ChevronIcon width={16} height={16} />
           </button>
@@ -446,6 +549,7 @@ export function Sidebar({
                   e.stopPropagation();
                 }}
                 onNudge={(e) => nudge(e, d.key)}
+                onPickIcon={() => setIconTarget(d)}
                 onStartRename={() => setRenamingKey(d.key)}
                 onFinishRename={(value) => {
                   setRenamingKey(null);
@@ -460,62 +564,41 @@ export function Sidebar({
               to="/import"
               className={`nav-link import${location.pathname === "/import" ? " active" : ""}`}
               aria-current={location.pathname === "/import" ? "page" : undefined}
-              aria-label="Import Dataset"
-              title="Import Dataset"
+              aria-label={t("sidebar.import")}
+              title={t("sidebar.import")}
             >
               <span className="nav-initial">+</span>
-              <span className="nav-label sidebar-hideable">Import Dataset</span>
+              <span className="nav-label sidebar-hideable">{t("sidebar.import")}</span>
             </Link>
           )}
         </nav>
 
-        <div className="sidebar-foot">
-          <div className="sidebar-user">
-            <span
-              className="dept-badge"
-              style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
-              title={collapsed ? user.username : undefined}
-            >
-              {user.role}
-            </span>
-            <span className="user-name sidebar-hideable">{user.username}</span>
-          </div>
-          {admin && (
-            <button
-              type="button"
-              className={`sidebar-edit${editMode ? " on" : ""}`}
-              aria-pressed={editMode}
-              onClick={() => {
-                setRenamingKey(null);
-                setEditMode((v) => !v);
-              }}
-              title={editMode ? "Keluar dari mode edit" : "Masuk mode edit"}
-            >
-              <PencilIcon width={15} height={15} />
-              <span className="sidebar-hideable">
-                {editMode ? "Selesai Edit" : "Mode Edit"}
-              </span>
-            </button>
-          )}
-          <button
-            type="button"
-            className="sidebar-logout"
-            onClick={() => setShowLogoutModal(true)}
-            aria-label="Logout"
-            title={collapsed ? "Logout" : undefined}
-          >
-            <LogoutIcon width={15} height={15} />
-            <span className="sidebar-hideable">Logout</span>
-          </button>
-        </div>
+        {sidebarFoot()}
       </aside>
+
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
+
+      {iconTarget && (
+        <DatasetIconModal
+          isOpen={true}
+          datasetKey={iconTarget.key}
+          displayName={iconTarget.displayName}
+          initials={initials(iconTarget.displayName)}
+          iconVersion={iconTarget.iconVersion}
+          onSaved={refreshDatasets}
+          onClose={() => setIconTarget(null)}
+        />
+      )}
 
       <ConfirmModal
         isOpen={showLogoutModal}
-        title="Konfirmasi Logout"
-        message="Apakah Anda yakin ingin keluar dari akun Starboard?"
-        confirmLabel="Logout"
-        cancelLabel="Batal"
+        title={t("sidebar.logoutTitle")}
+        message={t("sidebar.logoutMessage")}
+        confirmLabel={t("sidebar.logout")}
+        cancelLabel={t("common.cancel")}
         isDestructive={true}
         isLoading={isLoggingOut}
         onConfirm={handleConfirmLogout}
@@ -524,10 +607,10 @@ export function Sidebar({
 
       <ConfirmModal
         isOpen={datasetToDelete !== null}
-        title="Hapus Dataset"
-        message={`Dataset "${datasetToDelete?.displayName ?? ""}" akan dihapus permanen beserta seluruh baris datanya dan semua widget yang memakainya. Tindakan ini tidak dapat dibatalkan.`}
-        confirmLabel="Hapus Dataset"
-        cancelLabel="Batal"
+        title={t("sidebar.deleteTitle")}
+        message={t("sidebar.deleteMessage", { name: datasetToDelete?.displayName ?? "" })}
+        confirmLabel={t("sidebar.deleteTitle")}
+        cancelLabel={t("common.cancel")}
         isDestructive={true}
         isLoading={isDeletingDataset}
         onConfirm={handleDeleteDataset}

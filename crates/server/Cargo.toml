@@ -1,5 +1,5 @@
 [package]
-name = "starboard-server"
+name = "sigma-server"
 version = "0.1.0"
 edition = "2021"
 
