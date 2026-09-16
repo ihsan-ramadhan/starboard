@@ -132,8 +132,10 @@ export function formatAxisValue(val: number, currency?: CurrencyCode): string {
     if (Math.abs(val) < step) continue;
     const scaled = val / step;
     const suffix = t(suffixKey);
-    if (currency) return `${nf(`${currency}axis`).format(scaled)}${suffix}`;
-    return `${nf("plain").format(scaled)}${suffix}`;
+    const scaledText = currency
+      ? nf(`${currency}axis`).format(scaled)
+      : nf("plain").format(scaled);
+    return `${scaledText}${suffix}`;
   }
   return currency ? nf(`${currency}axis`).format(val) : nf("plain").format(val);
 }

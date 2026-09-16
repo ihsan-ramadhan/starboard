@@ -366,6 +366,7 @@ const id = {
   "preview.title": "Pratinjau Data Impor (15 baris pertama)",
   "preview.empty": "Belum ada data dalam tabel ini.",
   "ds.firstWidgetHint": "Pilih tipe visual di panel kanan untuk menambahkan widget pertama.",
+  "ds.addFirstWidget": "+ Tambah Widget Pertama",
   "chart.trendline": "Garis tren",
   "scale.billion": " M",
   "scale.million": " Jt",
@@ -774,6 +775,7 @@ const en: Record<TKey, string> = {
   "preview.title": "Import preview (first 15 rows)",
   "preview.empty": "No data in this table yet.",
   "ds.firstWidgetHint": "Pick a visual type on the right to add your first widget.",
+  "ds.addFirstWidget": "+ Add your first widget",
   "chart.trendline": "Trendline",
   "scale.billion": " B",
   "scale.million": " M",
@@ -825,12 +827,16 @@ const en: Record<TKey, string> = {
 
 const DICT: Record<Lang, Record<TKey, string>> = { id, en };
 
+function safeLang(value: unknown): Lang {
+  return value === "en" ? "en" : "id";
+}
+
 function read(): Lang {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === "id" || raw === "en") return raw;
-  } catch {}
-  return "id";
+    return safeLang(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return "id";
+  }
 }
 
 let current: Lang = read();
@@ -842,12 +848,13 @@ export function getLang(): Lang {
 }
 
 export function setLang(next: Lang) {
-  if (next === current) return;
-  current = next;
+  const picked = safeLang(next);
+  if (picked === current) return;
+  current = picked;
   try {
-    localStorage.setItem(STORAGE_KEY, next);
+    localStorage.setItem(STORAGE_KEY, picked);
   } catch {}
-  document.documentElement.lang = next;
+  document.documentElement.lang = picked;
   for (const notify of listeners) notify();
 }
 

@@ -107,15 +107,12 @@ export function blankWhenEmpty(
 }
 
 export function edgeAwareLabels(count: number) {
-  return (params: any) => ({
-    hideOverlap: true,
-    dx:
-      params.dataIndex === 0
-        ? 16
-        : params.dataIndex === count - 1
-          ? -16
-          : 0,
-  });
+  return (params: any) => {
+    let dx = 0;
+    if (params.dataIndex === 0) dx = 16;
+    else if (params.dataIndex === count - 1) dx = -16;
+    return { hideOverlap: true, dx };
+  };
 }
 
 export function dataLabel(

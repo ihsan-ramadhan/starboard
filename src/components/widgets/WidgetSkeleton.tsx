@@ -64,8 +64,8 @@ export default function WidgetSkeleton({ widget }: { readonly widget: WidgetDefi
           ))}
         </div>
         <div className="sk-plot">
-          {BAR_HEIGHTS.map((height, i) => (
-            <span key={i} className="sk sk-bar" style={{ height }} />
+          {BAR_HEIGHTS.map((height) => (
+            <span key={height} className="sk sk-bar" style={{ height }} />
           ))}
         </div>
       </div>

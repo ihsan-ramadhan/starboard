@@ -93,6 +93,52 @@ export default function WidgetFocusModal({
     return columnLabel(key);
   };
 
+  function keyed(list: readonly Row[]) {
+    const seen = new Map<string, number>();
+    return list.map((row) => {
+      const base = headers.map((h) => String(row[h] ?? "")).join("\u0001");
+      const nth = seen.get(base) ?? 0;
+      seen.set(base, nth + 1);
+      return { row, key: nth === 0 ? base : `${base}#${nth}` };
+    });
+  }
+
+  function dataBody() {
+    if (failed) return <p className="widget-empty">{t("focus.dataFailed")}</p>;
+    if (!labelled) return <p className="widget-empty">{t("common.processing")}</p>;
+    if (labelled.length === 0)
+      return <p className="widget-empty">{t("chart.noData")}</p>;
+    return (
+      <div className="focus-table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              {headers.map((h) => (
+                <th key={h}>{headerLabel(h)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {keyed(labelled).map(({ row, key }) => (
+              <tr key={key}>
+                {headers.map((h) => (
+                  <td
+                    key={h}
+                    className={
+                      typeof row[h] === "number" ? "cell-num" : undefined
+                    }
+                  >
+                    {formatCell(row[h])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <dialog
       ref={dialogRef}
@@ -131,41 +177,7 @@ export default function WidgetFocusModal({
         {query && !scalarOnly && (
           <div className="focus-data">
             <h4 className="focus-data-title">{t("focus.dataTitle")}</h4>
-            {failed ? (
-              <p className="widget-empty">{t("focus.dataFailed")}</p>
-            ) : !labelled ? (
-              <p className="widget-empty">{t("common.processing")}</p>
-            ) : labelled.length === 0 ? (
-              <p className="widget-empty">{t("chart.noData")}</p>
-            ) : (
-              <div className="focus-table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {headers.map((h) => (
-                        <th key={h}>{headerLabel(h)}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {labelled.map((row, i) => (
-                      <tr key={i}>
-                        {headers.map((h) => (
-                          <td
-                            key={h}
-                            className={
-                              typeof row[h] === "number" ? "cell-num" : undefined
-                            }
-                          >
-                            {formatCell(row[h])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {dataBody()}
           </div>
         )}
       </div>

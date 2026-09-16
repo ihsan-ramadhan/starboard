@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { LANGUAGES, setLang, useLang, useT, type Lang } from "../lib/i18n";
 import {
   setDataLabelsShown,
@@ -20,6 +20,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const dataLabels = useGlobalDataLabels();
   const warningHidden = useScaleWarningHidden();
   const t = useT();
+  const dataLabelsId = useId();
+  const warningId = useId();
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -81,29 +83,35 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <section className="settings-group">
             <h4 className="settings-group-title">{t("settings.widgets")}</h4>
 
-            <label className="settings-check">
+            <div className="settings-check">
               <input
+                id={dataLabelsId}
                 type="checkbox"
                 checked={dataLabels}
                 onChange={(e) => setDataLabelsShown(e.target.checked)}
               />
               <span className="settings-check-text">
-                <span className="settings-label">{t("settings.dataLabels")}</span>
+                <label className="settings-label" htmlFor={dataLabelsId}>
+                  {t("settings.dataLabels")}
+                </label>
                 <span className="settings-hint">{t("settings.dataLabelsHint")}</span>
               </span>
-            </label>
+            </div>
 
-            <label className="settings-check">
+            <div className="settings-check">
               <input
+                id={warningId}
                 type="checkbox"
                 checked={warningHidden}
                 onChange={(e) => setScaleWarningHidden(e.target.checked)}
               />
               <span className="settings-check-text">
-                <span className="settings-label">{t("settings.hideScaleWarning")}</span>
+                <label className="settings-label" htmlFor={warningId}>
+                  {t("settings.hideScaleWarning")}
+                </label>
                 <span className="settings-hint">{t("settings.scaleWarningHint")}</span>
               </span>
-            </label>
+            </div>
           </section>
         </div>
 

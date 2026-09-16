@@ -4,6 +4,12 @@ import type { Crop, ImageMeta } from "../lib/datasetIcon";
 export const VIEW = 232;
 const MAX_ZOOM = 5;
 const NUDGE = 8;
+const NUDGES: Record<string, readonly [number, number]> = {
+  ArrowLeft: [NUDGE, 0],
+  ArrowRight: [-NUDGE, 0],
+  ArrowUp: [0, NUDGE],
+  ArrowDown: [0, -NUDGE],
+};
 
 export type Offset = { readonly x: number; readonly y: number };
 
@@ -97,7 +103,7 @@ export default function IconCropper({
     settle(next, { x: VIEW / 2 - cx * scale, y: VIEW / 2 - cy * scale });
   }
 
-  function pressStart(e: React.PointerEvent<HTMLDivElement>) {
+  function pressStart(e: React.PointerEvent<HTMLButtonElement>) {
     if (e.button !== 0) return;
     const g = geometry(image, zoom, offset);
     dragRef.current = { x: e.clientX, y: e.clientY, ox: g.ox, oy: g.oy };
@@ -105,7 +111,7 @@ export default function IconCropper({
     setDragging(true);
   }
 
-  function pressMove(e: React.PointerEvent<HTMLDivElement>) {
+  function pressMove(e: React.PointerEvent<HTMLButtonElement>) {
     const start = dragRef.current;
     if (!start) return;
     settle(zoom, {
@@ -114,24 +120,15 @@ export default function IconCropper({
     });
   }
 
-  function pressEnd(e: React.PointerEvent<HTMLDivElement>) {
+  function pressEnd(e: React.PointerEvent<HTMLButtonElement>) {
     if (!dragRef.current) return;
     dragRef.current = null;
     setDragging(false);
     e.currentTarget.releasePointerCapture(e.pointerId);
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    const step =
-      e.key === "ArrowLeft"
-        ? [NUDGE, 0]
-        : e.key === "ArrowRight"
-          ? [-NUDGE, 0]
-          : e.key === "ArrowUp"
-            ? [0, NUDGE]
-            : e.key === "ArrowDown"
-              ? [0, -NUDGE]
-              : null;
+  function onKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    const step = NUDGES[e.key];
     if (!step) return;
     e.preventDefault();
     settle(zoom, { x: offset.x + step[0], y: offset.y + step[1] });
@@ -139,12 +136,11 @@ export default function IconCropper({
 
   return (
     <div className="icon-crop-wrap">
-      <div
+      <button
+        type="button"
         className={`icon-crop${dragging ? " is-dragging" : ""}`}
         style={{ width: VIEW, height: VIEW }}
-        role="group"
         aria-label={label}
-        tabIndex={0}
         onPointerDown={pressStart}
         onPointerMove={pressMove}
         onPointerUp={pressEnd}
@@ -157,7 +153,7 @@ export default function IconCropper({
           draggable={false}
           style={cropImageStyle(image, zoom, offset, VIEW)}
         />
-      </div>
+      </button>
 
       <input
         className="icon-zoom"

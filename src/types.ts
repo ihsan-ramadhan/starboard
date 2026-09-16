@@ -133,7 +133,7 @@ export function labelForValue(
   raw: string
 ): string {
   const custom = map?.[column]?.[raw];
-  return custom && custom.trim() ? custom : raw;
+  return custom?.trim() ? custom : raw;
 }
 
 export type Slicer = {
@@ -256,15 +256,15 @@ export function resolveFormat(
     WidgetDefinition,
     "valueFormats" | "valueCurrencies" | "isCurrency" | "currency"
   >,
-  column: string | undefined
+  column = ""
 ): { format?: ValueFormat; currency?: CurrencyCode } {
-  const key = column ?? "";
   const format =
-    widget.valueFormats?.[key] ?? (widget.isCurrency ? "currency" : undefined);
+    widget.valueFormats?.[column] ??
+    (widget.isCurrency ? "currency" : undefined);
   if (format !== "currency") return { format };
   return {
     format,
-    currency: widget.valueCurrencies?.[key] ?? widget.currency ?? "IDR",
+    currency: widget.valueCurrencies?.[column] ?? widget.currency ?? "IDR",
   };
 }
 

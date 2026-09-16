@@ -1,14 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import type {
-  CurrencyCode,
-  DateMode,
-  DatasetColumn,
-  FilterOp,
-  SeriesMode,
-  WidgetDefinition,
-  WidgetFilter,
-  WidgetType,
-} from "../../types";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   CURRENCY_SHORT_KEY,
   DATE_MODE_KEY,
@@ -18,9 +8,17 @@ import {
   opsForColumn,
   SORT_BY_KEY,
   VALUE_FORMAT_KEY,
+  type CurrencyCode,
+  type DateMode,
+  type DatasetColumn,
+  type FilterOp,
   type GoodDirection,
+  type SeriesMode,
   type SortBy,
   type ValueFormat,
+  type WidgetDefinition,
+  type WidgetFilter,
+  type WidgetType,
 } from "../../types";
 import { useT, type TKey } from "../../lib/i18n";
 import BarChartIcon from "../../assets/icons/chart-bar.svg?react";
@@ -430,6 +428,7 @@ export default function WidgetBuilderSidebar({
   onDelete,
 }: WidgetBuilderSidebarProps) {
   const t = useT();
+  const visualGroup = useId();
   const [draft, setDraft] = useState<Draft>(BLANK);
 
   useEffect(() => {
@@ -578,28 +577,35 @@ export default function WidgetBuilderSidebar({
           <div className="builder-sidebar-body">
             <section className="builder-section">
               <span className="builder-section-title">{t("builder.visualType")}</span>
-              <div className="builder-visual-gallery" role="radiogroup" aria-label={t("builder.pickVisualType")}>
+              <fieldset
+                className="builder-visual-gallery"
+                aria-label={t("builder.pickVisualType")}
+              >
                 {VISUAL_TYPES.map((visual) => {
                   const Icon = visual.icon;
                   const active = draft.type === visual.type;
                   return (
-                    <button
+                    <label
                       key={visual.type}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
                       className={`visual-tile${active ? " is-active" : ""}`}
-                      onClick={() => changeType(visual.type)}
                       title={t(visual.labelKey)}
                     >
+                      <input
+                        type="radio"
+                        className="visual-tile-input"
+                        name={visualGroup}
+                        value={visual.type}
+                        checked={active}
+                        onChange={() => changeType(visual.type)}
+                      />
                       <span className="visual-tile-icon">
                         <Icon width={16} height={16} />
                       </span>
                       <span className="visual-tile-label">{t(visual.labelKey)}</span>
-                    </button>
+                    </label>
                   );
                 })}
-              </div>
+              </fieldset>
             </section>
 
             <section className="builder-section">

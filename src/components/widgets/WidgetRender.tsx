@@ -19,6 +19,7 @@ import type {
   WidgetDefinition,
   WidgetFilter,
   WidgetQueryResult,
+  WidgetType,
 } from "../../types";
 import type { WideRow } from "../../lib/series";
 import type { SeriesLabeller, ValueFormatter } from "./chartParts";
@@ -30,7 +31,7 @@ import KpiCard from "./KpiCard";
 import WidgetSkeleton from "./WidgetSkeleton";
 import DateCard from "./DateCard";
 import TableWidget from "./TableWidget";
-import { useLang, useT } from "../../lib/i18n";
+import { useLang, useT, type Translate } from "../../lib/i18n";
 import { useResolvedTheme } from "../../lib/theme";
 const BarChartWidget = lazy(() => import("./BarChartWidget"));
 const LineChartWidget = lazy(() => import("./LineChartWidget"));
@@ -234,6 +235,103 @@ function SeriesChart({
   return <LineChartWidget {...shared} showTrendline={widget.showTrendline} />;
 }
 
+const SERIES_CHARTS = new Set<WidgetType>([
+  "bar",
+  "barh",
+  "area",
+  "combo",
+  "line",
+  "heatmap",
+  "scatter",
+]);
+
+function useWidgetData(query: WidgetQuery | null) {
+  const [raw, setRaw] = useState<WidgetQueryResult | null>(() =>
+    query ? peekWidgetData(query) ?? null : null
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!query) return;
+
+    const cached = peekWidgetData(query);
+    if (cached) {
+      setError(null);
+      setRaw(cached);
+      return;
+    }
+
+    let active = true;
+    setRaw(null);
+    setError(null);
+    api
+      .queryWidgetData(query)
+      .then((res) => {
+        if (active) setRaw(res);
+      })
+      .catch((e) => {
+        console.error("Failed to load widget:", e);
+        if (!active) return;
+        setError(String(e instanceof Error ? e.message : e));
+        setRaw({ rows: [] });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [query]);
+
+  return { raw, error };
+}
+
+function scaleNote(
+  t: Translate,
+  hidden: boolean,
+  stacking: SeriesMode,
+  data: readonly WideRow[],
+  seriesKeys: readonly string[],
+  labelOf: (series: string) => string
+): string | undefined {
+  if (hidden || stacking === "stacked100") return undefined;
+  const mismatch = scaleMismatch(data, seriesKeys, SCALE_MISMATCH_RATIO);
+  if (!mismatch) return undefined;
+  return t("chart.scaleNote", {
+    small: labelOf(mismatch.small),
+    ratio: formatCount(Math.round(mismatch.ratio)),
+    large: labelOf(mismatch.large),
+  });
+}
+
+function GaugeView({
+  widget,
+  result,
+  currency,
+  format,
+  reloadNonce,
+}: {
+  readonly widget: WidgetDefinition;
+  readonly result: WidgetQueryResult;
+  readonly currency: CurrencyCode | undefined;
+  readonly format: ValueFormat | undefined;
+  readonly reloadNonce: number;
+}) {
+  const valueOf = (column?: string) =>
+    result.rows.find((r) => r.series === column)?.value ?? null;
+  const hasMax = Boolean(widget.targetColumn);
+  return (
+    <GaugeWidget
+      title={widget.title}
+      value={hasMax ? valueOf(widget.metricColumn) : result.scalarValue ?? null}
+      max={hasMax ? valueOf(widget.targetColumn) : null}
+      goodDirection={widget.goodDirection}
+      unit={widget.unit}
+      currency={currency}
+      format={format}
+      reloadNonce={reloadNonce}
+    />
+  );
+}
+
 function WidgetRender({
   widget,
   columns,
@@ -248,40 +346,7 @@ function WidgetRender({
   const specKey = spec ? JSON.stringify(spec) : "";
   const query = useMemo(() => spec, [specKey, reloadNonce]);
 
-  const [raw, setResult] = useState<WidgetQueryResult | null>(() =>
-    query ? peekWidgetData(query) ?? null : null
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!query) return;
-
-    const cached = peekWidgetData(query);
-    if (cached) {
-      setError(null);
-      setResult(cached);
-      return;
-    }
-
-    let active = true;
-    setResult(null);
-    setError(null);
-    api
-      .queryWidgetData(query)
-      .then((res) => {
-        if (active) setResult(res);
-      })
-      .catch((e) => {
-        console.error("Failed to load widget:", e);
-        if (!active) return;
-        setError(String(e instanceof Error ? e.message : e));
-        setResult({ rows: [] });
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [query]);
+  const { raw, error } = useWidgetData(query);
 
   const groupLabels = widget.groupByColumn
     ? valueLabels?.[widget.groupByColumn]
@@ -326,14 +391,7 @@ function WidgetRender({
     [columnLabel, t]
   );
 
-  const isSeriesChart =
-    widget.type === "bar" ||
-    widget.type === "barh" ||
-    widget.type === "area" ||
-    widget.type === "combo" ||
-    widget.type === "line" ||
-    widget.type === "heatmap" ||
-    widget.type === "scatter";
+  const isSeriesChart = SERIES_CHARTS.has(widget.type);
 
   const pivot = useMemo(
     () =>
@@ -361,15 +419,10 @@ function WidgetRender({
     [slices, theme]
   );
 
-  const lineKeys = useMemo(
-    () =>
-      widget.lineColumns?.length
-        ? widget.lineColumns
-        : widget.lineColumn
-          ? [widget.lineColumn]
-          : [],
-    [widget.lineColumns, widget.lineColumn]
-  );
+  const lineKeys = useMemo(() => {
+    if (widget.lineColumns?.length) return widget.lineColumns;
+    return widget.lineColumn ? [widget.lineColumn] : [];
+  }, [widget.lineColumns, widget.lineColumn]);
 
   const suspend = (node: ReactNode) => (
     <Suspense fallback={<WidgetSkeleton widget={widget} />}>{node}</Suspense>
@@ -431,23 +484,10 @@ function WidgetRender({
     );
   }
 
-  if (widget.type === "pie") {
+  if (widget.type === "pie" || widget.type === "treemap") {
+    const Slices = widget.type === "pie" ? PieChartWidget : TreemapWidget;
     return suspend(
-      <PieChartWidget
-        title={widget.title}
-        format={metricFormat}
-        data={slices ?? []}
-        colors={sliceColors}
-        unit={widget.unit}
-        currency={currency}
-        reloadNonce={reloadNonce}
-      />
-    );
-  }
-
-  if (widget.type === "treemap") {
-    return suspend(
-      <TreemapWidget
+      <Slices
         title={widget.title}
         format={metricFormat}
         data={slices ?? []}
@@ -460,16 +500,10 @@ function WidgetRender({
   }
 
   if (widget.type === "gauge") {
-    const valueOf = (column?: string) =>
-      result.rows.find((r) => r.series === column)?.value ?? null;
-    const hasMax = Boolean(widget.targetColumn);
     return suspend(
-      <GaugeWidget
-        title={widget.title}
-        value={hasMax ? valueOf(widget.metricColumn) : result.scalarValue ?? null}
-        max={hasMax ? valueOf(widget.targetColumn) : null}
-        goodDirection={widget.goodDirection}
-        unit={widget.unit}
+      <GaugeView
+        widget={widget}
+        result={result}
         currency={currency}
         format={metricFormat}
         reloadNonce={reloadNonce}
@@ -514,18 +548,8 @@ function WidgetRender({
     );
   }
 
-  const mismatch =
-    warningHidden || stacking === "stacked100"
-      ? null
-      : scaleMismatch(data, seriesKeys, SCALE_MISMATCH_RATIO);
   const hideWarning = () => setScaleWarningHidden(true);
-  const note = mismatch
-    ? t("chart.scaleNote", {
-        small: labelOf(mismatch.small),
-        ratio: formatCount(Math.round(mismatch.ratio)),
-        large: labelOf(mismatch.large),
-      })
-    : undefined;
+  const note = scaleNote(t, warningHidden, stacking, data, seriesKeys, labelOf);
 
   return suspend(
     <SeriesChart

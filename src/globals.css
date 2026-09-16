@@ -1736,8 +1736,10 @@ a {
 .slicer-modes {
   display: flex;
   gap: 4px;
-  margin-bottom: 10px;
+  min-inline-size: 0;
+  margin: 0 0 10px;
   padding: 2px;
+  border: 0;
   border-radius: var(--radius-sm);
   background: var(--surface);
 }
@@ -1902,7 +1904,6 @@ a {
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  cursor: pointer;
 }
 
 .settings-check + .settings-check {
@@ -1927,6 +1928,7 @@ a {
 
 .settings-check .settings-label {
   font-weight: 500;
+  cursor: pointer;
 }
 
 .icon-modal {
@@ -1942,7 +1944,9 @@ a {
 }
 
 .icon-crop {
+  display: block;
   position: relative;
+  padding: 0;
   overflow: hidden;
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -2327,7 +2331,7 @@ a {
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
-  padding: 6px 12px 12px;
+  padding: 12px 12px 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -2356,10 +2360,6 @@ a {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-.widget-group.is-hugging {
-  height: auto;
-  max-height: 100%;
-}
 
 .widget-group-header {
   display: flex;
@@ -2367,6 +2367,7 @@ a {
   justify-content: space-between;
   gap: 10px;
   height: 30px;
+  margin-bottom: 10px;
   flex-shrink: 0;
 }
 
@@ -2631,9 +2632,6 @@ a {
 
 .app-shell.is-fullscreen .dataset-header {
   padding-top: 14px;
-}
-
-.app-shell.is-fullscreen .dataset-header {
   margin-bottom: 14px;
 }
 
@@ -2804,10 +2802,23 @@ a {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.visual-tile-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .visual-tile {
   display: flex;
+  position: relative;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -2821,6 +2832,11 @@ a {
   cursor: pointer;
   transition: border-color 0.12s ease, background 0.12s ease;
   text-align: left;
+}
+
+.visual-tile:has(.visual-tile-input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .visual-tile:hover {
@@ -3509,11 +3525,13 @@ dialog.modal-native::backdrop {
 }
 
 .table-scroll {
+  --table-head-h: 36px;
   flex: 1;
   min-height: 0;
   margin-top: 10px;
   overflow: auto;
   scroll-snap-type: y proximity;
+  scroll-padding-top: var(--table-head-h);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -3526,6 +3544,7 @@ dialog.modal-native::backdrop {
   position: sticky;
   top: 0;
   z-index: 1;
+  height: var(--table-head-h);
   padding: 0;
   box-shadow: inset 0 -1px 0 var(--border);
   border-bottom: none;

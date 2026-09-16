@@ -393,7 +393,8 @@ export function Sidebar({
     try {
       await api.deleteDataset(datasetToDelete.id);
       setWidgetCache((prev) => {
-        const { [datasetToDelete.key]: _removed, ...rest } = prev;
+        const rest = { ...prev };
+        delete rest[datasetToDelete.key];
         return rest;
       });
       await refreshDatasets();
@@ -439,6 +440,67 @@ export function Sidebar({
           ? t("sidebar.empty")
           : t("sidebar.adminEmpty", { dept: user.role })}
       </span>
+    );
+  }
+
+  function editToggle() {
+    if (!admin) return null;
+    return (
+      <button
+        type="button"
+        className={`sidebar-edit${editMode ? " on" : ""}`}
+        aria-pressed={editMode}
+        onClick={() => {
+          setRenamingKey(null);
+          setEditMode((v) => !v);
+        }}
+        title={editMode ? t("sidebar.exitEdit") : t("sidebar.enterEdit")}
+      >
+        <PencilIcon width={15} height={15} />
+        <span className="sidebar-hideable">
+          {editMode ? t("sidebar.editDone") : t("sidebar.editMode")}
+        </span>
+      </button>
+    );
+  }
+
+  function sidebarFoot() {
+    return (
+      <div className="sidebar-foot">
+        {editToggle()}
+
+        <div className="sidebar-user">
+          <span
+            className="dept-badge"
+            style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
+            title={collapsed ? user.username : undefined}
+          >
+            {user.role}
+          </span>
+          <span className="user-name sidebar-hideable">{user.username}</span>
+
+          <div className="sidebar-foot-actions">
+            <button
+              type="button"
+              className="sidebar-icon-btn"
+              onClick={() => setShowSettings(true)}
+              aria-label={t("settings.open")}
+              title={t("settings.title")}
+            >
+              <SettingsIcon width={16} height={16} />
+            </button>
+            <button
+              type="button"
+              className="sidebar-icon-btn is-danger"
+              onClick={() => setShowLogoutModal(true)}
+              aria-label={t("sidebar.logout")}
+              title={t("sidebar.logout")}
+            >
+              <LogoutIcon width={16} height={16} />
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -511,57 +573,7 @@ export function Sidebar({
           )}
         </nav>
 
-        <div className="sidebar-foot">
-          {admin && (
-            <button
-              type="button"
-              className={`sidebar-edit${editMode ? " on" : ""}`}
-              aria-pressed={editMode}
-              onClick={() => {
-                setRenamingKey(null);
-                setEditMode((v) => !v);
-              }}
-              title={editMode ? t("sidebar.exitEdit") : t("sidebar.enterEdit")}
-            >
-              <PencilIcon width={15} height={15} />
-              <span className="sidebar-hideable">
-                {editMode ? t("sidebar.editDone") : t("sidebar.editMode")}
-              </span>
-            </button>
-          )}
-
-          <div className="sidebar-user">
-            <span
-              className="dept-badge"
-              style={user.deptColor ? { backgroundColor: user.deptColor } : undefined}
-              title={collapsed ? user.username : undefined}
-            >
-              {user.role}
-            </span>
-            <span className="user-name sidebar-hideable">{user.username}</span>
-
-            <div className="sidebar-foot-actions">
-              <button
-                type="button"
-                className="sidebar-icon-btn"
-                onClick={() => setShowSettings(true)}
-                aria-label={t("settings.open")}
-                title={t("settings.title")}
-              >
-                <SettingsIcon width={16} height={16} />
-              </button>
-              <button
-                type="button"
-                className="sidebar-icon-btn is-danger"
-                onClick={() => setShowLogoutModal(true)}
-                aria-label={t("sidebar.logout")}
-                title={t("sidebar.logout")}
-              >
-                <LogoutIcon width={16} height={16} />
-              </button>
-            </div>
-          </div>
-        </div>
+        {sidebarFoot()}
       </aside>
 
       <SettingsModal

@@ -358,47 +358,52 @@ export default function ImportWizard({
     if (fileRef.current) fileRef.current.value = "";
   }
 
+  function dropzoneCard() {
+    const classes = ["dropzone-card"];
+    if (isDragging) classes.push("dragging");
+    if (analyzing) classes.push("analyzing");
+    return (
+      <button
+        type="button"
+        className={classes.join(" ")}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        onClick={openPicker}
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx, .xls"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) processFile(f);
+          }}
+        />
+
+        <div className="dropzone-inner">
+          <div className="dropzone-icon">
+            <FilePlusIcon width={32} height={32} />
+          </div>
+          <div className="dropzone-title">
+            {analyzing ? t("import.reading") : t("import.dropHint")}
+          </div>
+          <div className="dropzone-sub">
+            {isDesktop() ? t("import.sourceHint") : t("import.formats")}
+          </div>
+        </div>
+      </button>
+    );
+  }
+
   return (
     <div className="wizard">
       {!sheets ? (
-        <button
-          type="button"
-          className={`dropzone-card${isDragging ? " dragging" : ""}${
-            analyzing ? " analyzing" : ""
-          }`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          onClick={openPicker}
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx, .xls"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) processFile(f);
-            }}
-          />
-
-          <div className="dropzone-inner">
-            <div className="dropzone-icon">
-              <FilePlusIcon width={32} height={32} />
-            </div>
-            <div className="dropzone-title">
-              {analyzing ? t("import.reading") : t("import.dropHint")}
-            </div>
-            <div className="dropzone-sub">
-              {isDesktop()
-                ? t("import.sourceHint")
-                : t("import.formats")}
-            </div>
-          </div>
-        </button>
+        dropzoneCard()
       ) : (
         <div className="wizard-split-container">
           <div className="wizard-topbar">

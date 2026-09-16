@@ -78,7 +78,7 @@ export async function buildIconBlob(file: File, crop: Crop): Promise<Blob> {
   square.close();
 
   const blob = await encode(canvas, "image/webp");
-  if (blob && blob.type === "image/webp") return blob;
+  if (blob?.type === "image/webp") return blob;
 
   const png = await encode(canvas, "image/png");
   if (png) return png;
@@ -93,7 +93,11 @@ export function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error(t("icon.unreadable")));
-    reader.onload = () => resolve(String(reader.result));
+    reader.onload = () => {
+      const { result } = reader;
+      if (typeof result === "string") resolve(result);
+      else reject(new Error(t("icon.unreadable")));
+    };
     reader.readAsDataURL(blob);
   });
 }
@@ -121,7 +125,7 @@ function load(key: string, version: number): Promise<string> {
 }
 
 export function forgetDatasetIcon(key: string) {
-  for (const id of [...cache.keys()]) {
+  for (const id of cache.keys()) {
     if (id.startsWith(`${key}:`)) cache.delete(id);
   }
 }

@@ -5,12 +5,18 @@ export type Resolved = "light" | "dark";
 
 const STORAGE_KEY = "sigma_theme";
 
+function safeChoice(value: unknown): ThemeChoice {
+  if (value === "light") return "light";
+  if (value === "dark") return "dark";
+  return "system";
+}
+
 function read(): ThemeChoice {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === "light" || raw === "dark" || raw === "system") return raw;
-  } catch {}
-  return "system";
+    return safeChoice(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return "system";
+  }
 }
 
 let choice: ThemeChoice = read();
@@ -32,8 +38,8 @@ export function resolveTheme(pick: ThemeChoice = choice): Resolved {
 
 function paint() {
   const root = document.documentElement;
-  if (choice === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", choice);
+  if (choice === "system") delete root.dataset.theme;
+  else root.dataset.theme = choice;
   root.style.colorScheme = resolveTheme();
 }
 
@@ -42,10 +48,11 @@ export function getTheme(): ThemeChoice {
 }
 
 export function setTheme(next: ThemeChoice) {
-  if (next === choice) return;
-  choice = next;
+  const picked = safeChoice(next);
+  if (picked === choice) return;
+  choice = picked;
   try {
-    localStorage.setItem(STORAGE_KEY, next);
+    localStorage.setItem(STORAGE_KEY, picked);
   } catch {}
   paint();
   for (const notify of listeners) notify();

@@ -32,9 +32,8 @@ import ConfirmModal from "../components/ConfirmModal";
 import DatasetSourceModal, {
   type SourceAction,
 } from "../components/DatasetSourceModal";
-import WidgetRender from "../components/widgets/WidgetRender";
+import WidgetRender, { buildQuery } from "../components/widgets/WidgetRender";
 import { WidgetDescriptionProvider } from "../components/widgets/chartParts";
-import { buildQuery } from "../components/widgets/WidgetRender";
 import WidgetFocusModal from "../components/WidgetFocusModal";
 import WidgetMenu from "../components/WidgetMenu";
 import {
@@ -76,9 +75,11 @@ const HAS_CANVAS = new Set<WidgetType>([
   "gauge",
 ]);
 const DESCRIPTION_MAX = 160;
-const GROUP_PADDING = 12;
-const GROUP_PADDING_TOP = 6;
+const GROUP_PADDING = 22;
+const GROUP_PADDING_TOP = 12;
+const GROUP_BORDER = 2;
 const GROUP_HEADER = 30;
+const GROUP_HEADER_GAP = 10;
 const ROW_HEIGHT = 60;
 const GRID_MARGIN = 16;
 
@@ -100,7 +101,13 @@ function groupRowsNeeded(members: readonly WidgetDefinition[]): number {
     return Math.max(bottomRow, l.y + l.h);
   }, 0);
   const inner = rows * ROW_HEIGHT + (rows - 1) * GRID_MARGIN;
-  const needed = GROUP_PADDING_TOP + GROUP_HEADER + inner + GROUP_PADDING;
+  const needed =
+    GROUP_BORDER +
+    GROUP_PADDING_TOP +
+    GROUP_HEADER +
+    GROUP_HEADER_GAP +
+    inner +
+    GROUP_PADDING;
   return Math.max(2, Math.ceil((needed + GRID_MARGIN) / (ROW_HEIGHT + GRID_MARGIN)));
 }
 
@@ -691,7 +698,7 @@ export default function DatasetPage() {
       }
       const headers = Object.keys(rows[0]);
       const body = rows
-        .map((row) => headers.map((h) => String(row[h] ?? "")).join("\t"))
+        .map((row) => headers.map((h) => cellText(row[h])).join("\t"))
         .join("\n");
       await navigator.clipboard.writeText(`${headers.join("\t")}\n${body}`);
       toast.success(t("widget.copied", { n: rows.length }));
@@ -842,186 +849,202 @@ export default function DatasetPage() {
     moveWidgetToGroup(widgetId, target);
   }
 
+  function editToolbar(widget: WidgetDefinition) {
+    return (
+      <div className="widget-toolbar">
+        <button
+          type="button"
+          className="icon-btn keyboard-only"
+          aria-label={t("widget.editAria", { title: widget.title })}
+          onClick={(e) => {
+            e.stopPropagation();
+            openEditWidget(widget);
+          }}
+        >
+          <PencilIcon width={15} height={15} />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t("widget.duplicateAria", { title: widget.title })}
+          title={t("ds.duplicateWidget")}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDuplicateWidget(widget);
+          }}
+        >
+          <CopyIcon width={15} height={15} />
+        </button>
+        <button
+          type="button"
+          className="icon-btn danger"
+          aria-label={t("widget.deleteAria", { title: widget.title })}
+          title={t("ds.deleteWidget")}
+          onClick={(e) => {
+            e.stopPropagation();
+            openWidgetDeleteConfirm(widget);
+          }}
+        >
+          <TrashIcon width={15} height={15} />
+        </button>
+      </div>
+    );
+  }
+
+  function widgetActions(widget: WidgetDefinition) {
+    if (editMode) return editToolbar(widget);
+    if (widget.type === "group" || widget.type === "section") return null;
+    return (
+      <div className="widget-toolbar">
+        <WidgetMenu
+          label={widget.title}
+          dataLabels={labelOverrides[widget.id] ?? globalDataLabels}
+          onFocus={() => setFocusWidget(widget)}
+          onCopyData={() => copyWidgetData(widget)}
+          canCopyImage={HAS_CANVAS.has(widget.type)}
+          onCopyImage={() => copyWidgetImage(widget)}
+          onToggleDataLabels={() => toggleDataLabels(widget.id)}
+        />
+      </div>
+    );
+  }
+
+  function renderSection(widget: WidgetDefinition, isSelected: boolean) {
+    return (
+      <div key={widget.id} data-widget-id={widget.id}>
+        <div
+          className={`widget-card is-bare${isSelected ? " is-selected" : ""}`}
+          onPointerDown={() => {
+            if (editMode) openEditWidget(widget);
+          }}
+        >
+          {widgetActions(widget)}
+          <h3 className="section-heading">{widget.title}</h3>
+          {widget.description && (
+            <p className="widget-subtitle" title={widget.description}>
+              {widget.description}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function groupGrid(members: WidgetDefinition[], width: number) {
+    return (
+      <GridLayout
+        className={`charts-grid${editMode ? " edit-mode" : ""}`}
+        width={width}
+        layout={members.map(toLayoutItem)}
+        gridConfig={{
+          cols: GRID_COLS,
+          rowHeight: ROW_HEIGHT,
+          margin: [GRID_MARGIN, GRID_MARGIN],
+          containerPadding: [0, 0],
+        }}
+        dragConfig={{
+          enabled: editMode,
+          bounded: false,
+          handle: ".widget-card",
+          cancel: "button, a, input, select, canvas",
+        }}
+        resizeConfig={{ enabled: editMode, handles: ["s", "e", "se"] }}
+        onLayoutChange={handleLayoutChange}
+        onDragStart={(_l, _o, item) => {
+          if (item) onWidgetDragStart(item.i);
+        }}
+        onDrag={(_l, _o, _i, _p, event) => onWidgetDrag(event)}
+        onDragStop={(_l, _o, item, _p, event) => {
+          if (item) onWidgetDragStop(item.i, event);
+        }}
+      >
+        {members.map(renderWidget)}
+      </GridLayout>
+    );
+  }
+
+  function groupClassName(widget: WidgetDefinition, isSelected: boolean) {
+    const names = ["widget-group"];
+    if (isSelected) names.push("is-selected");
+    if (hoverZone === widget.id) names.push("is-drop-target");
+    return names.join(" ");
+  }
+
+  function renderGroup(widget: WidgetDefinition, isSelected: boolean) {
+    const members = memberOf(widgets, widget.id);
+    const size = widget.layout ?? defaultLayoutFor(widget.type);
+
+    return (
+      <div key={widget.id} data-widget-id={widget.id}>
+        <div
+          className={groupClassName(widget, isSelected)}
+          data-group-drop={widget.id}
+          onPointerDown={(e) => {
+            if (!editMode) return;
+            if ((e.target as HTMLElement).closest(".widget-card")) return;
+            openEditWidget(widget);
+          }}
+        >
+          <div className="widget-group-header">
+            <h3 className="widget-group-title">{widget.title}</h3>
+            {editMode && (
+              <div className="widget-group-actions">
+                <button
+                  type="button"
+                  className="icon-btn danger"
+                  aria-label={t("widget.deleteAria", { title: widget.title })}
+                  title={t("ds.deleteWidget")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openWidgetDeleteConfirm(widget);
+                  }}
+                >
+                  <TrashIcon width={15} height={15} />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="widget-group-body">
+            {members.length === 0 ? (
+              <p className="widget-group-empty">{t("ds.groupEmpty")}</p>
+            ) : (
+              groupGrid(members, groupInnerWidth(containerWidth, size.w))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderWidget(widget: WidgetDefinition) {
-                const isSelected = editMode && selectedWidgetId === widget.id;
-                const actions = editMode ? (
-                  <div className="widget-toolbar">
-                    <button
-                            type="button"
-                            className="icon-btn keyboard-only"
-                            aria-label={t("widget.editAria", { title: widget.title })}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditWidget(widget);
-                            }}
-                          >
-                            <PencilIcon width={15} height={15} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            aria-label={t("widget.duplicateAria", { title: widget.title })}
-                            title={t("ds.duplicateWidget")}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDuplicateWidget(widget);
-                            }}
-                          >
-                            <CopyIcon width={15} height={15} />
-                          </button>
-                    <button
-                      type="button"
-                      className="icon-btn danger"
-                      aria-label={t("widget.deleteAria", { title: widget.title })}
-                      title={t("ds.deleteWidget")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openWidgetDeleteConfirm(widget);
-                      }}
-                    >
-                      <TrashIcon width={15} height={15} />
-                    </button>
-                  </div>
-                ) : widget.type === "group" || widget.type === "section" ? null : (
-                  <div className="widget-toolbar">
-                    <WidgetMenu
-                      label={widget.title}
-                      dataLabels={
-                        labelOverrides[widget.id] ?? globalDataLabels
-                      }
-                      onFocus={() => setFocusWidget(widget)}
-                      onCopyData={() => copyWidgetData(widget)}
-                      canCopyImage={HAS_CANVAS.has(widget.type)}
-                      onCopyImage={() => copyWidgetImage(widget)}
-                      onToggleDataLabels={() => toggleDataLabels(widget.id)}
-                    />
-                  </div>
-                );
+    const isSelected = editMode && selectedWidgetId === widget.id;
+    if (widget.type === "section") return renderSection(widget, isSelected);
+    if (widget.type === "group") return renderGroup(widget, isSelected);
 
-                if (widget.type === "section") {
-                  return (
-                    <div key={widget.id} data-widget-id={widget.id}>
-                      <div
-                        className={`widget-card is-bare${isSelected ? " is-selected" : ""}`}
-                        onPointerDown={() => {
-                          if (editMode) openEditWidget(widget);
-                        }}
-                      >
-                        {actions}
-                        <h3 className="section-heading">{widget.title}</h3>
-                        {widget.description && (
-                          <p className="widget-subtitle" title={widget.description}>
-                            {widget.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (widget.type === "group") {
-                  const members = memberOf(widgets, widget.id);
-                  const size = widget.layout ?? defaultLayoutFor(widget.type);
-                  const hugs = size.h <= groupRowsNeeded(members);
-                  return (
-                    <div key={widget.id} data-widget-id={widget.id}>
-                      <div
-                        className={`widget-group${hugs ? " is-hugging" : ""}${
-                          isSelected ? " is-selected" : ""
-                        }${hoverZone === widget.id ? " is-drop-target" : ""}`}
-                        data-group-drop={widget.id}
-                        onPointerDown={(e) => {
-                          if (!editMode) return;
-                          if ((e.target as HTMLElement).closest(".widget-card")) return;
-                          openEditWidget(widget);
-                        }}
-                      >
-                        <div className="widget-group-header">
-                          <h3 className="widget-group-title">{widget.title}</h3>
-                          {editMode && (
-                            <div className="widget-group-actions">
-                              <button
-                                type="button"
-                                className="icon-btn danger"
-                                aria-label={t("widget.deleteAria", { title: widget.title })}
-                                title={t("ds.deleteWidget")}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openWidgetDeleteConfirm(widget);
-                                }}
-                              >
-                                <TrashIcon width={15} height={15} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <div className="widget-group-body">
-                          {members.length === 0 ? (
-                            <p className="widget-group-empty">
-                              {t("ds.groupEmpty")}
-                            </p>
-                          ) : (
-                            <GridLayout
-                              className={`charts-grid${editMode ? " edit-mode" : ""}`}
-                              width={groupInnerWidth(containerWidth, size.w)}
-                              layout={members.map(toLayoutItem)}
-                              gridConfig={{
-                                cols: GRID_COLS,
-                                rowHeight: ROW_HEIGHT,
-                                margin: [GRID_MARGIN, GRID_MARGIN],
-                                containerPadding: [0, 0],
-                              }}
-                              dragConfig={{
-                                enabled: editMode,
-                                bounded: false,
-                                handle: ".widget-card",
-                                cancel: "button, a, input, select, canvas",
-                              }}
-                              resizeConfig={{ enabled: editMode, handles: ["s", "e", "se"] }}
-                              onLayoutChange={handleLayoutChange}
-                              onDragStart={(_l, _o, item) => {
-                                if (item) onWidgetDragStart(item.i);
-                              }}
-                              onDrag={(_l, _o, _i, _p, event) => onWidgetDrag(event)}
-                              onDragStop={(_l, _o, item, _p, event) => {
-                                if (item) onWidgetDragStop(item.i, event);
-                              }}
-                            >
-                              {members.map(renderWidget)}
-                            </GridLayout>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={widget.id} data-widget-id={widget.id}>
-                    <WidgetCard
-                      selected={isSelected}
-                      onPointerDown={() => {
-                        if (editMode) {
-                          openEditWidget(widget);
-                        }
-                      }}
-                      skeleton={<WidgetSkeleton widget={widget} />}
-                    >
-                      {actions}
-                      <WidgetDescriptionProvider value={widget.description}>
-                        <DataLabelsProvider value={labelOverrides[widget.id]}>
-                        <WidgetRender
-                          widget={widget}
-                          columns={columns}
-                          reloadNonce={reloadNonce}
-                          globalFilters={globalFilters}
-                          valueLabels={valueLabels}
-                        />
-                        </DataLabelsProvider>
-                      </WidgetDescriptionProvider>
-                    </WidgetCard>
-                  </div>
-                );
+    return (
+      <div key={widget.id} data-widget-id={widget.id}>
+        <WidgetCard
+          selected={isSelected}
+          onPointerDown={() => {
+            if (editMode) openEditWidget(widget);
+          }}
+          skeleton={<WidgetSkeleton widget={widget} />}
+        >
+          {widgetActions(widget)}
+          <WidgetDescriptionProvider value={widget.description}>
+            <DataLabelsProvider value={labelOverrides[widget.id]}>
+              <WidgetRender
+                widget={widget}
+                columns={columns}
+                reloadNonce={reloadNonce}
+                globalFilters={globalFilters}
+                valueLabels={valueLabels}
+              />
+            </DataLabelsProvider>
+          </WidgetDescriptionProvider>
+        </WidgetCard>
+      </div>
+    );
   }
 
   const reg = registry ?? dataset;
@@ -1034,19 +1057,25 @@ export default function DatasetPage() {
   const syncMine = reg.myPath !== null;
   const syncOthers = syncMine ? reg.watcherCount - 1 : reg.watcherCount;
   const syncKnownPath = reg.serverPath ?? reg.myPath ?? reg.sourcePath;
-  const syncState = syncShown
-    ? syncView({
-        name: syncKnownPath ? fileNameOf(syncKnownPath) : reg.sourceName ?? t("ds.sourceFile"),
-        when: formatSyncTime(reg.lastSyncedAt),
-        enabled: reg.syncEnabled,
-        onServer: reg.serverPath !== null,
-        mine: syncMine,
-        others: syncOthers,
-        lastSeenAt: reg.lastSeenAt,
-        status: syncStatus,
-        t,
-      })
-    : null;
+  function syncStateOf(): SyncView | null {
+    if (!syncShown) return null;
+    const name = syncKnownPath
+      ? fileNameOf(syncKnownPath)
+      : reg.sourceName ?? t("ds.sourceFile");
+    return syncView({
+      name,
+      when: formatSyncTime(reg.lastSyncedAt),
+      enabled: reg.syncEnabled,
+      onServer: reg.serverPath !== null,
+      mine: syncMine,
+      others: syncOthers,
+      lastSeenAt: reg.lastSeenAt,
+      status: syncStatus,
+      t,
+    });
+  }
+
+  const syncState = syncStateOf();
 
   function runSyncAction(action: SyncAction) {
     setSourceOpen(false);
@@ -1065,23 +1094,22 @@ export default function DatasetPage() {
       }))
     : [];
 
-  let dashboardNotice: ReactNode = null;
-  if (!widgetsLoaded) {
-    dashboardNotice = (
-      <div className="sk-page-grid" aria-busy="true" aria-label={t("ds.loadingWidgets")}>
-        <span className="sk sk-page-card" />
-        <span className="sk sk-page-card" />
-      </div>
-    );
-  } else if (widgets.length === 0) {
-    dashboardNotice = (
+  function dashboardNoticeOf(): ReactNode {
+    if (!widgetsLoaded) {
+      return (
+        <div className="sk-page-grid" aria-busy="true" aria-label={t("ds.loadingWidgets")}>
+          <span className="sk sk-page-card" />
+          <span className="sk sk-page-card" />
+        </div>
+      );
+    }
+    if (widgets.length > 0) return null;
+    return (
       <div className="empty-widgets-card">
         <p className="empty-widgets-title">{t("ds.noWidgets")}</p>
         {admin ? (
           <>
-            <p className="empty-widgets-desc">
-              {t("ds.firstWidgetHint")}
-            </p>
+            <p className="empty-widgets-desc">{t("ds.firstWidgetHint")}</p>
             <button
               type="button"
               className="btn-primary"
@@ -1090,7 +1118,7 @@ export default function DatasetPage() {
                 openCreateWidget();
               }}
             >
-              + Tambah Widget Pertama
+              {t("ds.addFirstWidget")}
             </button>
           </>
         ) : (
@@ -1101,6 +1129,8 @@ export default function DatasetPage() {
       </div>
     );
   }
+
+  const dashboardNotice = dashboardNoticeOf();
 
   return (
     <div className="dataset-page-layout">
@@ -1295,6 +1325,12 @@ const SYNC_ACTION_KEY: Record<SyncAction, TKey> = {
 const SEEN_FRESH_MS = 5 * 60_000;
 const SEEN_STALE_MS = 2 * 60 * 60_000;
 
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value) ?? "";
+  return String(value);
+}
+
 function ageOf(iso: string | null): number | null {
   if (!iso) return null;
   const at = Date.parse(iso);
@@ -1327,19 +1363,7 @@ type SyncViewInput = {
   readonly t: Translate;
 };
 
-function syncView({
-  name,
-  when,
-  enabled,
-  onServer,
-  mine,
-  others,
-  lastSeenAt,
-  status,
-  t,
-}: SyncViewInput): SyncView {
-  const mineActions: SyncAction[] = ["change", "release", "pause"];
-
+function haltedView({ name, when, enabled, onServer, t }: SyncViewInput): SyncView | null {
   if (!enabled) {
     return {
       tone: "paused",
@@ -1363,21 +1387,20 @@ function syncView({
       actions: [],
     };
   }
-  if (!mine && others === 0) {
-    return {
-      tone: "warn",
-      text: t("sync.unwatched", { name }),
-      actions: ["claim"],
-    };
-  }
-  if (mine && status?.state === "importing") {
+  return null;
+}
+
+function mineView({ name, when, others, status, t }: SyncViewInput): SyncView {
+  const mineActions: SyncAction[] = ["change", "release", "pause"];
+
+  if (status?.state === "importing") {
     return {
       tone: "busy",
       text: t("sync.reading", { name }),
       actions: ["pause"],
     };
   }
-  if (mine && status?.state === "error") {
+  if (status?.state === "error") {
     return {
       tone: "error",
       text: status.error
@@ -1386,14 +1409,23 @@ function syncView({
       actions: mineActions,
     };
   }
-  if (mine) {
-    const shared = others > 0 ? t("sync.sharedSuffix", { n: others }) : "";
+
+  const shared = others > 0 ? t("sync.sharedSuffix", { n: others }) : "";
+  return {
+    tone: "live",
+    text: when
+      ? t("sync.mineWhen", { name, when, shared })
+      : t("sync.mine", { name, shared }),
+    actions: mineActions,
+  };
+}
+
+function watchedView({ name, when, others, lastSeenAt, t }: SyncViewInput): SyncView {
+  if (others === 0) {
     return {
-      tone: "live",
-      text: when
-        ? t("sync.mineWhen", { name, when, shared })
-        : t("sync.mine", { name, shared }),
-      actions: mineActions,
+      tone: "warn",
+      text: t("sync.unwatched", { name }),
+      actions: ["claim"],
     };
   }
 
@@ -1416,6 +1448,12 @@ function syncView({
       : t("sync.staleNone", { n: others }),
     actions: ["claim"],
   };
+}
+
+function syncView(input: SyncViewInput): SyncView {
+  const halted = haltedView(input);
+  if (halted) return halted;
+  return input.mine ? mineView(input) : watchedView(input);
 }
 
 const SYNC_HINT_KEY: Record<SyncAction, TKey> = {

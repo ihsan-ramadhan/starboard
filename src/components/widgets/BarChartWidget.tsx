@@ -7,6 +7,7 @@ import {
   dataLabel,
   blankWhenEmpty,
   HIDE_OVERLAP,
+  type DataLabelSpot,
   type SeriesLabeller,
   type ValueFormatter,
   escapeHtml,
@@ -17,6 +18,13 @@ import { useDataLabelsShown } from "../../lib/prefs";
 import type { EChartsOption } from "echarts";
 import { useLang } from "../../lib/i18n";
 import { chartChrome, useResolvedTheme } from "../../lib/theme";
+
+type Corners = [number, number, number, number];
+
+function labelSpotFor(stacked: boolean, horizontal: boolean): DataLabelSpot {
+  if (stacked) return "inside";
+  return horizontal ? "right" : "top";
+}
 
 export type BarChartWidgetProps = {
   readonly title: string;
@@ -70,7 +78,8 @@ export default function BarChartWidget({
         )
       : [];
 
-    const labelSpot = stacked ? "inside" : horizontal ? "right" : "top";
+    const labelSpot = labelSpotFor(stacked, horizontal);
+    const topCorners: Corners = horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0];
     const labelText = blankWhenEmpty((value) =>
       isPercent
         ? `${Math.round(value * 100)}%`
@@ -90,9 +99,7 @@ export default function BarChartWidget({
         animationDelay: (idx: number) => idx * 25 + index * 40,
         itemStyle: {
           color: colors[key],
-          borderRadius: isTop
-            ? ((horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0]) as [number, number, number, number])
-            : undefined,
+          borderRadius: isTop ? topCorners : undefined,
         },
         data: rows.map((d, rowIndex) => {
           const raw = Number(d[key]) || 0;

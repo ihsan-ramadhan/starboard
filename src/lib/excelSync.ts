@@ -181,6 +181,30 @@ export function useExcelSync(
       return importOne(ds, path, revision);
     }
 
+    async function beat(host: string) {
+      if (Date.now() - lastBeatRef.current <= HEARTBEAT_MS) return;
+      lastBeatRef.current = Date.now();
+      await api.heartbeat(dept, host).catch(() => undefined);
+    }
+
+    async function syncAll(): Promise<"aborted" | "imported" | "idle"> {
+      let anyImported = false;
+      const seenPaths = new Set<string>();
+
+      for (const ds of datasetsRef.current) {
+        if (!active) return "aborted";
+        if (ds.myPath) {
+          if (seenPaths.has(ds.myPath)) continue;
+          seenPaths.add(ds.myPath);
+        }
+        const outcome = await syncOne(ds);
+        if (outcome === "aborted") return "aborted";
+        if (outcome === "imported") anyImported = true;
+      }
+
+      return anyImported ? "imported" : "idle";
+    }
+
     async function tick() {
       if (runningRef.current) return;
       runningRef.current = true;
@@ -189,26 +213,9 @@ export function useExcelSync(
         const host = machine;
         if (!active || !host) return;
 
-        if (Date.now() - lastBeatRef.current > HEARTBEAT_MS) {
-          lastBeatRef.current = Date.now();
-          await api.heartbeat(dept, host).catch(() => undefined);
-        }
-
-        let anyImported = false;
-        const seenPaths = new Set<string>();
-
-        for (const ds of datasetsRef.current) {
-          if (!active) return;
-          if (ds.myPath) {
-            if (seenPaths.has(ds.myPath)) continue;
-            seenPaths.add(ds.myPath);
-          }
-          const outcome = await syncOne(ds);
-          if (outcome === "aborted") return;
-          if (outcome === "imported") anyImported = true;
-        }
-
-        if (anyImported && active) await onSyncedRef.current();
+        await beat(host);
+        const outcome = await syncAll();
+        if (outcome === "imported" && active) await onSyncedRef.current();
       } finally {
         runningRef.current = false;
       }

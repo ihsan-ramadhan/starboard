@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import ChevronIcon from "../assets/icons/chevron-left.svg?react";
 import { api } from "../lib/api";
 import { useT, type TKey, type Translate } from "../lib/i18n";
@@ -20,11 +20,13 @@ function ChipButton({
   label,
   open,
   active = false,
+  controls,
   onToggle,
 }: {
   readonly label: string;
   readonly open: boolean;
   readonly active?: boolean;
+  readonly controls: string;
   readonly onToggle: () => void;
 }) {
   return (
@@ -32,7 +34,7 @@ function ChipButton({
       type="button"
       className={`slicer-chip${active ? " is-active" : ""}`}
       aria-expanded={open}
-      aria-haspopup="dialog"
+      aria-controls={controls}
       onClick={onToggle}
     >
       <span className="slicer-chip-label">{label}</span>
@@ -221,7 +223,7 @@ function ValueLabelEditor({
     let active = true;
     setOptions(null);
     setError(null);
-    setDraft({ ...(valueLabels?.[column] ?? {}) });
+    setDraft({ ...valueLabels?.[column] });
     api
       .columnValues(datasetId, column)
       .then((res) => {
@@ -240,7 +242,7 @@ function ValueLabelEditor({
     for (const [raw, text] of Object.entries(next)) {
       if (text.trim()) cleaned[raw] = text.trim();
     }
-    const map: ValueLabelMap = { ...(valueLabels ?? {}) };
+    const map: ValueLabelMap = { ...valueLabels };
     if (Object.keys(cleaned).length === 0) delete map[column];
     else map[column] = cleaned;
     onValueLabelsChange(map);
@@ -523,10 +525,10 @@ function SlicerPanel({
 }) {
   const t = useT();
   const kind = columns.find((c) => c.name === slicer.column)?.type;
-  const mode =
-    slicer.control === "both" && !value?.mode && !value?.values?.length
-      ? (kind === "date" ? "range" : "multi")
-      : slicerMode(slicer, value);
+  const untouched =
+    slicer.control === "both" && !value?.mode && !value?.values?.length;
+  const fallback: SlicerMode = kind === "date" ? "range" : "multi";
+  const mode = untouched ? fallback : slicerMode(slicer, value);
 
   function setMode(next: SlicerMode) {
     if (next !== mode) onChange({ ...value, mode: next });
@@ -535,7 +537,7 @@ function SlicerPanel({
   return (
     <>
       {slicer.control === "both" && (
-        <div className="slicer-modes" role="group" aria-label={t("slicer.modeGroup")}>
+        <fieldset className="slicer-modes" aria-label={t("slicer.modeGroup")}>
           {(["range", "multi"] as const).map((option) => (
             <button
               key={option}
@@ -547,7 +549,7 @@ function SlicerPanel({
               {t(CONTROL_KEY[option])}
             </button>
           ))}
-        </div>
+        </fieldset>
       )}
 
       {mode === "multi" ? (
@@ -608,6 +610,7 @@ function SlicerChip({
   }, [open]);
 
   const active = slicerIsActive(slicer, value);
+  const panelId = useId();
 
   return (
     <div className="slicer-chip-wrap" ref={wrapRef}>
@@ -615,11 +618,12 @@ function SlicerChip({
         label={summarize(t, slicer, value, valueLabels)}
         open={open}
         active={active}
+        controls={panelId}
         onToggle={() => setOpen((v) => !v)}
       />
 
       {open && (
-        <div className="slicer-panel" role="dialog" aria-label={slicer.label}>
+        <div className="slicer-panel" id={panelId}>
           <SlicerPanel
             datasetId={datasetId}
             slicer={slicer}
@@ -649,6 +653,8 @@ export default function SlicerBar({
   const t = useT();
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const overflowId = useId();
+  const configId = useId();
   const overflowRef = useRef<HTMLDivElement>(null);
   const configRef = useRef<HTMLDivElement>(null);
 
@@ -715,11 +721,12 @@ export default function SlicerBar({
             }
             open={overflowOpen}
             active={hiddenActive > 0}
+            controls={overflowId}
             onToggle={() => setOverflowOpen((v) => !v)}
           />
 
           {overflowOpen && (
-            <div className="slicer-panel is-wide" role="dialog" aria-label={t("slicer.otherFilters")}>
+            <div className="slicer-panel is-wide" id={overflowId}>
               {hidden.map((slicer) => (
                 <div key={slicer.id} className="slicer-stacked">
                   <p className="slicer-stacked-label">{slicer.label}</p>
@@ -749,11 +756,12 @@ export default function SlicerBar({
           <ChipButton
             label={t("slicer.configure")}
             open={configOpen}
+            controls={configId}
             onToggle={() => setConfigOpen((v) => !v)}
           />
 
           {configOpen && (
-            <div className="slicer-panel is-wide" role="dialog" aria-label={t("slicer.configure")}>
+            <div className="slicer-panel is-wide" id={configId}>
               <ConfigPanel
                 datasetId={datasetId}
                 columns={columns}
